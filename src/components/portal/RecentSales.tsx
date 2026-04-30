@@ -73,7 +73,7 @@ export default function RecentSales({ shopId, limit = 5 }: { shopId?: string; li
       <CardContent>
         <div className="flex items-center justify-between mb-3">
           <h3 className="font-semibold">Recent Sales</h3>
-          <Link href="/portal/sales">
+          <Link href="/sales">
             <Button variant="outline" size="sm">View All</Button>
           </Link>
         </div>

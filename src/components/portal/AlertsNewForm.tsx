@@ -39,7 +39,7 @@ export default function AlertsNewForm({ defaultShopId }: { defaultShopId?: strin
         return;
       }
       // navigate back to alerts
-      router.push('/portal/alerts');
+      router.push('/alerts');
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
       setLoading(false);
@@ -67,7 +67,7 @@ export default function AlertsNewForm({ defaultShopId }: { defaultShopId?: strin
       {error && <div className="text-sm text-red-600">{error}</div>}
       <div className="flex items-center gap-2">
         <button disabled={loading} className="px-4 py-2 bg-[hsl(var(--primary))] text-white rounded">Create</button>
-        <button type="button" onClick={() => router.push('/portal/alerts')} className="px-4 py-2 border rounded">Cancel</button>
+        <button type="button" onClick={() => router.push('/alerts')} className="px-4 py-2 border rounded">Cancel</button>
       </div>
     </form>
   );

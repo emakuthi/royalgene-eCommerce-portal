@@ -11,16 +11,16 @@ export default function PortalTopBar() {
   // Very small mapping from route to title/description — extend as needed
   const routes: Record<string, { title: string; description?: string }> = {
     '/portal': { title: 'Portal', description: 'Overview' },
-    '/portal/dashboard': { title: 'Dashboard', description: 'Admin summary and metrics' },
-    '/portal/sales': { title: 'Sales', description: 'Record and review sales' },
+    '/dashboard': { title: 'Dashboard', description: 'Admin summary and metrics' },
+    '/sales': { title: 'Sales', description: 'Record and review sales' },
     '/portal/sales/new': { title: 'Record Sale', description: 'Enter sale details' },
-    '/portal/stock': { title: 'Inventory', description: 'Manage stock levels' },
+    '/stock': { title: 'Inventory', description: 'Manage stock levels' },
     '/portal/stock/add-new': { title: 'Add Product', description: 'Create a new product' },
-    '/portal/analytics': { title: 'Analytics', description: 'Performance insights' },
-    '/portal/shops': { title: 'Shops', description: 'Manage outlets' },
-    '/portal/users': { title: 'Users', description: 'Manage users and roles' },
-    '/portal/alerts': { title: 'Alerts', description: 'System alerts' },
-    '/portal/settings': { title: 'Settings', description: 'Manage your portal account' },
+    '/analytics': { title: 'Analytics', description: 'Performance insights' },
+    '/shops': { title: 'Shops', description: 'Manage outlets' },
+    '/users': { title: 'Users', description: 'Manage users and roles' },
+    '/alerts': { title: 'Alerts', description: 'System alerts' },
+    '/settings': { title: 'Settings', description: 'Manage your portal account' },
   };
 
   // Find best match (exact or prefix)

@@ -27,16 +27,16 @@ export default function ShopDashboard({ stats, loading, shopName, portalUserPosi
       <div className="p-6 space-y-6 overflow-auto flex-1">
         {/* Stats Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          <Link href="/portal/analytics">
+          <Link href="/analytics">
             <StatCard loading={loading} title="Sales Today" value={loading ? '-' : `KES ${(stats?.salesToday || 0).toLocaleString()}`} subtitle="Today's transactions" icon={<></>} />
           </Link>
-          <Link href="/portal/analytics">
+          <Link href="/analytics">
             <StatCard loading={loading} title="Profit" value={loading ? '-' : `KES ${(stats?.totalProfit || 0).toLocaleString()}`} subtitle="Total profit this month" icon={<></>} />
           </Link>
-          <Link href="/portal/analytics">
+          <Link href="/analytics">
             <StatCard loading={loading} title="Avg Margin" value={loading ? '-' : `${(stats?.averageMargin ?? 0).toFixed(1)}%`} subtitle="Average profit margin" icon={<></>} />
           </Link>
-          <Link href="/portal/analytics">
+          <Link href="/analytics">
             <StatCard loading={loading} title="Low Stock" value={loading ? '-' : stats?.lowStockProducts ?? 0} subtitle="Products need restocking" icon={<></>} />
           </Link>
         </div>
@@ -45,7 +45,7 @@ export default function ShopDashboard({ stats, loading, shopName, portalUserPosi
           <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Quick Access</h2>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             <Card className="border-2 border-transparent hover:border-blue-400 cursor-pointer transition">
-              <Link href="/portal/analytics">
+              <Link href="/analytics">
                 <CardContent className="pt-6">
                   <div className="flex items-center gap-4">
                     <div className="p-3 bg-blue-100 dark:bg-blue-900 rounded-lg" />
@@ -59,7 +59,7 @@ export default function ShopDashboard({ stats, loading, shopName, portalUserPosi
             </Card>
 
             <Card className="border-2 border-transparent hover:border-purple-400 cursor-pointer transition">
-              <Link href="/portal/stock">
+              <Link href="/stock">
                 <CardContent className="pt-6">
                   <div className="flex items-center gap-4">
                     <div className="p-3 bg-purple-100 dark:bg-purple-900 rounded-lg" />
@@ -73,7 +73,7 @@ export default function ShopDashboard({ stats, loading, shopName, portalUserPosi
             </Card>
 
             <Card className="border-2 border-transparent hover:border-green-400 cursor-pointer transition">
-              <Link href="/portal/sales">
+              <Link href="/sales">
                 <CardContent className="pt-6">
                   <div className="flex items-center gap-4">
                     <div className="p-3 bg-green-100 dark:bg-green-900 rounded-lg" />
@@ -95,7 +95,7 @@ export default function ShopDashboard({ stats, loading, shopName, portalUserPosi
               <p className="text-amber-800 dark:text-amber-200">
                 {stats.lowStockProducts} product{stats.lowStockProducts !== 1 ? 's' : ''} need restocking.
               </p>
-              <Link href="/portal/stock">
+              <Link href="/stock">
                 <Button className="mt-3 bg-amber-600 hover:bg-amber-700" size="sm">
                   View Low Stock Items
                 </Button>

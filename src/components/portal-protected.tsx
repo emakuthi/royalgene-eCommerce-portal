@@ -117,7 +117,7 @@ export function PortalProtected({
             </p>
             <div className="space-y-2">
               <Button asChild className="w-full bg-amber-600 hover:bg-amber-700 dark:bg-amber-700 dark:hover:bg-amber-600">
-                <Link href="/portal/login" className="flex items-center justify-center gap-2">
+                <Link href="/login" className="flex items-center justify-center gap-2">
                   {authError.action}
                   <ArrowRight className="h-4 w-4" />
                 </Link>
@@ -125,7 +125,7 @@ export function PortalProtected({
               <Button
                 variant="outline"
                 className="w-full"
-                onClick={() => router.push('/portal/dashboard')}
+                onClick={() => router.push('/dashboard')}
               >
                 Back to Dashboard
               </Button>
