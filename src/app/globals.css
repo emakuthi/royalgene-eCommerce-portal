@@ -1,0 +1,140 @@
+@import './theme.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  html {
+    scroll-behavior: smooth;
+  }
+  html, body {
+    margin: 0;
+    overflow-x: hidden;
+    max-width: 100vw;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    /* Sensible line-height for readability across all sizes */
+    line-height: 1.6;
+  }
+
+  /*
+   * ── Responsive Heading Scale ─────────────────────────────────────
+   * Each heading level uses clamp() to scale fluidly between
+   * a mobile minimum and a desktop maximum.
+   * ──────────────────────────────────────────────────────────────────
+   */
+  h1 {
+    /* 24px → 48px */
+    font-size: clamp(1.5rem, 1rem + 2.5vw, 3rem);
+    line-height: 1.15;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+  }
+
+  h2 {
+    /* 20px → 36px */
+    font-size: clamp(1.25rem, 0.875rem + 1.875vw, 2.25rem);
+    line-height: 1.2;
+    font-weight: 700;
+    letter-spacing: -0.005em;
+  }
+
+  h3 {
+    /* 18px → 28px */
+    font-size: clamp(1.125rem, 0.875rem + 1.25vw, 1.75rem);
+    line-height: 1.25;
+    font-weight: 600;
+  }
+
+  h4 {
+    /* 16px → 22px */
+    font-size: clamp(1rem, 0.75rem + 1.25vw, 1.375rem);
+    line-height: 1.3;
+    font-weight: 600;
+  }
+
+  h5 {
+    /* 14px → 18px */
+    font-size: clamp(0.875rem, 0.75rem + 0.625vw, 1.125rem);
+    line-height: 1.35;
+    font-weight: 600;
+  }
+
+  h6 {
+    /* 13px → 16px */
+    font-size: clamp(0.8125rem, 0.75rem + 0.3125vw, 1rem);
+    line-height: 1.4;
+    font-weight: 600;
+  }
+
+  /*
+   * ── Body Text ────────────────────────────────────────────────────
+   * p, li, td inherit from html font-size but can be nudged here
+   * ──────────────────────────────────────────────────────────────────
+   */
+  p, li {
+    /* 14px → 16px  (mirrors the html clamp above) */
+    font-size: clamp(0.875rem, 0.75rem + 0.625vw, 1rem);
+    line-height: 1.65;
+  }
+
+  /* Small helper text (captions, labels, badges) */
+  small, .text-caption {
+    font-size: clamp(0.6875rem, 0.625rem + 0.3125vw, 0.8125rem); /* 11px → 13px */
+  }
+}
+
+@layer utilities {
+  /* Updated: pink (pink-500) to purple (purple-500) gradient utility */
+  .gradient-purple {
+    background: linear-gradient(135deg, hsl(var(--primary)) 0%, hsl(var(--chart-5)) 100%);
+  }
+
+  .gradient-purple-light {
+    background: linear-gradient(135deg, color-mix(in srgb, hsl(var(--primary)) 20%, white 80%) 0%, color-mix(in srgb, hsl(var(--primary)) 40%, white 60%) 100%);
+  }
+
+  /* Animation delay helpers used by portal loading dots */
+  .bounce-delay-0 { animation-delay: 0s; }
+  .bounce-delay-200 { animation-delay: 0.2s; }
+  .bounce-delay-400 { animation-delay: 0.4s; }
+
+  /* Variable-based gradient so JS can inject presets without inline styles */
+  .bg-gradient-var {
+    background: linear-gradient(135deg, hsl(var(--primary)) 0%, hsl(var(--chart-5)) 100%);
+  }
+
+  /* Ensure MUI Buttons inherit text/icon color set by Tailwind classes */
+  .MuiButton-root {
+    color: inherit !important;
+    text-transform: none !important;  /* prevent MUI uppercase */
+    font-size: inherit !important;
+    min-height: unset !important;
+    min-width: unset !important;
+    padding: unset !important;
+    line-height: inherit !important;
+  }
+  .MuiButton-root svg {
+    color: inherit !important;
+    fill: currentColor !important;
+  }
+
+  /* Shimmer skeleton animation for loading states */
+  @keyframes shimmer {
+    0% { background-position: -200% 0; }
+    100% { background-position: 200% 0; }
+  }
+  .skeleton-shimmer {
+    background: linear-gradient(90deg, hsl(var(--muted)) 25%, hsl(var(--muted-foreground) / 0.08) 50%, hsl(var(--muted)) 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.5s ease-in-out infinite;
+  }
+}
+
+

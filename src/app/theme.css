@@ -1,0 +1,64 @@
+:root {
+  /* Base radius for rounded corners used by Tailwind theme (lg/md/sm) */
+  --radius: 0.5rem; /* 8px - yields md = 6px and sm = 4px via tailwind calc */
+
+  --background: 0 0% 100%;
+  --foreground: 224 71.4% 4.1%;
+  --card: 0 0% 100%;
+  --card-foreground: 224 71.4% 4.1%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 224 71.4% 4.1%;
+  /* Primary: pink-500 (#ec4899) roughly converted to HSL */
+  --primary: 330 81% 60%;
+  /* Primary foreground (text/icons on primary) should be white */
+  --primary-foreground: 0 0% 100%;
+  --secondary: 220 14.3% 95.9%;
+  --secondary-foreground: 220.9 39.3% 11%;
+  --muted: 220 14.3% 95.9%;
+  --muted-foreground: 220 8.9% 46.1%;
+  --accent: 220 14.3% 95.9%;
+  --accent-foreground: 220.9 39.3% 11%;
+  --destructive: 0 62.8% 30.6%;
+  --destructive-foreground: 210 20% 98%;
+  --border: 215 27.9% 16.9%;
+  --input: 215 27.9% 16.9%;
+  /* Ring uses primary hue for focus outlines */
+  --ring: 330 81% 60%;
+  --chart-1: 220 70% 50%;
+  --chart-2: 160 60% 45%;
+  --chart-3: 30 80% 55%;
+  --chart-4: 280 65% 60%;
+  --chart-5: 340 75% 55%;
+}
+
+.dark {
+  /* Keep same radius in dark mode to ensure consistent rounded corners */
+  --radius: 0.5rem;
+
+  --background: 224 71.4% 4.1%;
+  --foreground: 0 0% 100%;
+  --card: 224 71.4% 4.1%;
+  --card-foreground: 0 0% 100%;
+  --popover: 224 71.4% 4.1%;
+  --popover-foreground: 0 0% 100%;
+  /* Primary: slightly darker pink for dark mode */
+  --primary: 322 75% 48%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 215 27.9% 16.9%;
+  --secondary-foreground: 0 0% 100%;
+  --muted: 215 27.9% 16.9%;
+  --muted-foreground: 217.9 10.6% 64.9%;
+  --accent: 215 27.9% 16.9%;
+  --accent-foreground: 0 0% 100%;
+  --destructive: 0 62.8% 30.6%;
+  --destructive-foreground: 0 0% 100%;
+  /* Dark mode borders/inputs/ring use a muted pink tint */
+  --border: 322 75% 40%;
+  --input: 322 75% 40%;
+  --ring: 322 75% 48%;
+  --chart-1: 220 70% 50%;
+  --chart-2: 160 60% 45%;
+  --chart-3: 30 80% 55%;
+  --chart-4: 280 65% 60%;
+  --chart-5: 340 75% 55%;
+}
