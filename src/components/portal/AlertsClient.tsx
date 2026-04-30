@@ -201,7 +201,7 @@ export default function AlertsClient({
             <button onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={page >= totalPages} className="px-3 py-1 bg-white border rounded text-sm disabled:opacity-50">Next</button>
             <button onClick={() => setPage(totalPages)} disabled={page >= totalPages} className="px-3 py-1 bg-white border rounded text-sm disabled:opacity-50">Last</button>
 
-            <Link href="/portal/alerts/new"><button className="px-3 py-1 bg-[hsl(var(--primary))] text-white rounded text-sm">New Alert</button></Link>
+            <Link href="/alerts/new"><button className="px-3 py-1 bg-[hsl(var(--primary))] text-white rounded text-sm">New Alert</button></Link>
 
             <button onClick={markAllRead} className="px-3 py-1 bg-emerald-600 text-white rounded text-sm">Mark all read</button>
           </div>

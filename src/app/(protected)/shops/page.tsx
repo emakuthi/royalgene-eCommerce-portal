@@ -108,15 +108,15 @@ export default function ShopsPage() {
           breadcrumbs={[{ label: 'Portal', href: '/portal' }, { label: 'Shops' }]}
           actions={(
             <div className="flex items-center gap-2">
-              <Link href="/portal/shops/add-new">
+              <Link href="/shops/add-new">
                 <Button className="bg-[hsl(var(--primary))] bg-opacity-10 text-[hsl(var(--primary-foreground))] hover:bg-[hsl(var(--primary))] hover:bg-opacity-20"><Plus className="mr-2" />Create Shop</Button>
               </Link>
 
               {/* Quick add actions to other portals */}
-              <Link href="/portal/sales/new">
+              <Link href="/sales/new">
                 <Button variant="outline">New Sale</Button>
               </Link>
-              <Link href="/portal/stock/add-new">
+              <Link href="/stock/add-new">
                 <Button variant="outline">New Product</Button>
               </Link>
             </div>

@@ -1,6 +1,7 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
@@ -10,6 +11,7 @@ import { useHydratedAuth } from '@/lib/hooks';
 import { usePortalStore } from '@/lib/store';
 import { toast } from 'sonner';
 import { Eye, EyeOff, Store, ShieldCheck, BarChart3, Package } from 'lucide-react';
+import { loadBranding, BRANDING_EVENT, type BrandingConfig } from '@/lib/branding';
 
 const FEATURES = [
 	{ icon: Store, label: 'Shop Management', desc: 'Manage all your shop locations in one place' },
@@ -25,6 +27,18 @@ export default function PortalLoginPage() {
 	const [loading, setLoading] = useState(false);
 	const [showPassword, setShowPassword] = useState(false);
 	const [formData, setFormData] = useState({ email: '', password: '' });
+	const [branding, setBranding] = useState<BrandingConfig>({
+		logoSrc: null,
+		companyName: 'Royal Gene',
+		tagline: 'Management Portal',
+	});
+
+	useEffect(() => {
+		setBranding(loadBranding());
+		const handler = (e: Event) => setBranding((e as CustomEvent).detail as BrandingConfig);
+		window.addEventListener(BRANDING_EVENT, handler);
+		return () => window.removeEventListener(BRANDING_EVENT, handler);
+	}, []);
 
 	const handleSubmit = async (e: React.FormEvent) => {
 		e.preventDefault();
@@ -54,6 +68,8 @@ export default function PortalLoginPage() {
 
 	if (!mounted) return null;
 
+	const logoSrc = branding.logoSrc ?? '/favicon.png';
+
 	return (
 		<div className="min-h-screen flex">
 			{/* ── Left panel – branding ─────────────────────────────── */}
@@ -65,12 +81,12 @@ export default function PortalLoginPage() {
 
 				{/* Logo */}
 				<div className="relative z-10 flex items-center gap-3">
-					<div className="w-10 h-10 rounded-xl bg-white/15 backdrop-blur-sm flex items-center justify-center">
-						<Store className="w-5 h-5 text-white" />
+					<div className="w-10 h-10 rounded-xl bg-white/15 backdrop-blur-sm flex items-center justify-center overflow-hidden">
+						<Image src={logoSrc} alt={branding.companyName} width={32} height={32} className="object-contain" unoptimized={!!branding.logoSrc} />
 					</div>
 					<div>
-						<p className="text-white font-bold text-lg leading-none">Royal Gene</p>
-						<p className="text-purple-200 text-xs leading-none mt-0.5">Management Portal</p>
+						<p className="text-white font-bold text-lg leading-none">{branding.companyName}</p>
+						<p className="text-purple-200 text-xs leading-none mt-0.5">{branding.tagline}</p>
 					</div>
 				</div>
 
@@ -80,7 +96,7 @@ export default function PortalLoginPage() {
 						<h1 className="text-4xl font-bold text-white leading-tight">
 							Run your shops
 							<br />
-							<span className="text-fuchsia-300">smarter & faster.</span>
+							<span className="text-fuchsia-300">smarter &amp; faster.</span>
 						</h1>
 						<p className="mt-4 text-purple-200 text-base leading-relaxed max-w-sm">
 							Everything you need to manage inventory, track sales, and grow your business — all in one dashboard.
@@ -105,7 +121,7 @@ export default function PortalLoginPage() {
 
 				{/* Bottom note */}
 				<div className="relative z-10 text-purple-300 text-xs">
-					© {new Date().getFullYear()} Royal Gene Collection. Authorised staff only.
+					© {new Date().getFullYear()} {branding.companyName}. Authorised staff only.
 				</div>
 			</div>
 
@@ -113,12 +129,12 @@ export default function PortalLoginPage() {
 			<div className="flex-1 flex flex-col items-center justify-center p-6 sm:p-12 bg-white dark:bg-gray-950">
 				{/* Mobile logo */}
 				<div className="lg:hidden mb-8 flex items-center gap-3">
-					<div className="w-10 h-10 rounded-xl bg-purple-600 flex items-center justify-center">
-						<Store className="w-5 h-5 text-white" />
+					<div className="w-10 h-10 rounded-xl bg-[hsl(var(--primary))] flex items-center justify-center overflow-hidden">
+						<Image src={logoSrc} alt={branding.companyName} width={32} height={32} className="object-contain" unoptimized={!!branding.logoSrc} />
 					</div>
 					<div>
-						<p className="font-bold text-lg text-gray-900 dark:text-white leading-none">Royal Gene</p>
-						<p className="text-purple-600 text-xs leading-none mt-0.5">Management Portal</p>
+						<p className="font-bold text-lg text-gray-900 dark:text-white leading-none">{branding.companyName}</p>
+						<p className="text-[hsl(var(--primary))] text-xs leading-none mt-0.5">{branding.tagline}</p>
 					</div>
 				</div>
 
@@ -179,7 +195,7 @@ export default function PortalLoginPage() {
 						<Button
 							type="submit"
 							disabled={loading}
-							className="w-full h-11 bg-purple-600 hover:bg-purple-700 text-white font-semibold text-sm rounded-lg transition-all duration-200 shadow-md hover:shadow-purple-500/30 hover:shadow-lg disabled:opacity-60"
+							className="w-full h-11 bg-[hsl(var(--primary))] hover:brightness-90 text-white font-semibold text-sm rounded-lg transition-all duration-200 shadow-md hover:shadow-lg disabled:opacity-60"
 						>
 							{loading ? (
 								<span className="flex items-center gap-2">
@@ -195,10 +211,7 @@ export default function PortalLoginPage() {
 					{/* Register link */}
 					<p className="mt-6 text-center text-sm text-gray-500 dark:text-gray-400">
 						Need portal access?{' '}
-						<Link
-							href="/register"
-							className="font-medium text-purple-600 hover:text-purple-700 dark:hover:text-purple-400 transition"
-						>
+						<Link href="/register" className="font-medium text-[hsl(var(--primary))] hover:opacity-80 transition">
 							Request an account
 						</Link>
 					</p>

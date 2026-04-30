@@ -300,7 +300,7 @@ function StockManagementContent() {
           <div className="flex items-center gap-3">
             <Button variant="ghost">Export</Button>
             <Button variant="ghost">Filter</Button>
-            <Link href="/portal/stock/add-new">
+            <Link href="/stock/add-new">
               <Button className="bg-[hsl(var(--primary))] text-white hover:brightness-90">+ Add Product</Button>
             </Link>
           </div>

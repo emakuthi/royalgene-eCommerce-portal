@@ -17,19 +17,29 @@ type SaleRow = {
 };
 
 export default function RecentSales({ shopId, limit = 5 }: { shopId?: string; limit?: number }) {
-  const { token, mounted } = useHydratedAuth();
+  const { token, user, mounted } = useHydratedAuth();
   const [loading, setLoading] = useState(true);
   const [sales, setSales] = useState<SaleRow[]>([]);
 
+  const isAdmin = user?.role === 'admin' || user?.role === 'super_admin';
+
   useEffect(() => {
     if (!mounted) return;
+
+    // portal_user must have a shopId — skip fetch and show empty state if missing
+    if (!isAdmin && !shopId) {
+      setLoading(false);
+      setSales([]);
+      return;
+    }
+
     let canceled = false;
     const fetchRecent = async () => {
       setLoading(true);
       try {
         const qs = new URLSearchParams();
         if (shopId) qs.set('shopId', shopId);
-        if (limit) qs.set('limit', String(limit));
+        qs.set('limit', String(limit));
         const url = `/api/portal/sales?${qs.toString()}`;
         const res = await fetch(url, { headers: token ? { Authorization: `Bearer ${token}` } : undefined, cache: 'no-store' });
         if (!res.ok) {
@@ -49,7 +59,7 @@ export default function RecentSales({ shopId, limit = 5 }: { shopId?: string; li
 
     fetchRecent();
     return () => { canceled = true; };
-  }, [mounted, shopId, limit, token]);
+  }, [mounted, shopId, limit, token, isAdmin]);
 
   if (loading) {
     return (

@@ -371,7 +371,7 @@ function SalesEntryContent() {
               <Sliders className="h-4 w-4" />
               <span className="text-sm">Filter</span>
             </Button>
-            <Link href="/portal/sales/new">
+            <Link href="/sales/new">
               <Button className={`bg-[hsl(var(--primary))] bg-opacity-10 flex items-center gap-2 ${textPrimary}`}><span className="text-sm">+ New Sale</span></Button>
             </Link>
           </div>

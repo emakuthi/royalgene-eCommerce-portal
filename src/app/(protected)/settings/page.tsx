@@ -1,358 +1,966 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import Link from 'next/link';
+import { useEffect, useRef, useState } from 'react';
+import Image from 'next/image';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useHydratedAuth } from '@/lib/hooks';
+import { usePortalStore } from '@/lib/store';
+import { useTheme } from '@/lib/theme-context';
 import { toast } from 'sonner';
-import { Check } from 'lucide-react';
-import PortalHeader from '@/components/portal/PortalHeader';
+import {
+  User,
+  Lock,
+  Palette,
+  Store,
+  Bell,
+  Info,
+  Check,
+  Eye,
+  EyeOff,
+  Sun,
+  Moon,
+  Monitor,
+  ShieldCheck,
+  LogOut,
+  Mail,
+  Phone,
+  MapPin,
+  ChevronRight,
+  Camera,
+  ImageIcon,
+  RotateCcw,
+} from 'lucide-react';
+import { useSignOut } from '@/components/portal/SignOutProvider';
+import { loadBranding, saveBranding, resetBranding, type BrandingConfig } from '@/lib/branding';
 
-function PortalSettingsContent() {
+// ── Tab config ────────────────────────────────────────────────────────────────
+const TABS = [
+  { id: 'profile',     label: 'Profile',      icon: User },
+  { id: 'appearance',  label: 'Appearance',   icon: Palette },
+  { id: 'security',    label: 'Security',     icon: Lock },
+  { id: 'shop',        label: 'Shop Info',    icon: Store },
+  { id: 'notifications', label: 'Notifications', icon: Bell },
+  { id: 'about',       label: 'About',        icon: Info },
+] as const;
+
+type TabId = typeof TABS[number]['id'];
+
+// ── Section wrapper ───────────────────────────────────────────────────────────
+function Section({ title, description, children }: { title: string; description?: string; children: React.ReactNode }) {
+  return (
+    <div className="bg-white dark:bg-gray-900 rounded-2xl border border-[hsl(var(--border))] overflow-hidden">
+      <div className="px-6 py-5 border-b border-[hsl(var(--border))]">
+        <h2 className="text-base font-semibold text-gray-900 dark:text-white">{title}</h2>
+        {description && <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">{description}</p>}
+      </div>
+      <div className="px-6 py-5">{children}</div>
+    </div>
+  );
+}
+
+// ── Field row ─────────────────────────────────────────────────────────────────
+function FieldRow({ label, children, hint }: { label: string; children: React.ReactNode; hint?: string }) {
+  return (
+    <div className="grid sm:grid-cols-3 gap-2 sm:gap-4 items-start py-4 border-b border-[hsl(var(--border))] last:border-0">
+      <div>
+        <Label className="text-sm font-medium text-gray-700 dark:text-gray-300">{label}</Label>
+        {hint && <p className="text-xs text-gray-400 mt-0.5">{hint}</p>}
+      </div>
+      <div className="sm:col-span-2">{children}</div>
+    </div>
+  );
+}
+
+// ── Theme option card ─────────────────────────────────────────────────────────
+function ThemeCard({
+  label, icon: Icon, active, onClick, preview,
+}: {
+  label: string; icon: React.ElementType; active: boolean; onClick: () => void;
+  preview: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`relative flex flex-col gap-3 p-4 rounded-xl border-2 transition-all text-left w-full
+        ${active
+          ? 'border-[hsl(var(--primary))] bg-[hsl(var(--primary)/0.06)] shadow-sm'
+          : 'border-[hsl(var(--border))] hover:border-[hsl(var(--primary)/0.4)] bg-white dark:bg-gray-900'
+        }`}
+    >
+      {/* Mini preview */}
+      <div className="w-full h-20 rounded-lg overflow-hidden border border-[hsl(var(--border))] flex-shrink-0">
+        {preview}
+      </div>
+      <div className="flex items-center gap-2">
+        <Icon className="h-4 w-4 text-gray-500 dark:text-gray-400" />
+        <span className="text-sm font-medium text-gray-700 dark:text-gray-300">{label}</span>
+      </div>
+      {active && (
+        <span className="absolute top-3 right-3 w-5 h-5 rounded-full bg-[hsl(var(--primary))] flex items-center justify-center">
+          <Check className="h-3 w-3 text-white" />
+        </span>
+      )}
+    </button>
+  );
+}
+
+// ── Toggle ────────────────────────────────────────────────────────────────────
+function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      onClick={() => onChange(!checked)}
+      className={`relative w-11 h-6 rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-[hsl(var(--ring))] focus:ring-offset-2
+        ${checked ? 'bg-[hsl(var(--primary))]' : 'bg-gray-200 dark:bg-gray-700'}`}
+    >
+      <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${checked ? 'translate-x-5' : 'translate-x-0'}`} />
+    </button>
+  );
+}
+
+// ── Notification row ──────────────────────────────────────────────────────────
+function NotifRow({ label, desc, checked, onChange }: { label: string; desc: string; checked: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <div className="flex items-center justify-between py-4 border-b border-[hsl(var(--border))] last:border-0">
+      <div>
+        <p className="text-sm font-medium text-gray-900 dark:text-white">{label}</p>
+        <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{desc}</p>
+      </div>
+      <Toggle checked={checked} onChange={onChange} />
+    </div>
+  );
+}
+
+// ── Main page ─────────────────────────────────────────────────────────────────
+export default function PortalSettingsPage() {
   const { user, token, setAuth } = useHydratedAuth();
+  const { currentShop, currentPortalUser } = usePortalStore();
+  const { theme, toggleTheme } = useTheme();
+  const { open: openSignOut } = useSignOut();
+
   const [mounted, setMounted] = useState(false);
+  const [activeTab, setActiveTab] = useState<TabId>('profile');
   const [loading, setLoading] = useState(false);
-  const [editingPassword, setEditingPassword] = useState(false);
   const [saved, setSaved] = useState(false);
-  const [formData, setFormData] = useState({
-    name: user?.name || '',
-    email: user?.email || '',
-    phone: user?.phone || '',
-    currentPassword: '',
-    newPassword: '',
-    confirmPassword: '',
+  const [showCurrentPw, setShowCurrentPw] = useState(false);
+  const [showNewPw, setShowNewPw] = useState(false);
+  const [themeMode, setThemeMode] = useState<'light' | 'dark' | 'system'>('dark');
+  const [accentHsl, setAccentHsl] = useState<string>('271 81% 56%');
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+  const [avatarUploading, setAvatarUploading] = useState(false);
+  const avatarInputRef = useRef<HTMLInputElement>(null);
+  const logoInputRef = useRef<HTMLInputElement>(null);
+  const [branding, setBranding] = useState<BrandingConfig>({ logoSrc: null, companyName: 'Royal Gene', tagline: 'Management Portal' });
+
+  const [profileForm, setProfileForm] = useState({ name: '', phone: '' });
+  const [pwForm, setPwForm] = useState({ current: '', next: '', confirm: '' });
+  const [notifs, setNotifs] = useState({
+    lowStock: true,
+    newSale: true,
+    dailySummary: false,
+    systemAlerts: true,
   });
 
   useEffect(() => {
     setMounted(true);
     if (user) {
-      setFormData(prev => ({
-        ...prev,
-        name: user.name || '',
-        email: user.email || '',
-        phone: user.phone || '',
-      }));
+      setProfileForm({ name: user.name || '', phone: user.phone || '' });
+      const savedAvatar = localStorage.getItem(`portal-avatar-${user.id}`);
+      if (savedAvatar) setAvatarUrl(savedAvatar);
     }
+    const savedTheme = (typeof window !== 'undefined' ? localStorage.getItem('theme') : null) as 'light' | 'dark' | null;
+    setThemeMode(savedTheme ?? 'dark');
+    const savedAccent = typeof window !== 'undefined' ? localStorage.getItem('accent-hsl') : null;
+    if (savedAccent) {
+      setAccentHsl(savedAccent);
+      document.documentElement.style.setProperty('--primary', savedAccent);
+    }
+    setBranding(loadBranding());
   }, [user]);
+
+  const applyAccent = (hsl: string) => {
+    setAccentHsl(hsl);
+    document.documentElement.style.setProperty('--primary', hsl);
+    localStorage.setItem('accent-hsl', hsl);
+    toast.success('Accent colour updated');
+  };
+
+  const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !user) return;
+    if (!file.type.startsWith('image/')) { toast.error('Please select an image file'); return; }
+    if (file.size > 2 * 1024 * 1024) { toast.error('Image must be smaller than 2 MB'); return; }
+    setAvatarUploading(true);
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const dataUrl = ev.target?.result as string;
+      // Resize to max 256×256 via canvas
+      const img = new window.Image();
+      img.onload = () => {
+        const size = 256;
+        const canvas = document.createElement('canvas');
+        canvas.width = size; canvas.height = size;
+        const ctx = canvas.getContext('2d')!;
+        const scale = Math.min(size / img.width, size / img.height);
+        const w = img.width * scale;
+        const h = img.height * scale;
+        ctx.drawImage(img, (size - w) / 2, (size - h) / 2, w, h);
+        const resized = canvas.toDataURL('image/jpeg', 0.85);
+        localStorage.setItem(`portal-avatar-${user.id}`, resized);
+        // Dispatch custom event so header dropdown updates live
+        window.dispatchEvent(new CustomEvent('portal-avatar-change', { detail: { userId: user.id, url: resized } }));
+        setAvatarUrl(resized);
+        setAvatarUploading(false);
+        toast.success('Profile photo updated');
+      };
+      img.src = dataUrl;
+    };
+    reader.readAsDataURL(file);
+    // Reset input so same file can be re-selected
+    e.target.value = '';
+  };
+
+  const handleRemoveAvatar = () => {
+    if (!user) return;
+    localStorage.removeItem(`portal-avatar-${user.id}`);
+    window.dispatchEvent(new CustomEvent('portal-avatar-change', { detail: { userId: user.id, url: null } }));
+    setAvatarUrl(null);
+    toast.success('Profile photo removed');
+  };
+
+  const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith('image/')) { toast.error('Please select an image file'); return; }
+    if (file.size > 2 * 1024 * 1024) { toast.error('Image must be smaller than 2 MB'); return; }
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const dataUrl = ev.target?.result as string;
+      const img = new window.Image();
+      img.onload = () => {
+        const size = 128;
+        const canvas = document.createElement('canvas');
+        canvas.width = size; canvas.height = size;
+        const ctx = canvas.getContext('2d')!;
+        const scale = Math.min(size / img.width, size / img.height);
+        const w = img.width * scale; const h = img.height * scale;
+        ctx.drawImage(img, (size - w) / 2, (size - h) / 2, w, h);
+        const resized = canvas.toDataURL('image/png');
+        const next = saveBranding({ logoSrc: resized });
+        setBranding(next);
+        toast.success('Logo updated');
+      };
+      img.src = dataUrl;
+    };
+    reader.readAsDataURL(file);
+    e.target.value = '';
+  };
+
+  const handleBrandingTextSave = () => {
+    const next = saveBranding({ companyName: branding.companyName, tagline: branding.tagline });
+    setBranding(next);
+    toast.success('Branding saved');
+  };
+
+  const handleResetBranding = () => {
+    resetBranding();
+    setBranding(loadBranding());
+    toast.success('Branding reset to defaults');
+  };
+
+  const handleThemeSelect = (mode: 'light' | 'dark' | 'system') => {
+    setThemeMode(mode);
+    if (mode === 'system') {
+      const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      if ((prefersDark && theme === 'light') || (!prefersDark && theme === 'dark')) toggleTheme();
+      localStorage.removeItem('theme');
+    } else {
+      if (mode !== theme) toggleTheme();
+    }
+  };
 
   const handleUpdateProfile = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-
-    // Optimistic update: update local auth store immediately so UI reflects changes
-    const previousUser = user;
+    const prev = user;
     try {
-      if (setAuth && user) {
-        const optimisticUser = { ...user, name: formData.name, phone: formData.phone } as typeof user;
-        // setAuth expects (user, token)
-        setAuth(optimisticUser, token || '');
-      }
-
-      const response = await fetch('/api/portal/settings/profile', {
+      if (setAuth && user) setAuth({ ...user, name: profileForm.name, phone: profileForm.phone }, token || '');
+      const res = await fetch('/api/portal/settings/profile', {
         method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify({
-          name: formData.name,
-          phone: formData.phone,
-        }),
+        headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        body: JSON.stringify({ name: profileForm.name, phone: profileForm.phone }),
       });
-
-      const data = await response.json();
-
-      if (data.success && data.data) {
-        // Ensure store matches authoritative server response (may include normalized fields)
-        if (setAuth) {
-          setAuth({ ...user, ...data.data }, token || '');
-        }
-        // show inline saved badge and toast
+      const data = await res.json();
+      if (data.success) {
+        if (setAuth && user) setAuth({ ...user, ...data.data }, token || '');
         setSaved(true);
-        toast.success('Profile updated successfully');
-        // hide saved badge after 3 seconds
+        toast.success('Profile updated');
         setTimeout(() => setSaved(false), 3000);
       } else {
-        // Revert optimistic update
-        if (setAuth && previousUser) setAuth(previousUser, token || '');
-        toast.error(data.error || 'Failed to update profile');
+        if (setAuth && prev) setAuth(prev, token || '');
+        toast.error(data.error || 'Update failed');
       }
-    } catch (error) {
-      console.error('Profile update error:', error);
-      // Revert optimistic update
-      if (setAuth && previousUser) setAuth(previousUser, token || '');
+    } catch {
+      if (setAuth && prev) setAuth(prev, token || '');
       toast.error('An error occurred');
-    } finally {
-      setLoading(false);
-    }
+    } finally { setLoading(false); }
   };
 
   const handleChangePassword = async (e: React.FormEvent) => {
     e.preventDefault();
-
-    if (formData.newPassword !== formData.confirmPassword) {
-      toast.error('Passwords do not match');
-      return;
-    }
-
-    if (formData.newPassword.length < 8) {
-      toast.error('Password must be at least 8 characters');
-      return;
-    }
-
+    if (pwForm.next !== pwForm.confirm) { toast.error('Passwords do not match'); return; }
+    if (pwForm.next.length < 8) { toast.error('Minimum 8 characters'); return; }
     setLoading(true);
-
     try {
-      const response = await fetch('/api/portal/settings/password', {
+      const res = await fetch('/api/portal/settings/password', {
         method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify({
-          currentPassword: formData.currentPassword,
-          newPassword: formData.newPassword,
-        }),
+        headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        body: JSON.stringify({ currentPassword: pwForm.current, newPassword: pwForm.next }),
       });
-
-      const data = await response.json();
-
+      const data = await res.json();
       if (data.success) {
-        toast.success('Password changed successfully');
-        setEditingPassword(false);
-        setFormData(prev => ({
-          ...prev,
-          currentPassword: '',
-          newPassword: '',
-          confirmPassword: '',
-        }));
+        toast.success('Password changed');
+        setPwForm({ current: '', next: '', confirm: '' });
       } else {
         toast.error(data.error || 'Failed to change password');
       }
-    } catch (error) {
-      console.error('Password change error:', error);
-      toast.error('An error occurred');
-    } finally {
-      setLoading(false);
-    }
+    } catch { toast.error('An error occurred'); }
+    finally { setLoading(false); }
   };
 
-  // If the auth state isn't mounted yet, show a spinner
-  if (!mounted) {
+  if (!mounted || !user) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <p className="text-gray-600">Loading...</p>
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <div className="w-8 h-8 border-4 border-[hsl(var(--primary))] border-t-transparent rounded-full animate-spin" />
       </div>
     );
   }
 
-  // Show a friendly message if the user isn't authenticated
-  if (!user) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="text-center">
-          <h2 className="text-xl font-semibold mb-2">Not signed in</h2>
-          <p className="text-sm text-gray-600 mb-4">Please sign in to manage your portal settings.</p>
-          <Link href="/auth/login">
-            <Button>Sign in</Button>
-          </Link>
-        </div>
-      </div>
-    );
-  }
+  const initials = user.name?.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase() || 'RG';
+  const roleLabel: Record<string, string> = { super_admin: 'Super Admin', admin: 'Admin', portal_user: 'Portal User', customer: 'Customer' };
 
-  // Try to read shop/portalUser info from user metadata if available
-  // (Some apps store portal/shop relation in the user's session/metadata)
-  const userMeta = user as unknown as { currentShop?: { name?: string; location?: string }; position?: string };
-  const shop = userMeta.currentShop ?? null;
-  const portalPosition = userMeta.position ?? 'N/A';
+  // Light preview
+  const lightPreview = (
+    <div className="w-full h-full bg-white flex flex-col p-2 gap-1">
+      <div className="flex gap-1"><div className="w-8 h-1.5 rounded bg-gray-800" /><div className="w-5 h-1.5 rounded bg-gray-300" /></div>
+      <div className="flex gap-1 mt-1"><div className="w-3 h-8 rounded bg-gray-100 border border-gray-200" /><div className="flex-1"><div className="w-full h-2 rounded bg-gray-100 mb-1" /><div className="w-3/4 h-2 rounded bg-gray-100" /></div></div>
+      <div className="mt-1 w-12 h-3 rounded bg-violet-500" />
+    </div>
+  );
+  const darkPreview = (
+    <div className="w-full h-full bg-gray-950 flex flex-col p-2 gap-1">
+      <div className="flex gap-1"><div className="w-8 h-1.5 rounded bg-white" /><div className="w-5 h-1.5 rounded bg-gray-700" /></div>
+      <div className="flex gap-1 mt-1"><div className="w-3 h-8 rounded bg-gray-800 border border-gray-700" /><div className="flex-1"><div className="w-full h-2 rounded bg-gray-800 mb-1" /><div className="w-3/4 h-2 rounded bg-gray-800" /></div></div>
+      <div className="mt-1 w-12 h-3 rounded bg-violet-500" />
+    </div>
+  );
+  const systemPreview = (
+    <div className="w-full h-full flex">
+      <div className="w-1/2 bg-white p-2"><div className="w-full h-1.5 rounded bg-gray-200 mb-1" /><div className="w-8 h-3 rounded bg-violet-400" /></div>
+      <div className="w-1/2 bg-gray-950 p-2"><div className="w-full h-1.5 rounded bg-gray-700 mb-1" /><div className="w-8 h-3 rounded bg-violet-500" /></div>
+    </div>
+  );
 
   return (
-    <div className="w-full bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800">
-      <PortalHeader
-        backHref="/dashboard"
-        title="Settings"
-        description="Manage your portal account"
-        breadcrumbs={[{ label: 'Portal', href: '/portal' }, { label: 'Settings' }]}
-        actions={<></>}
-      />
-
-      {/* Main Content */}
-      <div className="max-w-2xl mx-auto px-4 sm:px-6 py-6 pb-12">
-        {/* Shop Information - render only if present */}
-        <Card className="mb-3">
-          <CardHeader>
-            <CardTitle>Shop Information</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {shop ? (
-              <>
-                <div>
-                  <Label className="text-xs text-gray-500">Shop Name</Label>
-                  <p className="font-medium">{shop.name}</p>
-                </div>
-                <div>
-                  <Label className="text-xs text-gray-500">Location</Label>
-                  <p className="font-medium">{shop.location}</p>
-                </div>
-                <div>
-                  <Label className="text-xs text-gray-500">Your Position</Label>
-                  <p className="font-medium capitalize">{portalPosition}</p>
-                </div>
-              </>
-            ) : (
-              <div>
-                <p className="text-sm text-gray-600">No shop selected. Shop-specific settings will appear here when available.</p>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* Profile Information */}
-        <Card className="mb-6">
-          <CardHeader>
-            <CardTitle>Profile Information</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <form onSubmit={handleUpdateProfile} className="space-y-4">
-              <div>
-                <Label htmlFor="name">Full Name</Label>
-                <Input
-                  id="name"
-                  value={formData.name}
-                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  disabled={loading}
-                />
-              </div>
-
-              <div>
-                <Label htmlFor="email">Email Address</Label>
-                <Input
-                  id="email"
-                  type="email"
-                  value={formData.email}
-                  disabled
-                  className="opacity-50 cursor-not-allowed"
-                />
-                <p className="text-xs text-gray-500 mt-1">Email cannot be changed</p>
-              </div>
-
-              <div>
-                <Label htmlFor="phone">Phone Number</Label>
-                <Input
-                  id="phone"
-                  value={formData.phone}
-                  onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                  disabled={loading}
-                />
-              </div>
-
-              <Button
-                type="submit"
-                disabled={loading}
-                className="bg-purple-600 hover:bg-purple-700"
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-950">
+      {/* Page header — sticky */}
+      <div className="sticky top-0 z-30 bg-white dark:bg-gray-900 border-b border-[hsl(var(--border))] shadow-sm">
+        <div className="max-w-5xl mx-auto px-4 sm:px-6 py-6">
+          {/* Avatar + user summary */}
+          <div className="flex items-center gap-4">
+            {/* Clickable avatar */}
+            <div className="relative flex-shrink-0 group">
+              <input
+                ref={avatarInputRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={handleAvatarChange}
+              />
+              <button
+                type="button"
+                onClick={() => avatarInputRef.current?.click()}
+                className="w-16 h-16 rounded-full overflow-hidden ring-2 ring-[hsl(var(--primary)/0.3)] focus:outline-none focus:ring-[hsl(var(--primary))] transition-all"
+                aria-label="Change profile photo"
               >
-                {loading ? 'Updating...' : 'Update Profile'}
-              </Button>
-              {/* inline saved badge */}
-              {saved && (
-                <span className="inline-flex items-center gap-2 ml-3 text-green-700 bg-green-50 border border-green-100 px-2 py-1 rounded-full text-sm animate-pulse">
-                  <Check className="w-4 h-4" />
-                  Saved
+                {avatarUrl ? (
+                  <Image src={avatarUrl} alt="Profile" width={64} height={64} className="w-full h-full object-cover" unoptimized />
+                ) : (
+                  <div className="w-full h-full bg-[hsl(var(--primary))] flex items-center justify-center">
+                    <span className="text-xl font-bold text-white">{initials}</span>
+                  </div>
+                )}
+                {/* Hover overlay */}
+                <div className="absolute inset-0 rounded-full bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                  {avatarUploading
+                    ? <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    : <Camera className="h-5 w-5 text-white" />
+                  }
+                </div>
+              </button>
+            </div>
+            <div>
+              <h1 className="text-xl font-bold text-gray-900 dark:text-white">{user.name}</h1>
+              <div className="flex items-center gap-2 mt-1">
+                <span className="text-sm text-gray-500 dark:text-gray-400">{user.email}</span>
+                <span className="px-2 py-0.5 text-[10px] font-semibold rounded-full bg-[hsl(var(--primary)/0.12)] text-[hsl(var(--primary))]">
+                  {roleLabel[user.role] ?? 'Portal'}
                 </span>
-              )}
-            </form>
-          </CardContent>
-        </Card>
-
-        {/* Change Password */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Security</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {!editingPassword ? (
-              <Button
-                onClick={() => setEditingPassword(true)}
-                variant="outline"
+              </div>
+              <button
+                type="button"
+                onClick={() => avatarInputRef.current?.click()}
+                className="mt-1.5 text-xs text-[hsl(var(--primary))] hover:underline"
               >
-                Change Password
-              </Button>
-            ) : (
-              <form onSubmit={handleChangePassword} className="space-y-4">
-                <div>
-                  <Label htmlFor="currentPassword">Current Password</Label>
-                  <Input
-                    id="currentPassword"
-                    type="password"
-                    value={formData.currentPassword}
-                    onChange={(e) => setFormData({ ...formData, currentPassword: e.target.value })}
-                    disabled={loading}
-                  />
-                </div>
+                {avatarUrl ? 'Change photo' : 'Upload photo'}
+              </button>
+              {avatarUrl && (
+                <button
+                  type="button"
+                  onClick={handleRemoveAvatar}
+                  className="ml-3 mt-1.5 text-xs text-red-500 hover:underline"
+                >
+                  Remove
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
 
-                <div>
-                  <Label htmlFor="newPassword">New Password</Label>
-                  <Input
-                    id="newPassword"
-                    type="password"
-                    value={formData.newPassword}
-                    onChange={(e) => setFormData({ ...formData, newPassword: e.target.value })}
-                    disabled={loading}
-                  />
-                  <p className="text-xs text-gray-500 mt-1">Minimum 8 characters</p>
-                </div>
+        {/* Tab row */}
+        <div className="max-w-5xl mx-auto px-4 sm:px-6">
+          <div className="flex gap-1 overflow-x-auto scrollbar-none -mb-px">
+            {TABS.map(tab => {
+              const Icon = tab.icon;
+              const active = activeTab === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setActiveTab(tab.id)}
+                  className={`flex items-center gap-2 px-4 py-3 text-sm font-medium whitespace-nowrap border-b-2 transition-colors
+                    ${active
+                      ? 'border-[hsl(var(--primary))] text-[hsl(var(--primary))]'
+                      : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:border-gray-300'
+                    }`}
+                >
+                  <Icon className="h-4 w-4" />
+                  {tab.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      </div>
 
-                <div>
-                  <Label htmlFor="confirmPassword">Confirm New Password</Label>
-                  <Input
-                    id="confirmPassword"
-                    type="password"
-                    value={formData.confirmPassword}
-                    onChange={(e) => setFormData({ ...formData, confirmPassword: e.target.value })}
-                    disabled={loading}
-                  />
-                </div>
+      {/* Tab content */}
+      <div className="max-w-5xl mx-auto px-4 sm:px-6 py-8 space-y-6">
 
-                <div className="flex gap-3">
-                  <Button
-                    type="submit"
-                    disabled={loading}
-                    className="bg-purple-600 hover:bg-purple-700"
+        {/* ── PROFILE ────────────────────────────────────────────── */}
+        {activeTab === 'profile' && (
+          <>
+            <Section title="Profile Photo" description="Click the avatar or the button to upload a new photo. Max 2 MB, any image format.">
+              <div className="flex items-center gap-5">
+                {/* Avatar preview */}
+                <div className="relative group flex-shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => avatarInputRef.current?.click()}
+                    className="w-20 h-20 rounded-full overflow-hidden ring-2 ring-[hsl(var(--primary)/0.25)] hover:ring-[hsl(var(--primary))] focus:outline-none transition-all"
+                    aria-label="Change profile photo"
                   >
-                    {loading ? 'Updating...' : 'Update Password'}
-                  </Button>
+                    {avatarUrl ? (
+                      <Image src={avatarUrl} alt="Profile" width={80} height={80} className="w-full h-full object-cover" unoptimized />
+                    ) : (
+                      <div className="w-full h-full bg-[hsl(var(--primary))] flex items-center justify-center">
+                        <span className="text-2xl font-bold text-white">{initials}</span>
+                      </div>
+                    )}
+                    <div className="absolute inset-0 rounded-full bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                      {avatarUploading
+                        ? <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                        : <Camera className="h-5 w-5 text-white" />
+                      }
+                    </div>
+                  </button>
+                </div>
+                <div className="flex flex-col gap-2">
                   <Button
                     type="button"
                     variant="outline"
-                    onClick={() => {
-                      setEditingPassword(false);
-                      setFormData(prev => ({
-                        ...prev,
-                        currentPassword: '',
-                        newPassword: '',
-                        confirmPassword: '',
-                      }));
-                    }}
-                    disabled={loading}
+                    onClick={() => avatarInputRef.current?.click()}
+                    disabled={avatarUploading}
                   >
-                    Cancel
+                    <Camera className="h-4 w-4 mr-2" />
+                    {avatarUploading ? 'Uploading…' : avatarUrl ? 'Change Photo' : 'Upload Photo'}
+                  </Button>
+                  {avatarUrl && (
+                    <Button type="button" variant="ghost" onClick={handleRemoveAvatar} className="text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20">
+                      Remove Photo
+                    </Button>
+                  )}
+                  <p className="text-xs text-gray-400 dark:text-gray-500">JPG, PNG, GIF · Max 2 MB</p>
+                </div>
+              </div>
+            </Section>
+            <Section title="Personal Information" description="Update your name and contact details.">
+              <form onSubmit={handleUpdateProfile}>
+                <FieldRow label="Full Name">
+                  <Input
+                    value={profileForm.name}
+                    onChange={e => setProfileForm(p => ({ ...p, name: e.target.value }))}
+                    disabled={loading}
+                    placeholder="Your full name"
+                  />
+                </FieldRow>
+                <FieldRow label="Email Address" hint="Cannot be changed">
+                  <div className="relative">
+                    <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                    <Input value={user.email} disabled className="pl-9 opacity-60 cursor-not-allowed" />
+                  </div>
+                </FieldRow>
+                <FieldRow label="Phone Number">
+                  <div className="relative">
+                    <Phone className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                    <Input
+                      value={profileForm.phone}
+                      onChange={e => setProfileForm(p => ({ ...p, phone: e.target.value }))}
+                      disabled={loading}
+                      placeholder="+254 7XX XXX XXX"
+                      className="pl-9"
+                    />
+                  </div>
+                </FieldRow>
+                <div className="flex items-center gap-3 pt-4">
+                  <Button type="submit" disabled={loading}>
+                    {loading ? 'Saving…' : 'Save Changes'}
+                  </Button>
+                  {saved && (
+                    <span className="inline-flex items-center gap-1.5 text-sm text-green-600 dark:text-green-400 font-medium">
+                      <Check className="h-4 w-4" /> Saved
+                    </span>
+                  )}
+                </div>
+              </form>
+            </Section>
+
+            <Section title="Account Details" description="Your role and account metadata.">
+              <div className="space-y-3">
+                {[
+                  { label: 'Role', value: roleLabel[user.role] ?? user.role },
+                  { label: 'User ID', value: user.id },
+                  { label: 'Member since', value: new Date(user.createdAt).toLocaleDateString('en-KE', { year: 'numeric', month: 'long', day: 'numeric' }) },
+                ].map(row => (
+                  <div key={row.label} className="flex items-center justify-between py-3 border-b border-[hsl(var(--border))] last:border-0">
+                    <span className="text-sm text-gray-500 dark:text-gray-400">{row.label}</span>
+                    <span className="text-sm font-medium text-gray-900 dark:text-white font-mono">{row.value}</span>
+                  </div>
+                ))}
+              </div>
+            </Section>
+          </>
+        )}
+
+        {/* ── APPEARANCE ─────────────────────────────────────────── */}
+        {activeTab === 'appearance' && (
+          <>
+            <Section title="Theme" description="Choose how the portal looks. Your preference is saved to this browser.">
+              <div className="grid grid-cols-3 gap-4 pt-2">
+                <ThemeCard label="Light" icon={Sun} active={themeMode === 'light'} onClick={() => handleThemeSelect('light')} preview={lightPreview} />
+                <ThemeCard label="Dark" icon={Moon} active={themeMode === 'dark'} onClick={() => handleThemeSelect('dark')} preview={darkPreview} />
+                <ThemeCard label="System" icon={Monitor} active={themeMode === 'system'} onClick={() => handleThemeSelect('system')} preview={systemPreview} />
+              </div>
+            </Section>
+
+            <Section title="Density" description="Adjust the spacing of the interface.">
+              <div className="flex gap-3">
+                {(['Compact', 'Default', 'Comfortable'] as const).map(d => (
+                  <button
+                    key={d}
+                    type="button"
+                    className={`flex-1 py-3 rounded-xl border-2 text-sm font-medium transition-all
+                      ${d === 'Default'
+                        ? 'border-[hsl(var(--primary))] bg-[hsl(var(--primary)/0.06)] text-[hsl(var(--primary))]'
+                        : 'border-[hsl(var(--border))] text-gray-500 dark:text-gray-400 hover:border-[hsl(var(--primary)/0.4)]'
+                      }`}
+                  >
+                    {d === 'Default' && <Check className="h-3.5 w-3.5 inline mr-1.5" />}
+                    {d}
+                  </button>
+                ))}
+              </div>
+              <p className="text-xs text-gray-400 mt-3">Density controls are coming soon. Default is active.</p>
+            </Section>
+
+            <Section title="Accent Colour" description="Customise the portal's primary brand colour. Changes apply instantly.">
+              <div className="flex gap-3 flex-wrap">
+                {[
+                  { name: 'Purple',  hsl: '271 81% 56%' },
+                  { name: 'Indigo',  hsl: '243 75% 59%' },
+                  { name: 'Blue',    hsl: '217 91% 60%' },
+                  { name: 'Rose',    hsl: '347 77% 55%' },
+                  { name: 'Amber',   hsl: '38 92% 50%'  },
+                  { name: 'Emerald', hsl: '152 76% 40%' },
+                ].map(c => {
+                  const isActive = accentHsl === c.hsl;
+                  return (
+                    <button
+                      key={c.name}
+                      type="button"
+                      title={c.name}
+                      onClick={() => applyAccent(c.hsl)}
+                      className={`relative w-10 h-10 rounded-full border-2 border-white dark:border-gray-900 transition-all hover:scale-110 focus:outline-none
+                        ${isActive ? 'scale-110 outline outline-[3px] outline-offset-2' : 'hover:outline hover:outline-2 hover:outline-offset-2'}`}
+                      style={{ background: `hsl(${c.hsl})`, outlineColor: `hsl(${c.hsl})` }}
+                    >
+                      {isActive && (
+                        <Check className="h-4 w-4 text-white absolute inset-0 m-auto drop-shadow" />
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+              <p className="text-xs text-gray-400 dark:text-gray-500 mt-4">
+                Selected: <span className="font-medium text-gray-600 dark:text-gray-300" style={{ color: `hsl(${accentHsl})` }}>
+                  {(['Purple','Indigo','Blue','Rose','Amber','Emerald'].find(
+                    (_, i) => ['271 81% 56%','243 75% 59%','217 91% 60%','347 77% 55%','38 92% 50%','152 76% 40%'][i] === accentHsl
+                  )) ?? 'Custom'}
+                </span>
+              </p>
+            </Section>
+
+            {/* ── Branding ── */}
+            <Section title="Branding" description="Customise the logo, name, and tagline shown in the portal header. Stored in this browser.">
+              <input ref={logoInputRef} type="file" accept="image/*" className="hidden" onChange={handleLogoUpload} />
+
+              {/* Logo upload */}
+              <div className="flex items-center gap-5 pb-5 border-b border-[hsl(var(--border))]">
+                {/* Preview */}
+                <button
+                  type="button"
+                  onClick={() => logoInputRef.current?.click()}
+                  className="relative w-16 h-16 rounded-2xl overflow-hidden border-2 border-dashed border-[hsl(var(--border))] hover:border-[hsl(var(--primary))] flex items-center justify-center bg-gray-50 dark:bg-gray-800 transition-all group flex-shrink-0"
+                >
+                  {branding.logoSrc ? (
+                    <Image src={branding.logoSrc} alt="Logo" width={64} height={64} className="w-full h-full object-contain p-1" unoptimized />
+                  ) : (
+                    <Image src="/favicon.png" alt="Default logo" width={40} height={40} className="object-contain opacity-50" />
+                  )}
+                  <div className="absolute inset-0 rounded-2xl bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                    <Camera className="h-5 w-5 text-white" />
+                  </div>
+                </button>
+                <div className="flex flex-col gap-2">
+                  <div className="flex gap-2">
+                    <Button type="button" variant="outline" onClick={() => logoInputRef.current?.click()}>
+                      <ImageIcon className="h-4 w-4 mr-2" />
+                      {branding.logoSrc ? 'Change Logo' : 'Upload Logo'}
+                    </Button>
+                    {branding.logoSrc && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        onClick={() => { const n = saveBranding({ logoSrc: null }); setBranding(n); toast.success('Logo removed'); }}
+                        className="text-red-500 hover:text-red-600"
+                      >
+                        Remove
+                      </Button>
+                    )}
+                  </div>
+                  <p className="text-xs text-gray-400 dark:text-gray-500">PNG, SVG, JPG · Max 2 MB · Displayed at 36×36 px</p>
+                </div>
+              </div>
+
+              {/* Company name + tagline */}
+              <div className="pt-4 space-y-4">
+                <div>
+                  <Label className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5 block">Company Name</Label>
+                  <Input
+                    value={branding.companyName}
+                    onChange={e => setBranding(b => ({ ...b, companyName: e.target.value }))}
+                    placeholder="Royal Gene"
+                    maxLength={40}
+                  />
+                </div>
+                <div>
+                  <Label className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5 block">Tagline</Label>
+                  <Input
+                    value={branding.tagline}
+                    onChange={e => setBranding(b => ({ ...b, tagline: e.target.value }))}
+                    placeholder="Management Portal"
+                    maxLength={60}
+                  />
+                </div>
+
+                {/* Live preview */}
+                <div className="rounded-xl border border-[hsl(var(--border))] overflow-hidden">
+                  <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-widest px-3 pt-2.5 pb-1.5">Preview</p>
+                  <div className="flex items-center gap-2 px-3 pb-3">
+                    <div className="w-9 h-9 rounded-lg overflow-hidden flex items-center justify-center bg-gray-50 dark:bg-gray-800 border border-[hsl(var(--border))] flex-shrink-0">
+                      {branding.logoSrc
+                        ? <Image src={branding.logoSrc} alt="Logo preview" width={36} height={36} className="w-full h-full object-contain p-0.5" unoptimized />
+                        : <Image src="/favicon.png" alt="Default" width={28} height={28} className="object-contain" />
+                      }
+                    </div>
+                    <div>
+                      <p className="font-bold text-sm text-gray-900 dark:text-white leading-none">{branding.companyName || 'Company Name'}</p>
+                      <p className="text-[hsl(var(--primary))] text-xs leading-none mt-0.5">{branding.tagline || 'Tagline'}</p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-3 pt-1">
+                  <Button type="button" onClick={handleBrandingTextSave}>Save Branding</Button>
+                  <Button type="button" variant="ghost" onClick={handleResetBranding} className="text-gray-500">
+                    <RotateCcw className="h-3.5 w-3.5 mr-1.5" />
+                    Reset to Default
+                  </Button>
+                </div>
+              </div>
+            </Section>
+          </>
+        )}
+
+        {/* ── SECURITY ───────────────────────────────────────────── */}
+        {activeTab === 'security' && (
+          <>
+            <Section title="Change Password" description="Use a strong password of at least 8 characters.">
+              <form onSubmit={handleChangePassword}>
+                <FieldRow label="Current Password">
+                  <div className="relative">
+                    <Input
+                      type={showCurrentPw ? 'text' : 'password'}
+                      value={pwForm.current}
+                      onChange={e => setPwForm(p => ({ ...p, current: e.target.value }))}
+                      disabled={loading}
+                      placeholder="••••••••"
+                      className="pr-10"
+                    />
+                    <button type="button" tabIndex={-1} onClick={() => setShowCurrentPw(v => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
+                      {showCurrentPw ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
+                  </div>
+                </FieldRow>
+                <FieldRow label="New Password" hint="Min. 8 characters">
+                  <div className="relative">
+                    <Input
+                      type={showNewPw ? 'text' : 'password'}
+                      value={pwForm.next}
+                      onChange={e => setPwForm(p => ({ ...p, next: e.target.value }))}
+                      disabled={loading}
+                      placeholder="••••••••"
+                      className="pr-10"
+                    />
+                    <button type="button" tabIndex={-1} onClick={() => setShowNewPw(v => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
+                      {showNewPw ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
+                  </div>
+                  {/* Password strength bar */}
+                  {pwForm.next && (
+                    <div className="mt-2 flex gap-1">
+                      {[1,2,3,4].map(n => (
+                        <div key={n} className={`h-1 flex-1 rounded-full transition-colors ${
+                          pwForm.next.length >= n * 3
+                            ? n <= 2 ? 'bg-red-400' : n === 3 ? 'bg-yellow-400' : 'bg-green-500'
+                            : 'bg-gray-200 dark:bg-gray-700'
+                        }`} />
+                      ))}
+                    </div>
+                  )}
+                </FieldRow>
+                <FieldRow label="Confirm Password">
+                  <Input
+                    type="password"
+                    value={pwForm.confirm}
+                    onChange={e => setPwForm(p => ({ ...p, confirm: e.target.value }))}
+                    disabled={loading}
+                    placeholder="••••••••"
+                  />
+                  {pwForm.confirm && pwForm.next !== pwForm.confirm && (
+                    <p className="text-xs text-red-500 mt-1">Passwords do not match</p>
+                  )}
+                </FieldRow>
+                <div className="pt-4">
+                  <Button type="submit" disabled={loading || !pwForm.current || !pwForm.next || pwForm.next !== pwForm.confirm}>
+                    {loading ? 'Updating…' : 'Update Password'}
                   </Button>
                 </div>
               </form>
+            </Section>
+
+            <Section title="Active Sessions" description="You are currently signed in on 1 device.">
+              <div className="flex items-center justify-between py-3">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 rounded-lg bg-[hsl(var(--primary)/0.1)]">
+                    <Monitor className="h-5 w-5 text-[hsl(var(--primary))]" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-gray-900 dark:text-white">Current browser</p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">Active now</p>
+                  </div>
+                </div>
+                <span className="text-xs px-2 py-1 rounded-full bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 font-medium">This device</span>
+              </div>
+            </Section>
+
+            <Section title="Danger Zone" description="Irreversible account actions.">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-gray-900 dark:text-white">Sign out of portal</p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">You will need to sign in again to access the portal.</p>
+                </div>
+                <Button variant="destructive" onClick={() => openSignOut()}>
+                  <LogOut className="h-4 w-4 mr-2" />
+                  Sign Out
+                </Button>
+              </div>
+            </Section>
+          </>
+        )}
+
+        {/* ── SHOP INFO ──────────────────────────────────────────── */}
+        {activeTab === 'shop' && (
+          <>
+            <Section title="Assigned Shop" description="The shop assigned to your portal account.">
+              {currentShop ? (
+                <div className="space-y-0">
+                  {[
+                    { icon: Store, label: 'Shop Name', value: currentShop.name },
+                    { icon: MapPin, label: 'Location', value: currentShop.location || '—' },
+                    { icon: User, label: 'Your Position', value: currentPortalUser?.position || '—' },
+                    { icon: ShieldCheck, label: 'Portal User Status', value: currentPortalUser?.isActive ? 'Active' : 'Inactive' },
+                  ].map(row => (
+                    <div key={row.label} className="flex items-center gap-4 py-4 border-b border-[hsl(var(--border))] last:border-0">
+                      <div className="p-2 rounded-lg bg-[hsl(var(--primary)/0.1)] flex-shrink-0">
+                        <row.icon className="h-4 w-4 text-[hsl(var(--primary))]" />
+                      </div>
+                      <div className="flex-1">
+                        <p className="text-xs text-gray-500 dark:text-gray-400">{row.label}</p>
+                        <p className="text-sm font-medium text-gray-900 dark:text-white">{row.value}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-10">
+                  <Store className="h-10 w-10 text-gray-300 dark:text-gray-600 mx-auto mb-3" />
+                  <p className="text-sm text-gray-500 dark:text-gray-400">No shop assigned to your account.</p>
+                  <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">Contact your administrator to be assigned to a shop.</p>
+                </div>
+              )}
+            </Section>
+
+            {(user.role === 'admin' || user.role === 'super_admin') && (
+              <Section title="Admin Access" description="You have elevated privileges.">
+                <div className="flex items-center gap-3 p-4 rounded-xl bg-[hsl(var(--primary)/0.08)] border border-[hsl(var(--primary)/0.2)]">
+                  <ShieldCheck className="h-6 w-6 text-[hsl(var(--primary))]" />
+                  <div>
+                    <p className="text-sm font-semibold text-gray-900 dark:text-white">
+                      {user.role === 'super_admin' ? 'Super Administrator' : 'Administrator'}
+                    </p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">You can manage all shops, users, and portal settings.</p>
+                  </div>
+                </div>
+              </Section>
             )}
-          </CardContent>
-        </Card>
+          </>
+        )}
+
+        {/* ── NOTIFICATIONS ──────────────────────────────────────── */}
+        {activeTab === 'notifications' && (
+          <Section title="Notification Preferences" description="Choose which events send you notifications in the portal.">
+            <NotifRow
+              label="Low Stock Alerts"
+              desc="Get notified when a product goes below the threshold."
+              checked={notifs.lowStock}
+              onChange={v => setNotifs(p => ({ ...p, lowStock: v }))}
+            />
+            <NotifRow
+              label="New Sale Recorded"
+              desc="Notify when a sale is successfully submitted."
+              checked={notifs.newSale}
+              onChange={v => setNotifs(p => ({ ...p, newSale: v }))}
+            />
+            <NotifRow
+              label="Daily Summary"
+              desc="A daily digest of sales, stock, and activity."
+              checked={notifs.dailySummary}
+              onChange={v => setNotifs(p => ({ ...p, dailySummary: v }))}
+            />
+            <NotifRow
+              label="System Alerts"
+              desc="Critical platform notifications and downtime alerts."
+              checked={notifs.systemAlerts}
+              onChange={v => setNotifs(p => ({ ...p, systemAlerts: v }))}
+            />
+            <div className="pt-4">
+              <Button onClick={() => toast.success('Notification preferences saved')}>
+                Save Preferences
+              </Button>
+            </div>
+          </Section>
+        )}
+
+        {/* ── ABOUT ──────────────────────────────────────────────── */}
+        {activeTab === 'about' && (
+          <>
+            <Section title="Royal Gene Portal" description="Management portal for Royal Gene Collection shops.">
+              <div className="flex items-center gap-4 p-4 rounded-xl bg-[hsl(var(--primary)/0.06)] border border-[hsl(var(--primary)/0.15)]">
+                <div className="w-14 h-14 rounded-2xl bg-[hsl(var(--primary))] flex items-center justify-center flex-shrink-0 shadow-lg shadow-[hsl(var(--primary)/0.25)]">
+                  <Store className="h-7 w-7 text-white" />
+                </div>
+                <div>
+                  <p className="font-bold text-gray-900 dark:text-white text-lg">Royal Gene Portal</p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">Version 1.0.0 · Production</p>
+                </div>
+              </div>
+            </Section>
+
+            <Section title="System Information">
+              <div className="space-y-0">
+                {[
+                  { label: 'Platform', value: 'Next.js 15 · Vercel' },
+                  { label: 'Database', value: 'Supabase PostgreSQL' },
+                  { label: 'Region', value: 'East Africa (Nairobi)' },
+                  { label: 'Portal URL', value: 'portal.royalgenecollection.co.ke' },
+                  { label: 'Store URL', value: 'royalgenecollection.co.ke' },
+                ].map(row => (
+                  <div key={row.label} className="flex items-center justify-between py-3 border-b border-[hsl(var(--border))] last:border-0">
+                    <span className="text-sm text-gray-500 dark:text-gray-400">{row.label}</span>
+                    <span className="text-sm font-medium text-gray-900 dark:text-white">{row.value}</span>
+                  </div>
+                ))}
+              </div>
+            </Section>
+
+            <Section title="Support &amp; Links">
+              {[
+                { label: 'Documentation', href: '#', icon: ChevronRight },
+                { label: 'Contact Support', href: 'mailto:support@royalgenecollection.co.ke', icon: Mail },
+                { label: 'WhatsApp Support', href: 'https://wa.me/254726532387', icon: Phone },
+              ].map(link => (
+                <a
+                  key={link.label}
+                  href={link.href}
+                  target={link.href.startsWith('http') ? '_blank' : undefined}
+                  rel="noopener noreferrer"
+                  className="flex items-center justify-between py-3.5 border-b border-[hsl(var(--border))] last:border-0 hover:text-[hsl(var(--primary))] transition-colors group"
+                >
+                  <span className="text-sm font-medium text-gray-700 dark:text-gray-300 group-hover:text-[hsl(var(--primary))]">{link.label}</span>
+                  <link.icon className="h-4 w-4 text-gray-400 group-hover:text-[hsl(var(--primary))]" />
+                </a>
+              ))}
+            </Section>
+          </>
+        )}
+
       </div>
     </div>
   );
 }
 
-export default function PortalSettingsPage() {
-  return (
-    <PortalSettingsContent />
-  );
-}

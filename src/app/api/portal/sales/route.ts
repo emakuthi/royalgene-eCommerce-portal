@@ -320,21 +320,39 @@ export async function GET(request: NextRequest) {
     }
 
     const { searchParams } = new URL(request.url);
-    const shopId = searchParams.get('shopId');
+    let shopId = searchParams.get('shopId') || null;
     const limit = parseInt(searchParams.get('limit') || '50');
     const offset = parseInt(searchParams.get('offset') || '0');
 
-    if (!shopId) {
-      return jsonResponse({ success: false, error: 'Shop ID required' }, 400);
+    const isAdmin = payload.role === 'admin' || payload.role === 'super_admin';
+
+    // For portal_user: auto-resolve shopId from their PortalUser record when not provided
+    if (!shopId && !isAdmin) {
+      const { data: portalUser, error: puErr } = await supabaseAdmin
+        .from('PortalUser')
+        .select('shopId')
+        .eq('userId', payload.userId)
+        .single();
+
+      if (puErr || !portalUser?.shopId) {
+        logger.warn('Sales GET: portal user has no shop', { userId: payload.userId });
+        return jsonResponse({ success: false, error: 'No shop associated with this user' }, 403);
+      }
+      shopId = portalUser.shopId as string;
     }
 
-    // Get sales entries
-    const { data: sales, error } = await supabaseAdmin
+    // Build query — admins without a shopId get all sales across all shops
+    let query = supabaseAdmin
       .from('SalesEntry')
       .select('*, ProfitMargin(*)')
-      .eq('shopId', shopId)
       .order('createdAt', { ascending: false })
       .range(offset, offset + limit - 1);
+
+    if (shopId) {
+      query = query.eq('shopId', shopId);
+    }
+
+    const { data: sales, error } = await query;
 
     if (error) {
       logger.error('Failed to fetch sales', { error: error.message });

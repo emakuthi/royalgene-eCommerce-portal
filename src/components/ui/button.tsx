@@ -64,23 +64,26 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
 
     // Theme-aware variant classes
     const variantClasses: Record<Variant, string> = {
-      // Default (primary) buttons now use brand pink background with white text
+      // Default (primary): solid primary background, white text
       default:
-        theme === 'dark'
-          ? 'bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))] border border-transparent hover:brightness-90'
-          : 'bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))] border border-transparent hover:brightness-90',
-      destructive: theme === 'dark' ? 'bg-red-600 text-white hover:bg-red-700' : 'bg-red-600 text-white hover:bg-red-700',
-      // Outline uses pink border and text when unselected; transparent background
+        'bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))] border border-transparent hover:brightness-90 active:brightness-75',
+      destructive:
+        'bg-[hsl(var(--destructive))] text-[hsl(var(--destructive-foreground))] border border-transparent hover:brightness-90',
+      // Outline: primary-colored border + text, transparent bg
       outline:
         theme === 'dark'
-          ? 'bg-transparent border border-[hsl(var(--border))] text-[hsl(var(--primary-foreground))] hover:bg-[rgba(255,255,255,0.02)]'
-          : 'bg-transparent border border-[hsl(var(--border))] text-[hsl(var(--primary))] hover:bg-[rgba(0,0,0,0.02)]',
+          ? 'bg-transparent border border-[hsl(var(--border))] text-[hsl(var(--primary))] hover:bg-[hsl(var(--primary)/0.1)] hover:border-[hsl(var(--primary))]'
+          : 'bg-transparent border border-[hsl(var(--border))] text-[hsl(var(--primary))] hover:bg-[hsl(var(--primary)/0.06)] hover:border-[hsl(var(--primary))]',
       secondary:
         theme === 'dark'
-          ? 'bg-gray-800 text-gray-100 hover:bg-gray-700'
-          : 'bg-gray-100 text-gray-900 hover:bg-gray-200',
-      ghost: theme === 'dark' ? 'bg-transparent text-gray-100 hover:bg-gray-800' : 'bg-transparent text-gray-900 hover:bg-gray-100',
-      link: theme === 'dark' ? 'bg-transparent underline text-primary/90 hover:opacity-90' : 'bg-transparent underline text-primary hover:opacity-90',
+          ? 'bg-[hsl(var(--secondary))] text-[hsl(var(--secondary-foreground))] hover:brightness-110'
+          : 'bg-[hsl(var(--secondary))] text-[hsl(var(--secondary-foreground))] hover:brightness-95',
+      ghost:
+        theme === 'dark'
+          ? 'bg-transparent text-[hsl(var(--foreground))] hover:bg-[hsl(var(--primary)/0.1)] hover:text-[hsl(var(--primary))]'
+          : 'bg-transparent text-[hsl(var(--foreground))] hover:bg-[hsl(var(--primary)/0.06)] hover:text-[hsl(var(--primary))]',
+      link:
+        'bg-transparent underline text-[hsl(var(--primary))] hover:opacity-80 p-0 h-auto',
     }
 
     const rounded = borderRadius ? `rounded-[${borderRadius}]` : 'rounded-md'

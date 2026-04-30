@@ -5,7 +5,6 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   Dialog,
-  DialogTrigger,
   DialogContent,
   DialogHeader,
   DialogTitle,
@@ -16,7 +15,7 @@ import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { useHydratedAuth } from '@/lib/hooks';
 import { toast } from 'sonner';
-import { Trash2, Users, Crown, ShieldCheck, Store, ShoppingCart, Plus, X } from 'lucide-react';
+import { Trash2, Users, Crown, ShieldCheck, Store, ShoppingCart, Plus, X, Smartphone } from 'lucide-react';
 import StatCard from '@/components/ui/stat-card';
 import PortalHeader from '@/components/portal/PortalHeader';
 import { useTheme } from '@/lib/theme-context';
@@ -47,6 +46,7 @@ interface PortalUser {
   shopId?: string | null;
   position: string;
   isActive: boolean;
+  mobileAccess?: boolean;
   user?: {
     id: string;
     email: string;
@@ -69,13 +69,14 @@ function PortalUsersContent() {
   // Edit user modal state
   const [editingUser, setEditingUser] = useState<PortalUser | null>(null);
   const [updating, setUpdating] = useState(false);
-  const [editForm, setEditForm] = useState({ name: '', email: '', role: '', isActive: true });
+  const [editForm, setEditForm] = useState({ name: '', email: '', role: '', isActive: true, mobileAccess: true });
   const [editModalOpen, setEditModalOpen] = useState(false);
 
   // Create user modal state
   const [creating, setCreating] = useState(false);
-  const [newUser, setNewUser] = useState({ name: '', email: '', password: '', role: '' });
+  const [newUser, setNewUser] = useState({ name: '', email: '', password: '', position: '', shopId: '', mobileAccess: true });
   const [createModalOpen, setCreateModalOpen] = useState(false);
+  const [createShops, setCreateShops] = useState<AvailableShop[]>([]);
 
   // Manage shops modal state
   const [shopsModalOpen, setShopsModalOpen] = useState(false);
@@ -90,7 +91,7 @@ function PortalUsersContent() {
 
   const openEditModal = (user: PortalUser) => {
     setEditingUser(user);
-    setEditForm({ name: user.user?.name || '', email: user.user?.email || '', role: user.position || '', isActive: user.isActive });
+    setEditForm({ name: user.user?.name || '', email: user.user?.email || '', role: user.position || '', isActive: user.isActive, mobileAccess: user.mobileAccess !== false });
     setEditModalOpen(true);
   };
 
@@ -130,7 +131,7 @@ function PortalUsersContent() {
     if (!selectedShopToAdd || !shopsModalUser) return;
     setAddingShop(true);
     try {
-      const res = await fetch(`/api/admin/portal-users/${shopsModalUser.userId}/shops`, {
+      const res = await fetch(`/api/portal/users/${shopsModalUser.userId}/shops`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ shopId: selectedShopToAdd }),
@@ -168,7 +169,7 @@ function PortalUsersContent() {
     }
     setRemovingShopId(shopId);
     try {
-      const res = await fetch(`/api/admin/portal-users/${shopsModalUser.userId}/shops`, {
+      const res = await fetch(`/api/portal/users/${shopsModalUser.userId}/shops`, {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ shopId }),
@@ -207,10 +208,10 @@ function PortalUsersContent() {
     if (!editForm.name || !editForm.email || !editForm.role) return toast.error('Please fill required fields');
     setUpdating(true);
     try {
-      const res = await fetch(`/api/admin/portal-users/${editingUser.id}`, {
+      const res = await fetch(`/api/portal/users/${editingUser.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ name: editForm.name, email: editForm.email, role: editForm.role, isActive: editForm.isActive }),
+        body: JSON.stringify({ name: editForm.name, email: editForm.email, position: editForm.role, isActive: editForm.isActive, mobileAccess: editForm.mobileAccess }),
       });
       const json = await res.json();
       if (res.ok && json.success) {
@@ -244,7 +245,7 @@ function PortalUsersContent() {
 
   const fetchPortalUsers = useCallback(async () => {
     try {
-      const response = await fetch('/api/admin/portal-users', { headers: { Authorization: `Bearer ${token}` } });
+      const response = await fetch('/api/portal/users', { headers: { Authorization: `Bearer ${token}` } });
       if (response.ok) {
         const data = await response.json();
         if (data.success) setPortalUsers(data.data || []);
@@ -300,7 +301,7 @@ function PortalUsersContent() {
   const handleDelete = async (userId: string) => {
     setDeleting(userId);
     try {
-      const res = await fetch(`/api/admin/portal-users/${userId}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
+      const res = await fetch(`/api/portal/users/${userId}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
       if (res.ok) {
         toast.success('Portal user deleted');
         setPortalUsers(prev => prev.filter(u => u.id !== userId));
@@ -318,20 +319,20 @@ function PortalUsersContent() {
 
   const createUser = async (e?: React.FormEvent) => {
     e?.preventDefault();
-    if (!newUser.name || !newUser.email || !newUser.password || !newUser.role) return toast.error('Please fill required fields');
+    if (!newUser.name || !newUser.email || !newUser.password || !newUser.position || !newUser.shopId) return toast.error('Please fill all required fields including shop');
     setCreating(true);
     try {
-      const res = await fetch('/api/admin/portal-users', {
+      const res = await fetch('/api/portal/users', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ name: newUser.name, email: newUser.email, password: newUser.password, role: newUser.role }),
+        body: JSON.stringify({ name: newUser.name, email: newUser.email, password: newUser.password, position: newUser.position, shopId: newUser.shopId, mobileAccess: newUser.mobileAccess }),
       });
       const json = await res.json();
       if (json.success) {
         toast.success('User created');
         // Prefer server response for the new user
         if (json.data) setPortalUsers(prev => [json.data, ...prev]);
-        setNewUser({ name: '', email: '', password: '', role: '' });
+        setNewUser({ name: '', email: '', password: '', position: '', shopId: '', mobileAccess: true });
         setCreateModalOpen(false);
       } else {
         toast.error(json.error || 'Failed to create user');
@@ -361,56 +362,89 @@ function PortalUsersContent() {
         description="Manage users, roles, and access permissions across your boutique"
         breadcrumbs={[{ label: 'Portal', href: '/portal' }, { label: 'Users' }]}
         actions={(
-          <Dialog open={createModalOpen} onOpenChange={setCreateModalOpen}>
-            <DialogTrigger asChild>
-              <Button className={theme === 'dark' ? 'bg-pink-700 text-white' : 'bg-pink-600 text-white'}>+ Add User</Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Create New User</DialogTitle>
-                <DialogDescription>User Information</DialogDescription>
-              </DialogHeader>
-              <form onSubmit={(e) => { void createUser(e); }} className="space-y-4">
-                <div>
-                  <Label>Full Name *</Label>
-                  <Input value={newUser.name} onChange={(e) => setNewUser(prev => ({ ...prev, name: e.target.value }))} placeholder="Enter full name" />
-                </div>
-                <div>
-                  <Label>Email Address *</Label>
-                  <Input value={newUser.email} onChange={(e) => setNewUser(prev => ({ ...prev, email: e.target.value }))} placeholder="Enter email address" />
-                </div>
-                <div>
-                  <Label>Password *</Label>
-                  <Input type="password" value={newUser.password} onChange={(e) => setNewUser(prev => ({ ...prev, password: e.target.value }))} placeholder="Create a password" />
-                </div>
-                <div>
-                  <Label>User Role *</Label>
-                  <select className={`${controlClass} w-full`} value={newUser.role} onChange={(e) => setNewUser(prev => ({ ...prev, role: e.target.value }))}>
-                    <option value="" disabled>Select user role</option>
-                    <option value="owner">Business Owner</option>
-                    <option value="admin">Administrator</option>
-                    <option value="shopkeeper">Shopkeeper</option>
-                    <option value="sales_user">Sales User</option>
-                  </select>
-                </div>
-                <div className="rounded-md border border-amber-200 bg-amber-50 p-4">
-                  <h3 className="font-semibold">Security Notice</h3>
-                  <ul className="mt-2 text-sm list-disc pl-5 text-amber-800">
-                    <li>User will receive login credentials via email</li>
-                    <li>They will be prompted to change password on first login</li>
-                    <li>Access permissions are based on the assigned role</li>
-                    <li>Role and shop assignments can be modified later</li>
-                  </ul>
-                </div>
-                <div className="flex gap-3 pt-2">
-                  <Button type="submit" className={`flex-1 ${theme === 'dark' ? 'bg-pink-700 text-white' : 'bg-pink-600 text-white'}`} disabled={creating}>{creating ? 'Creating...' : 'Create User'}</Button>
-                  <Button variant="outline" type="button" onClick={() => setNewUser({ name: '', email: '', password: '', role: '' })}>Clear Form</Button>
-                </div>
-               </form>
-               </DialogContent>
-             </Dialog>
-           )}
+          <Button
+            onClick={async () => {
+              setCreateModalOpen(true);
+              if (createShops.length === 0) {
+                try {
+                  const res = await fetch('/api/portal/shops', { headers: { Authorization: `Bearer ${token}` } });
+                  const json = await res.json();
+                  if (json.success) setCreateShops(json.data || []);
+                } catch { /* ignore */ }
+              }
+            }}
+            className="bg-pink-600 hover:bg-pink-700 text-white font-semibold px-4 py-2 rounded-lg shadow flex items-center gap-2"
+          >
+            <Plus className="h-4 w-4" />
+            Add User
+          </Button>
+        )}
       />
+
+      {/* Create User Dialog — lives in the page body so it is never clipped by the sticky header */}
+      <Dialog open={createModalOpen} onOpenChange={(open) => { if (!open) { setCreateModalOpen(false); setNewUser({ name: '', email: '', password: '', position: '', shopId: '', mobileAccess: true }); } }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Create New Portal User</DialogTitle>
+            <DialogDescription>Fill in the details below to add a new user</DialogDescription>
+          </DialogHeader>
+          <form onSubmit={(e) => { void createUser(e); }} className="space-y-4 mt-1">
+            <div>
+              <Label>Full Name *</Label>
+              <Input value={newUser.name} onChange={(e) => setNewUser(prev => ({ ...prev, name: e.target.value }))} placeholder="Enter full name" />
+            </div>
+            <div>
+              <Label>Email Address *</Label>
+              <Input type="email" value={newUser.email} onChange={(e) => setNewUser(prev => ({ ...prev, email: e.target.value }))} placeholder="Enter email address" />
+            </div>
+            <div>
+              <Label>Password *</Label>
+              <Input type="password" value={newUser.password} onChange={(e) => setNewUser(prev => ({ ...prev, password: e.target.value }))} placeholder="Minimum 8 characters" />
+            </div>
+            <div>
+              <Label>User Role / Position *</Label>
+              <select className={`${controlClass} w-full`} value={newUser.position} onChange={(e) => setNewUser(prev => ({ ...prev, position: e.target.value }))}>
+                <option value="" disabled>Select user role</option>
+                <option value="owner">Business Owner</option>
+                <option value="admin">Administrator</option>
+                <option value="shopkeeper">Shopkeeper</option>
+                <option value="sales_user">Sales User</option>
+              </select>
+            </div>
+            <div>
+              <Label>Assign to Shop *</Label>
+              <select className={`${controlClass} w-full`} value={newUser.shopId} onChange={(e) => setNewUser(prev => ({ ...prev, shopId: e.target.value }))}>
+                <option value="" disabled>Select a shop</option>
+                {createShops.map(s => (
+                  <option key={s.id} value={s.id}>{s.name}{s.location ? ` — ${s.location}` : ''}</option>
+                ))}
+              </select>
+              {createShops.length === 0 && <p className="text-xs text-amber-600 mt-1">No shops available. Please create a shop first.</p>}
+            </div>
+            <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+              <p className="font-semibold mb-1">Security Notice</p>
+              <ul className="list-disc pl-4 space-y-0.5">
+                <li>Access permissions are based on the assigned role</li>
+                <li>Role and shop assignments can be modified later</li>
+              </ul>
+            </div>
+            <div className="flex items-center justify-between rounded-md border border-gray-200 px-3 py-2">
+              <div>
+                <p className="text-sm font-medium">Mobile App Access</p>
+                <p className="text-xs text-gray-500">Allow this user to log in to the mobile app</p>
+              </div>
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input type="checkbox" className="sr-only peer" checked={newUser.mobileAccess} onChange={(e) => setNewUser(prev => ({ ...prev, mobileAccess: e.target.checked }))} />
+                <div className="w-10 h-5 bg-gray-200 peer-checked:bg-pink-600 rounded-full peer transition-colors after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-5" />
+              </label>
+            </div>
+            <div className="flex gap-3 pt-1">
+              <Button type="submit" className={`flex-1 ${theme === 'dark' ? 'bg-pink-700 text-white' : 'bg-pink-600 text-white'}`} disabled={creating}>{creating ? 'Creating...' : 'Create User'}</Button>
+              <Button variant="outline" type="button" onClick={() => setNewUser({ name: '', email: '', password: '', position: '', shopId: '', mobileAccess: true })}>Clear</Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
 
       {/* Stat cards */}
       <div className="px-2 sm:px-2 py-6 pb-2 w-full">
@@ -480,7 +514,7 @@ function PortalUsersContent() {
                     <th className="py-3">Role</th>
                     <th className="py-3">Shop Assignment</th>
                     <th className="py-3">Status</th>
-                    <th className="py-3">Created</th>
+                    <th className="py-3">Mobile</th>
                     <th className="py-3">Actions</th>
                   </tr>
                 </thead>
@@ -526,7 +560,12 @@ function PortalUsersContent() {
                       <td className="py-4">
                         {u.isActive ? <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${theme === 'dark' ? 'bg-pink-800 text-white' : 'bg-pink-50 text-pink-700'}`}>Active</span> : <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${theme === 'dark' ? 'bg-amber-800 text-white' : 'bg-amber-50 text-amber-700'}`}>Inactive</span>}
                       </td>
-                      <td className={`py-4 ${textSecondary}`}>—</td>
+                      <td className="py-4">
+                        {u.mobileAccess !== false
+                          ? <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-50 text-emerald-700"><Smartphone className="h-3 w-3" />Yes</span>
+                          : <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-500"><Smartphone className="h-3 w-3" />No</span>
+                        }
+                      </td>
                       <td className="py-4">
                         <div className="flex items-center gap-3">
                           <Button variant="ghost" size="icon" onClick={() => openEditModal(u)} className="hover:text-slate-700">Edit</Button>
@@ -571,6 +610,16 @@ function PortalUsersContent() {
             <div className="flex items-center gap-2">
               <input id="active" type="checkbox" className="h-4 w-4" checked={editForm.isActive} onChange={(e) => setEditForm(prev => ({ ...prev, isActive: e.target.checked }))} />
               <label htmlFor="active" className="text-sm">Active</label>
+            </div>
+            <div className="flex items-center justify-between rounded-md border border-gray-200 px-3 py-2">
+              <div>
+                <p className="text-sm font-medium">Mobile App Access</p>
+                <p className="text-xs text-gray-500">Allow this user to log in to the mobile app</p>
+              </div>
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input type="checkbox" className="sr-only peer" checked={editForm.mobileAccess} onChange={(e) => setEditForm(prev => ({ ...prev, mobileAccess: e.target.checked }))} />
+                <div className="w-10 h-5 bg-gray-200 peer-checked:bg-pink-600 rounded-full peer transition-colors after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-5" />
+              </label>
             </div>
             <div className="flex gap-3 pt-2">
               <Button type="submit" className={`flex-1 ${theme === 'dark' ? 'bg-pink-700 text-white' : 'bg-pink-600 text-white'}`} disabled={updating}>{updating ? 'Updating...' : 'Update User'}</Button>

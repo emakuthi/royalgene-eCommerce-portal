@@ -171,7 +171,7 @@ export default function PortalRegisterPage() {
               <Button
                 type="submit"
                 disabled={loading}
-                className="w-full bg-purple-600 hover:bg-purple-700"
+                className="w-full bg-[hsl(var(--primary))] hover:brightness-90 text-white"
               >
                 {loading ? 'Creating account...' : 'Register'}
               </Button>
@@ -180,7 +180,7 @@ export default function PortalRegisterPage() {
             <div className="mt-6 text-center text-sm">
               <p className="text-gray-600">
                 Already have an account?{' '}
-                <Link href="/login" className="text-purple-600 hover:text-purple-700 font-medium">
+                <Link href="/login" className="text-[hsl(var(--primary))] hover:opacity-80 font-medium">
                   Login here
                 </Link>
               </p>

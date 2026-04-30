@@ -8,22 +8,22 @@
   --card-foreground: 224 71.4% 4.1%;
   --popover: 0 0% 100%;
   --popover-foreground: 224 71.4% 4.1%;
-  /* Primary: pink-500 (#ec4899) roughly converted to HSL */
-  --primary: 330 81% 60%;
+  /* Primary: purple-600 (#9333ea) */
+  --primary: 271 81% 56%;
   /* Primary foreground (text/icons on primary) should be white */
   --primary-foreground: 0 0% 100%;
   --secondary: 220 14.3% 95.9%;
   --secondary-foreground: 220.9 39.3% 11%;
   --muted: 220 14.3% 95.9%;
   --muted-foreground: 220 8.9% 46.1%;
-  --accent: 220 14.3% 95.9%;
-  --accent-foreground: 220.9 39.3% 11%;
-  --destructive: 0 62.8% 30.6%;
-  --destructive-foreground: 210 20% 98%;
-  --border: 215 27.9% 16.9%;
-  --input: 215 27.9% 16.9%;
+  --accent: 270 50% 95%;
+  --accent-foreground: 271 81% 40%;
+  --destructive: 0 84% 60%;
+  --destructive-foreground: 0 0% 100%;
+  --border: 220 13% 88%;
+  --input: 220 13% 88%;
   /* Ring uses primary hue for focus outlines */
-  --ring: 330 81% 60%;
+  --ring: 271 81% 56%;
   --chart-1: 220 70% 50%;
   --chart-2: 160 60% 45%;
   --chart-3: 30 80% 55%;
@@ -37,25 +37,24 @@
 
   --background: 224 71.4% 4.1%;
   --foreground: 0 0% 100%;
-  --card: 224 71.4% 4.1%;
+  --card: 222 47% 8%;
   --card-foreground: 0 0% 100%;
-  --popover: 224 71.4% 4.1%;
+  --popover: 222 47% 8%;
   --popover-foreground: 0 0% 100%;
-  /* Primary: slightly darker pink for dark mode */
-  --primary: 322 75% 48%;
+  /* Primary: lighter purple for dark backgrounds */
+  --primary: 271 70% 65%;
   --primary-foreground: 0 0% 100%;
   --secondary: 215 27.9% 16.9%;
   --secondary-foreground: 0 0% 100%;
   --muted: 215 27.9% 16.9%;
   --muted-foreground: 217.9 10.6% 64.9%;
-  --accent: 215 27.9% 16.9%;
-  --accent-foreground: 0 0% 100%;
-  --destructive: 0 62.8% 30.6%;
+  --accent: 271 40% 18%;
+  --accent-foreground: 271 70% 80%;
+  --destructive: 0 62.8% 50%;
   --destructive-foreground: 0 0% 100%;
-  /* Dark mode borders/inputs/ring use a muted pink tint */
-  --border: 322 75% 40%;
-  --input: 322 75% 40%;
-  --ring: 322 75% 48%;
+  --border: 217 19% 27%;
+  --input: 217 19% 27%;
+  --ring: 271 70% 65%;
   --chart-1: 220 70% 50%;
   --chart-2: 160 60% 45%;
   --chart-3: 30 80% 55%;
