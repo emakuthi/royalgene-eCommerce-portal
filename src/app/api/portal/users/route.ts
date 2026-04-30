@@ -1,10 +1,10 @@
-import { NextRequest } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase-client';
 import { verifyToken, hashPassword } from '@/lib/auth.server';
 import { jsonResponse, optionsResponse } from '@/lib/apiResponse';
 import { v4 as uuidv4 } from 'uuid';
 
-function requireAdmin(request: NextRequest) {
+function requireAdmin(request: NextRequest): NextResponse | ReturnType<typeof verifyToken> {
   const token = request.headers.get('Authorization')?.replace('Bearer ', '');
   if (!token) return jsonResponse({ success: false, error: 'Unauthorized' }, 401);
   const payload = verifyToken(token);
@@ -17,7 +17,7 @@ function requireAdmin(request: NextRequest) {
 // GET /api/portal/users — list all portal users with user + shop info
 export async function GET(request: NextRequest) {
   const auth = requireAdmin(request);
-  if ('status' in auth) return auth;
+  if (auth instanceof NextResponse) return auth;
 
   const { data, error } = await supabaseAdmin
     .from('PortalUser')
@@ -41,7 +41,7 @@ export async function GET(request: NextRequest) {
 // POST /api/portal/users — create User + PortalUser
 export async function POST(request: NextRequest) {
   const auth = requireAdmin(request);
-  if ('status' in auth) return auth;
+  if (auth instanceof NextResponse) return auth;
 
   const { name, email, password, position, shopId, isActive = true, mobileAccess = true } = await request.json();
 
@@ -85,4 +85,3 @@ export async function POST(request: NextRequest) {
 export function OPTIONS() {
   return optionsResponse('GET,POST,OPTIONS');
 }
-

@@ -1,10 +1,10 @@
-import { NextRequest } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase-client';
 import { verifyToken } from '@/lib/auth.server';
 import { jsonResponse, optionsResponse } from '@/lib/apiResponse';
 import { v4 as uuidv4 } from 'uuid';
 
-function requireAdmin(request: NextRequest) {
+function requireAdmin(request: NextRequest): NextResponse | ReturnType<typeof verifyToken> {
   const token = request.headers.get('Authorization')?.replace('Bearer ', '');
   if (!token) return jsonResponse({ success: false, error: 'Unauthorized' }, 401);
   const payload = verifyToken(token);
@@ -22,7 +22,7 @@ function requireAdmin(request: NextRequest) {
  */
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const auth = requireAdmin(request);
-  if ('status' in auth) return auth;
+  if (auth instanceof NextResponse) return auth;
 
   const { id: userId } = await params;
   const { shopId } = await request.json();
@@ -90,7 +90,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
  */
 export async function DELETE(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const auth = requireAdmin(request);
-  if ('status' in auth) return auth;
+  if (auth instanceof NextResponse) return auth;
 
   const { id: userId } = await params;
   const { shopId } = await request.json();
@@ -121,4 +121,3 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
 export function OPTIONS() {
   return optionsResponse('POST,DELETE,OPTIONS');
 }
-

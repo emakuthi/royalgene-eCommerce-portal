@@ -1,9 +1,9 @@
-import { NextRequest } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase-client';
 import { verifyToken } from '@/lib/auth.server';
 import { jsonResponse, optionsResponse } from '@/lib/apiResponse';
 
-function requireAdmin(request: NextRequest) {
+function requireAdmin(request: NextRequest): NextResponse | ReturnType<typeof verifyToken> {
   const token = request.headers.get('Authorization')?.replace('Bearer ', '');
   if (!token) return jsonResponse({ success: false, error: 'Unauthorized' }, 401);
   const payload = verifyToken(token);
@@ -16,7 +16,7 @@ function requireAdmin(request: NextRequest) {
 // PATCH /api/portal/users/[id] — update position, shopId, isActive, name, email
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const auth = requireAdmin(request);
-  if ('status' in auth) return auth;
+  if (auth instanceof NextResponse) return auth;
 
   const { id } = await params;
   const { name, email, position, shopId, isActive, mobileAccess } = await request.json();
@@ -58,7 +58,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 // DELETE /api/portal/users/[id] — delete PortalUser (and optionally the User row)
 export async function DELETE(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const auth = requireAdmin(request);
-  if ('status' in auth) return auth;
+  if (auth instanceof NextResponse) return auth;
 
   const { id } = await params;
 
@@ -82,4 +82,3 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
 export function OPTIONS() {
   return optionsResponse('PATCH,DELETE,OPTIONS');
 }
-
