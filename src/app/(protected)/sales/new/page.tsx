@@ -76,6 +76,7 @@ export default function NewSalePage() {
   const labelInactiveText = theme === 'dark' ? 'text-gray-300' : 'text-gray-700';
   const labelBgInactive = theme === 'dark' ? 'bg-gray-800' : 'bg-white';
 
+  // Set mounted to true after hydration so store values are available
   useEffect(() => setMounted(true), []);
 
   useEffect(() => {
@@ -138,12 +139,20 @@ export default function NewSalePage() {
             let productObj: Product | null = null;
             if (productRel && typeof productRel === 'object') {
               const maybe = productRel as Record<string, unknown>;
+              // parse images — stored as a text[] in Supabase; may arrive as array or JSON string
+              let images: string[] = [];
+              if (Array.isArray(maybe['images'])) {
+                images = (maybe['images'] as unknown[]).map(String).filter(Boolean);
+              } else if (typeof maybe['images'] === 'string') {
+                try { images = JSON.parse(maybe['images'] as string); } catch { /* ignore */ }
+              }
               productObj = {
                 id: String(maybe['id'] ?? ''),
                 name: String(maybe['name'] ?? ''),
                 price: typeof maybe['price'] === 'number' ? (maybe['price'] as number) : (typeof maybe['price'] === 'string' ? Number(maybe['price']) : undefined),
                 sku: String(maybe['sku'] ?? ''),
                 description: typeof maybe['description'] === 'string' ? maybe['description'] as string : undefined,
+                images,
               } as unknown as Product;
             }
 
@@ -380,30 +389,86 @@ export default function NewSalePage() {
                     ) : stocks.length === 0 ? (
                       <div className="rounded-md border border-muted px-3 py-2 text-sm text-gray-500">No stock items found for this shop. Add products to stock first.</div>
                     ) : (
-                      <select className="block w-full rounded-md border border-input bg-white dark:bg-gray-950 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder:text-gray-500 dark:placeholder:text-gray-400 focus:outline-none focus:ring-1 focus:ring-ring" value={formData.shopStockId} onChange={(e) => {
-                        const id = e.target.value;
-                        const stock = stocks.find(s => s.id === id);
-                        const product = stock?.product ?? stock?.Product;
-                        const price = product?.price ?? 0;
-                        setFormData(prev => ({
-                          ...prev,
-                          shopStockId: id,
-                          productId: stock?.productId ?? prev.productId,
-                          unitPrice: price,
-                        }));
-                      }}>
-                        <option value="">Select a product from stock</option>
-                        {stocks.map(s => {
-                          const product = s.product ?? s.Product;
-                          const productName = product?.name ?? 'Unknown Product';
-                          const productSku = product?.sku ?? 'N/A';
+                      <>
+                        <select className="block w-full rounded-md border border-input bg-white dark:bg-gray-950 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder:text-gray-500 dark:placeholder:text-gray-400 focus:outline-none focus:ring-1 focus:ring-ring" value={formData.shopStockId} onChange={(e) => {
+                          const id = e.target.value;
+                          const stock = stocks.find(s => s.id === id);
+                          const product = stock?.product ?? stock?.Product;
+                          const price = product?.price ?? 0;
+                          setFormData(prev => ({
+                            ...prev,
+                            shopStockId: id,
+                            productId: stock?.productId ?? prev.productId,
+                            unitPrice: price,
+                          }));
+                        }}>
+                          <option value="">Select a product from stock</option>
+                          {stocks.map(s => {
+                            const product = s.product ?? s.Product;
+                            const productName = product?.name ?? 'Unknown Product';
+                            const productSku = product?.sku ?? 'N/A';
+                            return (
+                              <option key={s.id} value={s.id} disabled={s.quantity <= 0}>
+                                {productName} — SKU: {productSku} — Stock: {s.quantity} units
+                              </option>
+                            );
+                          })}
+                        </select>
+
+                        {/* ── Product image preview ── */}
+                        {(() => {
+                          const selectedStock = stocks.find(s => s.id === formData.shopStockId);
+                          if (!selectedStock) return null;
+                          const selectedProduct = selectedStock?.product ?? selectedStock?.Product;
+                          if (!selectedProduct) return null;
+                          const images: string[] = (selectedProduct as unknown as Record<string, unknown>)?.['images'] as string[] ?? [];
+                          const publicImages = images.filter(u => typeof u === 'string' && (u.startsWith('http://') || u.startsWith('https://')));
                           return (
-                            <option key={s.id} value={s.id} disabled={s.quantity <= 0}>
-                              {productName} — SKU: {productSku} — Stock: {s.quantity} units
-                            </option>
+                            <div className="mt-3 p-3 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50">
+                              <p className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">📦 Product Preview</p>
+                              <div className="flex items-start gap-3">
+                                {/* Main image or placeholder */}
+                                {publicImages.length > 0 ? (
+                                  <img
+                                    src={publicImages[0]}
+                                    alt={selectedProduct.name}
+                                    className="w-24 h-24 rounded-lg object-cover border border-gray-200 dark:border-gray-600 flex-shrink-0 shadow-sm"
+                                    onError={(e) => { (e.target as HTMLImageElement).src = ''; (e.target as HTMLImageElement).className = 'hidden'; }}
+                                  />
+                                ) : (
+                                  <div className="w-24 h-24 rounded-lg border-2 border-dashed border-gray-300 dark:border-gray-600 flex-shrink-0 flex flex-col items-center justify-center bg-gray-100 dark:bg-gray-700/50">
+                                    <span className="text-2xl">👗</span>
+                                    <span className="text-xs text-gray-400 mt-1">No photo</span>
+                                  </div>
+                                )}
+                                {/* Extra thumbnails */}
+                                {publicImages.length > 1 && (
+                                  <div className="flex flex-wrap gap-1.5">
+                                    {publicImages.slice(1, 5).map((url, i) => (
+                                      <img
+                                        key={i}
+                                        src={url}
+                                        alt={`${selectedProduct.name} ${i + 2}`}
+                                        className="w-12 h-12 rounded-md object-cover border border-gray-200 dark:border-gray-600 shadow-sm"
+                                        onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                                      />
+                                    ))}
+                                  </div>
+                                )}
+                                {/* Product info alongside */}
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-sm font-semibold text-gray-800 dark:text-gray-100 truncate">{selectedProduct.name}</p>
+                                  {selectedProduct.sku && <p className="text-xs text-gray-400 mt-0.5">SKU: {selectedProduct.sku}</p>}
+                                  {selectedProduct.description && (
+                                    <p className="text-xs text-gray-500 dark:text-gray-400 line-clamp-2 mt-1">{selectedProduct.description}</p>
+                                  )}
+                                  <p className="text-xs text-gray-400 mt-1">Stock: <span className="font-medium text-gray-600 dark:text-gray-300">{selectedStock.quantity} units</span></p>
+                                </div>
+                              </div>
+                            </div>
                           );
-                        })}
-                      </select>
+                        })()}
+                      </>
                     )}
                   </div>
                 </div>
@@ -428,13 +493,24 @@ export default function NewSalePage() {
                 <div>
                   <Label>Payment Method *</Label>
                   <div className="flex items-center gap-3 mt-2">
-                    {['cash', 'mpesa', 'card'].map((method) => {
+                    {(['cash', 'mpesa', 'card'] as const).map((method) => {
                       const label = method === 'mpesa' ? 'M-Pesa' : method[0].toUpperCase() + method.slice(1);
+                      const icon  = method === 'mpesa' ? '📱' : method === 'card' ? '💳' : '💵';
                       const active = formData.paymentMethod === method;
+                      const activeCls = method === 'mpesa'
+                        ? 'bg-green-600 border-green-600 text-white'
+                        : method === 'card'
+                          ? 'bg-blue-600 border-blue-600 text-white'
+                          : 'bg-amber-500 border-amber-500 text-white';
                       return (
-                        <label key={method} className={`cursor-pointer inline-flex items-center gap-2 px-3 py-2 rounded-lg border ${active ? `bg-[hsl(var(--primary))] bg-opacity-10 border-[hsl(var(--primary))] ${labelActiveText}` : `${labelBgInactive} border-gray-200 ${labelInactiveText}`}`}>
+                        <label
+                          key={method}
+                          className={`cursor-pointer inline-flex items-center gap-1.5 px-4 py-2 rounded-lg border-2 font-medium text-sm transition-all select-none
+                            ${active ? activeCls : 'border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 hover:border-gray-400'}`}
+                        >
                           <input type="radio" name="paymentMethod" value={method} checked={active} onChange={() => setFormData({...formData, paymentMethod: method})} className="sr-only" />
-                          <span className="text-sm font-medium">{label}</span>
+                          <span>{icon}</span>
+                          <span>{label}</span>
                         </label>
                       );
                     })}
@@ -463,7 +539,7 @@ export default function NewSalePage() {
                 </div>
 
                 <div className="flex gap-3 pt-4">
-                  <Button type="submit" disabled={submitting} className="flex-1 bg-[hsl(var(--primary))] bg-opacity-10">{submitting ? (editingSaleId ? 'Saving...' : 'Recording sale...') : (editingSaleId ? 'Save changes' : 'Record Sale')}</Button>
+                  <Button type="submit" disabled={submitting} className="flex-1 bg-[hsl(var(--primary))] text-white hover:opacity-90">{submitting ? (editingSaleId ? 'Saving...' : 'Recording sale...') : (editingSaleId ? 'Save changes' : 'Record Sale')}</Button>
                   <Button variant="outline" type="button" onClick={() => router.push('/sales')}>{editingSaleId ? 'Cancel' : 'Back'}</Button>
                 </div>
               </form>

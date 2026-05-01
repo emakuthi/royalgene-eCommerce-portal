@@ -6,7 +6,11 @@ import { verifyMobileShopAccess } from '@/lib/mobile-shop-auth';
 
 /**
  * GET /api/mobile/shops/[shopId]/products/[productId]
- * Get detailed product information
+ * Get detailed product information.
+ *
+ * [productId] may be either:
+ *   • The Product UUID  (preferred — returned as `id` in the products list)
+ *   • The ShopStock UUID (fallback — returned as `shopStockId` in the products list)
  */
 export async function GET(
   request: NextRequest,
@@ -16,19 +20,37 @@ export async function GET(
     const { shopId, productId } = await context.params;
     const auth = await verifyMobileShopAccess(request, shopId);
     if (auth instanceof Response) return auth;
-    // Get shop stock for this product
-    const { data: shopStock, error: stockError } = await supabaseAdmin
+
+    // ── Primary lookup: ShopStock row where Product.id = productId ──────────
+    // Use the explicit FK alias so Supabase can resolve the join reliably.
+    let { data: shopStock, error: stockError } = await supabaseAdmin
       .from('ShopStock')
-      .select('*, Product(*)')
+      .select('*, Product!ShopStock_productId_fkey(*)')
       .eq('shopId', shopId)
       .eq('productId', productId)
-      .single();
+      .maybeSingle();
+
+    // ── Fallback: maybe the caller passed the ShopStock.id instead ───────────
+    if (!shopStock && !stockError) {
+      const fallback = await supabaseAdmin
+        .from('ShopStock')
+        .select('*, Product!ShopStock_productId_fkey(*)')
+        .eq('shopId', shopId)
+        .eq('id', productId)
+        .maybeSingle();
+
+      if (!fallback.error && fallback.data) {
+        shopStock = fallback.data;
+        stockError = null;
+      }
+    }
 
     if (stockError || !shopStock) {
       logger.warn('Mobile product not found', { 
         userId: auth.payload.userId,
         shopId,
         productId,
+        supabaseError: stockError?.message ?? null,
         endpoint: `/api/mobile/shops/${shopId}/products/${productId}`
       });
       return jsonResponse({ 
@@ -38,7 +60,25 @@ export async function GET(
       }, 404);
     }
 
-    logger.info('Mobile product details retrieved', { 
+    // The Product relation may arrive as an object or an array (Supabase quirk with some FK configs)
+    const prod = Array.isArray(shopStock.Product) ? shopStock.Product[0] : shopStock.Product;
+
+    if (!prod) {
+      logger.warn('Mobile product: ShopStock found but Product relation is null', {
+        userId: auth.payload.userId,
+        shopId,
+        productId,
+        shopStockId: shopStock.id,
+        endpoint: `/api/mobile/shops/${shopId}/products/${productId}`
+      });
+      return jsonResponse({
+        success: false,
+        error: 'Product data unavailable',
+        code: 'NOT_FOUND'
+      }, 404);
+    }
+
+    logger.info('Mobile product details retrieved', {
       userId: auth.payload.userId,
       shopId,
       productId,
@@ -49,18 +89,18 @@ export async function GET(
       success: true,
       data: {
         product: {
-          id: shopStock.Product.id,
+          id: prod.id,
           shopStockId: shopStock.id,
-          name: shopStock.Product.name,
-          sku: shopStock.Product.sku,
-          category: shopStock.Product.category,
-          description: shopStock.Product.description,
-          price: shopStock.Product.price,
-          costPrice: shopStock.Product.costPrice || 0,
+          name: prod.name,
+          sku: prod.sku,
+          category: prod.category,
+          description: prod.description,
+          price: prod.price,
+          costPrice: prod.costPrice || 0,
           quantity: shopStock.quantity,
-          images: shopStock.Product.images || [],
-          colors: shopStock.Product.colors || [],
-          sizes: shopStock.Product.sizes || [],
+          images: prod.images || [],
+          colors: prod.colors || [],
+          sizes: prod.sizes || [],
           reorderLevel: shopStock.reorderLevel || 5
         }
       }

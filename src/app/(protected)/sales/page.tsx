@@ -372,7 +372,7 @@ function SalesEntryContent() {
               <span className="text-sm">Filter</span>
             </Button>
             <Link href="/sales/new">
-              <Button className={`bg-[hsl(var(--primary))] bg-opacity-10 flex items-center gap-2 ${textPrimary}`}><span className="text-sm">+ New Sale</span></Button>
+              <Button className="bg-[hsl(var(--primary))] text-white flex items-center gap-2 hover:opacity-90"><span className="text-sm">+ New Sale</span></Button>
             </Link>
           </div>
         )}
@@ -453,9 +453,22 @@ function SalesEntryContent() {
                       </td>
                       <td className={`py-3 px-2 text-sm text-right font-semibold ${textPrimary}`}>{formatCurrency(s.totalAmount)}</td>
                       <td className="py-3 px-2 text-center hidden sm:table-cell">
-                        <span className={`px-2 py-1 rounded text-xs font-medium bg-[hsl(var(--primary))] bg-opacity-10 ${textPrimary}`}>
-                          {s.paymentMethod === 'mobile_money' ? 'M-Pesa' : (s.paymentMethod[0].toUpperCase() + s.paymentMethod.slice(1))}
-                        </span>
+                        {(() => {
+                          const pm = s.paymentMethod;
+                          const isMpesa = pm === 'mobile_money' || pm === 'mpesa';
+                          const isCard = pm === 'card';
+                          const label = isMpesa ? 'M-Pesa' : isCard ? 'Card' : 'Cash';
+                          const cls = isMpesa
+                            ? 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300'
+                            : isCard
+                              ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300'
+                              : 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300';
+                          return (
+                            <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold ${cls}`}>
+                              {isMpesa ? '📱' : isCard ? '💳' : '💵'} {label}
+                            </span>
+                          );
+                        })()}
                       </td>
                       <td className="py-3 px-2 text-center">
                         <div className="flex items-center justify-center gap-1">
