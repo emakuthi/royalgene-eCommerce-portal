@@ -27,8 +27,42 @@ export async function GET(request: NextRequest) {
 
     const { searchParams } = new URL(request.url);
     const shopId = searchParams.get('shopId');
+    const fetchAll = searchParams.get('all') === 'true';
 
-    logger.info('Fetching shop stock', { shopId, userId: payload.userId, endpoint: '/api/portal/stock', method: 'GET' });
+    logger.info('Fetching shop stock', { shopId, fetchAll, userId: payload.userId, endpoint: '/api/portal/stock', method: 'GET' });
+
+    // If fetchAll=true (admin/super_admin only), return stock for every shop with shop name enrichment
+    if (fetchAll) {
+      if (payload.role !== 'admin' && payload.role !== 'super_admin') {
+        return jsonResponse({ success: false, error: 'Forbidden: admin access required for all-shops stock' }, 403);
+      }
+
+      // Fetch all shops first so we can enrich stock rows with shop names
+      const { data: shops, error: shopsErr } = await supabaseAdmin.from('Shop').select('id, name').eq('isActive', true);
+      if (shopsErr) {
+        logger.error('All-stock fetch: failed to load shops', { error: shopsErr.message });
+        return jsonResponse({ success: false, error: 'Failed to fetch shops' }, 500);
+      }
+      const shopNameMap: Record<string, string> = {};
+      for (const s of (shops ?? [])) shopNameMap[s.id as string] = s.name as string;
+
+      const { data: allStocks, error: allErr } = await supabaseAdmin
+        .from('ShopStock')
+        .select('*, Product!ShopStock_productId_fkey(*)')
+        .order('createdAt', { ascending: false });
+
+      if (allErr) {
+        logger.error('All-stock fetch failed', { error: allErr.message });
+        return jsonResponse({ success: false, error: 'Failed to fetch all stock' }, 500);
+      }
+
+      const enriched = (allStocks ?? []).map((row: Record<string, unknown>) => ({
+        ...row,
+        shopName: shopNameMap[row.shopId as string] ?? null,
+      }));
+
+      return jsonResponse({ success: true, data: enriched }, 200);
+    }
 
     if (!shopId) {
       logger.warn('Stock fetch failed: shop ID required', { endpoint: '/api/portal/stock' });

@@ -123,6 +123,21 @@ export default ({
                   <Input placeholder="Add size and press Enter" onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); const v = (e.target as HTMLInputElement).value.trim(); if (v) { setViewForm({ ...viewForm, sizes: Array.from(new Set([...viewForm.sizes, v])) }); (e.target as HTMLInputElement).value = ''; } } }} />
                 </div>
               </div>
+
+              <div className="mt-4">
+                <p className="text-sm text-gray-600">Colors</p>
+                <div className="flex flex-wrap gap-2 mt-2">
+                  {(viewForm.colors || []).map(c => (
+                    <div key={c} className="inline-flex items-center gap-2 bg-gray-100 rounded-full px-2 py-1 text-xs">
+                      <span>{c}</span>
+                      <button type="button" className="p-1 rounded-full hover:bg-gray-200" onClick={() => setViewForm({ ...viewForm, colors: viewForm.colors.filter(x => x !== c) })}><X className="w-3 h-3" /></button>
+                    </div>
+                  ))}
+                </div>
+                <div className="flex gap-2 mt-2">
+                  <Input placeholder="Add color and press Enter" onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); const v = (e.target as HTMLInputElement).value.trim(); if (v) { setViewForm({ ...viewForm, colors: Array.from(new Set([...viewForm.colors, v])) }); (e.target as HTMLInputElement).value = ''; } } }} />
+                </div>
+              </div>
             </div>
 
             <div>

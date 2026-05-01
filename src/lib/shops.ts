@@ -12,7 +12,7 @@ export interface ApiResult<T = unknown> {
 export async function getShops<T = unknown>(token?: string | null, page = 1, limit = 25): Promise<ApiResult<T>> {
   try {
     const q = new URLSearchParams({ page: String(page), limit: String(limit) });
-    const res = await fetch(`/api/shops?${q.toString()}`, {
+    const res = await fetch(`/api/portal/shops?${q.toString()}`, {
       headers: token ? { Authorization: `Bearer ${token}` } : undefined,
     });
     const json = await res.json().catch(() => ({}));
@@ -89,7 +89,7 @@ export async function createShopPortal<T = unknown>(token?: string | null, paylo
 
 export async function getShopById<T = unknown>(token?: string | null, id?: string): Promise<ApiResult<T>> {
   try {
-    const url = id ? `/api/shops/${encodeURIComponent(id)}` : '/api/shops';
+    const url = id ? `/api/portal/shops/${encodeURIComponent(id)}` : '/api/portal/shops';
     const res = await fetch(url, {
       headers: token ? { Authorization: `Bearer ${token}` } : undefined,
     });

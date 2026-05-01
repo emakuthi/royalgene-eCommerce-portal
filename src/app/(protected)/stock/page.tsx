@@ -8,10 +8,18 @@ import { Input } from '@/components/ui/input';
 import { useHydratedAuth } from '@/lib/hooks';
 import { usePortalStore } from '@/lib/store';
 import { toast } from 'sonner';
-import { Search, Eye } from 'lucide-react';
+import { Search, Eye, ArrowRightLeft, MoreHorizontal, RefreshCw } from 'lucide-react';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import type { ShopStock, Product } from '@/lib/types';
 import { formatKESMajor } from '@/lib/format';
 import StockViewModal from './stock-view-modal';
+import StockTransferModal from './stock-transfer-modal';
 import * as stockApi from '@/lib/stockApi';
 import PortalHeader from '@/components/portal/PortalHeader';
 import { useTheme } from '@/lib/theme-context';
@@ -63,6 +71,13 @@ function StockManagementContent() {
   const [viewSaving, setViewSaving] = useState(false);
   const [viewDeleting, setViewDeleting] = useState(false);
   const [deleteStockTarget, setDeleteStockTarget] = useState<{ stockId: string; productId: string; name: string } | null>(null);
+  // Transfer modal state
+  const [isTransferModalOpen, setIsTransferModalOpen] = useState(false);
+  const [transferStock, setTransferStock] = useState<ApiShopStock | null>(null);
+  // Tab state: 'current' = current shop only, 'all' = all shops
+  const [activeTab, setActiveTab] = useState<'current' | 'all'>('current');
+  const [allStocks, setAllStocks] = useState<ApiShopStock[]>([]);
+  const [loadingAll, setLoadingAll] = useState(false);
   // Local editable form for the view modal (product + stock fields)
   const [viewForm, setViewForm] = useState<ViewFormType>({
     name: '',
@@ -151,6 +166,43 @@ function StockManagementContent() {
     fetchAllShopStocks();
   }, [mounted, currentShop, token, authUser?.role, _hasHydrated]);
 
+  // Fetch all stocks for the "All Products" tab
+  useEffect(() => {
+    if (!mounted || !token || !_hasHydrated) return;
+    if (activeTab !== 'all') return; // Only fetch when tab is active
+
+    const fetchAllStocks = async () => {
+      setLoadingAll(true);
+      try {
+        const response = await fetch('/api/portal/stock?all=true', { headers: { Authorization: `Bearer ${token}` } });
+        if (!response.ok) {
+          const txt = await response.text();
+          console.warn('[StockPage] all stocks fetch failed with status', response.status, txt);
+          toast.error('Failed to load all stock data');
+          setAllStocks([]);
+          return;
+        }
+        const json = await response.json();
+        if (json.success) {
+          const normalizedEnriched = (json.data || []).map((r: ApiShopStock) => ({ ...r, product: r.Product ?? r.product }));
+          setAllStocks(normalizedEnriched);
+        } else {
+          console.warn('[StockPage] all stocks API returned success=false', json);
+          toast.error(json.error || 'Failed to load all stock data');
+          setAllStocks([]);
+        }
+      } catch (error) {
+        console.error('Failed to fetch all stocks:', error);
+        toast.error('Failed to load all stock data');
+        setAllStocks([]);
+      } finally {
+        setLoadingAll(false);
+      }
+    };
+
+    fetchAllStocks();
+  }, [mounted, token, authUser?.role, _hasHydrated, activeTab]);
+
   // Derived metrics used by the new UI
   const metrics = useMemo(() => {
     const totalProducts = stocks.length;
@@ -166,7 +218,7 @@ function StockManagementContent() {
     return { totalProducts, stockValue, lowStock, outOfStock };
   }, [stocks]);
 
-  const filteredStocks = stocks.filter(stock =>
+  const filteredStocks = (activeTab === 'current' ? stocks : allStocks).filter(stock =>
     (stock.product?.name || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
     (stock.product?.sku || '').toLowerCase().includes(searchQuery.toLowerCase())
   );
@@ -346,8 +398,20 @@ function StockManagementContent() {
         <div className={`${tableBg} p-4 rounded shadow-sm`}>
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-3">
-              <Button variant="outline">Current Stock</Button>
-              <Button variant="ghost">All Products</Button>
+              <Button
+                variant={activeTab === 'current' ? 'default' : 'ghost'}
+                onClick={() => { setActiveTab('current'); setSearchQuery(''); }}
+                className="transition-colors"
+              >
+                Current Stock
+              </Button>
+              <Button
+                variant={activeTab === 'all' ? 'default' : 'ghost'}
+                onClick={() => { setActiveTab('all'); setSearchQuery(''); }}
+                className="transition-colors"
+              >
+                All Products
+              </Button>
             </div>
 
             <div className="flex items-center gap-3">
@@ -358,12 +422,96 @@ function StockManagementContent() {
             </div>
           </div>
 
-          <div className="overflow-x-auto">
+          {/* Loading state for All Products tab */}
+          {activeTab === 'all' && loadingAll && (
+            <div className="flex justify-center py-10">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" />
+            </div>
+          )}
+
+          {/* ── Mobile card grid (< md) ── */}
+          {!(activeTab === 'all' && loadingAll) && (
+          <>
+          <div className="block md:hidden space-y-3">
+            {filteredStocks.length === 0 && (
+              <div className={`text-center py-8 ${muted}`}>{stocks.length === 0 ? 'No stock items found' : 'No matching items'}</div>
+            )}
+            {filteredStocks.map((stock) => {
+              const isLow = stock.quantity <= stock.lowStockThreshold;
+              const productWithCost = stock.product as (Product & { costPrice?: number }) | undefined;
+              const sellPrice = Number(productWithCost?.price ?? 0);
+              const costPrice = Number(productWithCost?.costPrice ?? sellPrice);
+              return (
+                <div key={stock.id} className={`rounded-xl border ${tableBorder} ${tableBg} p-4 flex flex-col gap-3 shadow-sm`}>
+                  {/* Header row */}
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <p className={`font-semibold text-sm ${textPrimary}`}>{stock.product?.name || 'Unknown'}</p>
+                      <p className={`text-xs ${muted}`}>{stock.shopName ?? shopName}</p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${isLow ? (theme === 'dark' ? 'bg-amber-900 text-amber-300' : 'bg-amber-100 text-amber-800') : (theme === 'dark' ? 'bg-emerald-900 text-emerald-300' : 'bg-emerald-100 text-emerald-800')}`}>
+                        {isLow ? 'low' : 'in stock'}
+                      </span>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button type="button" size="sm" variant="ghost" className="h-7 w-7 p-0" title="Actions">
+                            <MoreHorizontal className="h-4 w-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" className="w-44">
+                          <DropdownMenuItem onClick={() => openViewModal(stock)} className="cursor-pointer gap-2">
+                            <Eye className="h-4 w-4 text-gray-500" />View / Edit
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onClick={() => { setTransferStock(stock); setIsTransferModalOpen(true); }}
+                            className="cursor-pointer gap-2 text-blue-600 focus:text-blue-600 dark:text-blue-400"
+                          >
+                            <ArrowRightLeft className="h-4 w-4" />Transfer Stock
+                          </DropdownMenuItem>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem
+                            onClick={() => { setRestockStockId(stock.id); setIsRestockModalOpen(true); setRestockQuantity(stock.quantity); }}
+                            className="cursor-pointer gap-2"
+                          >
+                            <RefreshCw className="h-4 w-4 text-gray-500" />Restock
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </div>
+                  </div>
+                  {/* Stats grid */}
+                  <div className="grid grid-cols-3 gap-2 text-center">
+                    <div className="rounded-lg bg-gray-50 dark:bg-gray-700/50 p-2">
+                      <p className={`text-xs ${muted}`}>Stock</p>
+                      <p className={`font-bold text-sm ${textPrimary}`}>{stock.quantity}</p>
+                    </div>
+                    <div className="rounded-lg bg-gray-50 dark:bg-gray-700/50 p-2">
+                      <p className={`text-xs ${muted}`}>Min Level</p>
+                      <p className={`font-bold text-sm ${textPrimary}`}>{stock.lowStockThreshold}</p>
+                    </div>
+                    <div className="rounded-lg bg-gray-50 dark:bg-gray-700/50 p-2">
+                      <p className={`text-xs ${muted}`}>Reserved</p>
+                      <p className={`font-bold text-sm ${textPrimary}`}>0</p>
+                    </div>
+                  </div>
+
+                  {/* Prices */}
+                  <div className={`flex justify-between text-xs ${textSecondary} border-t ${tableBorder} pt-2`}>
+                    <span>Cost: <span className="font-semibold">{formatKESMajor(costPrice)}</span></span>
+                    <span>Sell: <span className="font-semibold">{formatKESMajor(sellPrice)}</span></span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* ── Desktop table (≥ md) ── */}
+          <div className="hidden md:block overflow-x-auto">
             <table className="w-full text-sm">
               <thead className={`text-left text-xs ${muted} border-b ${tableBorder}`}>
                 <tr>
                   <th className="py-3 px-4">Product</th>
-                  <th className="py-3 px-4">SKU</th>
                   <th className="py-3 px-4">Shop</th>
                   <th className="py-3 px-4 text-center">Current Stock</th>
                   <th className="py-3 px-4 text-center">Available</th>
@@ -389,9 +537,7 @@ function StockManagementContent() {
                     <tr key={stock.id} className={`border-b ${tableBorder}`}>
                       <td className="py-3 px-4">
                         <div className={`font-medium ${textPrimary}`}>{stock.product?.name || 'Unknown'}</div>
-                        <div className={`text-xs ${muted}`}>{stock.product?.description || ''}</div>
                       </td>
-                      <td className={`py-3 px-4 ${textSecondary}`}>{stock.product?.sku || '-'}</td>
                       <td className={`py-3 px-4 ${textSecondary}`}>{stock.shopName ?? shopName}</td>
                       <td className="py-3 px-4 text-center font-semibold">{stock.quantity}</td>
                       <td className="py-3 px-4 text-center">{available}</td>
@@ -402,18 +548,40 @@ function StockManagementContent() {
                       </td>
                       <td className="py-3 px-4 text-center">
                         <div className="font-semibold">{formatKESMajor(costPrice)}</div>
-                        <div className={`text-xs ${muted}`}>{formatKESMajor(costPrice * stock.quantity)} total</div>
                       </td>
                       <td className="py-3 px-4 text-center">
                         <div className="font-semibold">{formatKESMajor(sellPrice)}</div>
-                        <div className={`text-xs ${muted}`}>{formatKESMajor(sellPrice * stock.quantity)} total</div>
                       </td>
-                      <td className="py-3 px-4 text-center">
-                        <div className="flex items-center justify-center gap-2">
-                          <Button type="button" size="sm" variant="ghost" title="View" onClick={() => openViewModal(stock)}><Eye className="h-4 w-4" /></Button>
-                          <Button size="sm" variant="outline" title="Restock" onClick={() => { setRestockStockId(stock.id); setIsRestockModalOpen(true); setRestockQuantity(stock.quantity); }}>Restock</Button>
-                        </div>
-                      </td>
+                        <td className="py-3 px-4 text-center">
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button type="button" size="sm" variant="ghost" className="h-8 w-8 p-0" title="Actions">
+                                <MoreHorizontal className="h-4 w-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end" className="w-44">
+                              <DropdownMenuItem onClick={() => openViewModal(stock)} className="cursor-pointer gap-2">
+                                <Eye className="h-4 w-4 text-gray-500" />
+                                View / Edit
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                onClick={() => { setTransferStock(stock); setIsTransferModalOpen(true); }}
+                                className="cursor-pointer gap-2 text-blue-600 focus:text-blue-600 dark:text-blue-400"
+                              >
+                                <ArrowRightLeft className="h-4 w-4" />
+                                Transfer Stock
+                              </DropdownMenuItem>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem
+                                onClick={() => { setRestockStockId(stock.id); setIsRestockModalOpen(true); setRestockQuantity(stock.quantity); }}
+                                className="cursor-pointer gap-2"
+                              >
+                                <RefreshCw className="h-4 w-4 text-gray-500" />
+                                Restock
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </td>
                     </tr>
                   );
                 })}
@@ -423,7 +591,9 @@ function StockManagementContent() {
             {filteredStocks.length === 0 && (
               <div className={`text-center py-8 ${muted}`}>{stocks.length === 0 ? 'No stock items found' : 'No matching items'}</div>
             )}
-          </div>
+          </div>{/* end desktop table wrapper */}
+          </>
+          )}{/* end loadingAll guard */}
         </div>
       </div>
 
@@ -494,6 +664,18 @@ function StockManagementContent() {
           <MuiButton onClick={() => void confirmDeleteFromView()} variant="contained" size="small" disabled={viewDeleting} sx={{ bgcolor: '#ef4444', '&:hover': { bgcolor: '#dc2626' } }}>{viewDeleting ? 'Deleting…' : 'Delete'}</MuiButton>
         </DialogActions>
       </Dialog>
+
+      {/* Stock Transfer Modal */}
+      <StockTransferModal
+        open={isTransferModalOpen}
+        stock={transferStock}
+        currentShopId={currentShop?.id ?? ''}
+        token={token}
+        onClose={() => { setIsTransferModalOpen(false); setTransferStock(null); }}
+        onTransferred={(stockId, newQty) => {
+          setStocks(prev => prev.map(s => s.id === stockId ? { ...s, quantity: newQty } : s));
+        }}
+      />
     </div>
   );
 }
