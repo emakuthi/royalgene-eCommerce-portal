@@ -2,6 +2,7 @@
 
 import { useState, useRef, useCallback } from 'react';
 import { uploadProductImage } from '@/lib/image-utils';
+import { useAuthStore } from '@/lib/store';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { X, Upload, Loader2 } from 'lucide-react';
@@ -22,6 +23,8 @@ export function ImageUpload({
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // Grab the JWT so it can be forwarded to the portal upload API
+  const { token } = useAuthStore();
 
   const handleFileSelect = useCallback(
     async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -63,7 +66,8 @@ export function ImageUpload({
             fileType: file.type,
           });
 
-          const url = await uploadProductImage(file);
+          // Pass the auth token so the portal upload route can verify the request
+          const url = await uploadProductImage(file, undefined, token ?? undefined);
 
           console.log(`[Component] Stage 4.${i + 1}: File ${i + 1}/${files.length} uploaded successfully`, {
             url,
@@ -93,7 +97,7 @@ export function ImageUpload({
         }
       }
     },
-    [images.length, maxFiles, onImageUpload]
+    [images.length, maxFiles, onImageUpload, token]
   );
 
   return (
@@ -169,4 +173,3 @@ export function ImageUpload({
     </div>
   );
 }
-

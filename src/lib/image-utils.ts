@@ -1,14 +1,16 @@
 import { supabaseAdmin, IMAGE_BUCKET } from './supabase-client';
 
 /**
- * Upload image to Supabase Storage
+ * Upload image to Supabase Storage via the portal upload API.
  * @param file - Image file to upload
- * @param customName - Optional custom filename (without extension)
+ * @param customName - Optional custom filename prefix (without extension)
+ * @param token - Optional JWT sent in Authorization header
  * @returns Public URL of uploaded image
  */
 export async function uploadProductImage(
   file: File,
-  customName?: string
+  customName?: string,
+  token?: string
 ): Promise<string> {
   console.log('[Image Upload] Stage 1: Starting image upload', {
     fileName: file.name,
@@ -47,8 +49,14 @@ export async function uploadProductImage(
     timestamp: new Date().toISOString(),
   });
 
-  const response = await fetch('/api/admin/upload', {
+  // Use the portal-specific upload endpoint (the eCommerce app's /api/admin/upload
+  // is not accessible from the portal app).
+  const headers: Record<string, string> = {};
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+
+  const response = await fetch('/api/portal/upload', {
     method: 'POST',
+    headers,
     body: formData,
   });
   console.log('[Image Upload] Stage 5: Server response received', {

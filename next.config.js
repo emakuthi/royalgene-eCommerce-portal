@@ -17,6 +17,12 @@ const nextConfig = {
         hostname: "images.unsplash.com",
         pathname: "/**",
       },
+      // Supabase Storage — covers all project subdomains
+      {
+        protocol: "https",
+        hostname: "*.supabase.co",
+        pathname: "/storage/v1/object/public/**",
+      },
     ],
   },
 };
