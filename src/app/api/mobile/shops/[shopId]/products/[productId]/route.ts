@@ -145,6 +145,7 @@ export async function PUT(
       .eq('productId', productId)
       .maybeSingle();
 
+    // Fallback 1: caller may have passed ShopStock.id instead of Product.id
     if (!shopStock && !stockError) {
       const fallback = await supabaseAdmin
         .from('ShopStock')
@@ -158,9 +159,58 @@ export async function PUT(
       }
     }
 
+    // Fallback 2: maybe the product exists in the Product table directly (no ShopStock in this shop yet)
+    // Try to match by Product.id or Product.sku so we can give a useful error
+    if (!shopStock && !stockError) {
+      const { data: productRow } = await supabaseAdmin
+        .from('Product')
+        .select('id')
+        .eq('id', productId)
+        .maybeSingle();
+
+      if (productRow) {
+        // Product exists but has no ShopStock in this shop → create one on-the-fly with quantity 0
+        const now = new Date().toISOString();
+        const newStockId = (await import('uuid')).v4();
+        const { data: created, error: createErr } = await supabaseAdmin
+          .from('ShopStock')
+          .insert([{
+            id: newStockId,
+            shopId,
+            productId,
+            quantity: 0,
+            lowStockThreshold: 5,
+            createdAt: now,
+            updatedAt: now,
+          }])
+          .select('id, productId, quantity, reorderLevel')
+          .single();
+
+        if (!createErr && created) {
+          shopStock = created;
+          logger.info('Mobile product update: auto-created ShopStock for existing product', {
+            userId: auth.payload.userId, shopId, productId, newStockId,
+          });
+        }
+      }
+    }
+
     if (stockError || !shopStock) {
-      logger.warn('Mobile product update: product not found', { userId: auth.payload.userId, shopId, productId });
-      return jsonResponse({ success: false, error: 'Product not found', code: 'NOT_FOUND' }, 404);
+      // Extra diagnostic: check if this productId exists in ANY shop's ShopStock
+      const { data: anyStock } = await supabaseAdmin
+        .from('ShopStock')
+        .select('shopId')
+        .or(`productId.eq.${productId},id.eq.${productId}`)
+        .limit(3);
+
+      logger.warn('Mobile product update: product not found', {
+        userId: auth.payload.userId,
+        shopId,
+        productId,
+        supabaseError: stockError?.message ?? null,
+        foundInOtherShops: (anyStock ?? []).map((r: Record<string, unknown>) => r.shopId),
+      });
+      return jsonResponse({ success: false, error: 'Product not found in this shop', code: 'NOT_FOUND' }, 404);
     }
 
     const resolvedProductId = shopStock.productId as string;
