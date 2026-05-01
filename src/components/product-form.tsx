@@ -258,7 +258,12 @@ export const ProductForm: React.FC<Props> = ({ editingProduct = null, onSaved, o
         {/* Header */}
         <Box sx={{ position: 'sticky', top: 0, zIndex: 20, bgcolor: 'background.paper', borderBottom: 1, borderColor: 'divider' }}>
           <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', px: 2, py: 1 }}>
-            <Typography variant="h6" noWrap>{editingProduct ? 'Edit Product' : 'Add New Product'}</Typography>
+            <Box>
+              <Typography variant="h6" noWrap>{editingProduct ? 'Edit Product' : 'Add New Product'}</Typography>
+              <Typography variant="caption" color="text.secondary">
+                {editingProduct ? `Editing: ${editingProduct.name}` : 'Start by uploading images, then fill in the details'}
+              </Typography>
+            </Box>
             <IconButton aria-label="close" onClick={() => onCancel?.()}><CloseIcon /></IconButton>
           </Box>
         </Box>
@@ -268,6 +273,69 @@ export const ProductForm: React.FC<Props> = ({ editingProduct = null, onSaved, o
           <Box sx={{ width: '100%', mx: 'auto' }}>
             <form onSubmit={handleSubmit}>
               <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr' }, gap: 1 }}>
+
+                {/* ── 1. Product Images (first) ── */}
+                <Box sx={{ mt: 1 }}>
+                  <Typography variant="subtitle2" sx={{ mb: 1 }}>📷 Product Images</Typography>
+
+                  {/* Upload button */}
+                  <label htmlFor="product-multi-image-upload" style={{ display: 'inline-block', marginBottom: 16 }}>
+                    <input
+                      id="product-multi-image-upload"
+                      ref={multiFileInputRef}
+                      type="file"
+                      accept="image/*"
+                      multiple
+                      style={{ position: 'absolute', width: 1, height: 1, opacity: 0, overflow: 'hidden', clip: 'rect(0,0,0,0)', whiteSpace: 'nowrap' }}
+                      onChange={handleMultiImageUpload}
+                    />
+                    <MUIButton
+                      component="span"
+                      variant="outlined"
+                      startIcon={<ImagePlus size={16} />}
+                      sx={{ borderStyle: 'dashed', pointerEvents: 'none' }}
+                    >
+                      Choose Images (select multiple)
+                    </MUIButton>
+                  </label>
+
+                  {/* Image previews grid */}
+                  <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2 }}>
+                    {formData.images.map((image, index) => (
+                      <Box key={index}>
+                        <Box sx={{ position: 'relative', width: { xs: 80, sm: 96 }, height: { xs: 80, sm: 96 }, borderRadius: 1, overflow: 'hidden', border: 1, borderColor: 'divider', bgcolor: 'background.default' }}>
+                          {image && (image.startsWith('http') || image.startsWith('data:')) ? (
+                            <Image src={image} alt={`Product ${index + 1}`} fill className="object-cover" />
+                          ) : (
+                            <Box sx={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, color: 'text.secondary' }}>No image</Box>
+                          )}
+                          <IconButton size="small" sx={{ position: 'absolute', top: 2, right: 2, bgcolor: 'error.main', color: 'white', '&:hover': { bgcolor: 'error.dark' } }} onClick={() => removeImage(index)}>
+                            <CloseIcon sx={{ fontSize: 14 }} />
+                          </IconButton>
+                          {index === 0 && (
+                            <Box sx={{ position: 'absolute', bottom: 2, left: 2, bgcolor: '#ff4d8b', color: 'white', fontSize: 9, fontWeight: 700, px: 0.75, py: 0.25, borderRadius: 1 }}>MAIN</Box>
+                          )}
+                        </Box>
+                        {/* URL paste input per slot */}
+                        <TextField
+                          value={image}
+                          onChange={(e) => handleUrlChange(index, e.target.value)}
+                          placeholder="Paste URL"
+                          size="small"
+                          sx={{ mt: 0.5, width: { xs: 80, sm: 96 }, '& input': { fontSize: 11, py: 0.5 } }}
+                        />
+                      </Box>
+                    ))}
+                    {/* Add blank URL slot */}
+                    <Box sx={{ display: 'flex', alignItems: 'flex-start', pt: 0 }}>
+                      <IconButton onClick={addImageSlot} title="Add image URL slot" sx={{ mt: 1, border: 1, borderColor: 'divider', borderRadius: 1 }}>
+                        <PlusIcon size={18} />
+                      </IconButton>
+                    </Box>
+                  </Box>
+                </Box>
+
+                {/* ── 2. Basic Information ── */}
                 <TextField
                   id="name"
                   size="small"
@@ -286,7 +354,7 @@ export const ProductForm: React.FC<Props> = ({ editingProduct = null, onSaved, o
                   placeholder="Enter product name"
                 />
 
-                {/* Category + SKU row (Brand removed) */}
+                {/* Category + SKU row */}
                 <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' }, gap: 1 }}>
                   <TextField
                     id="category"
@@ -327,100 +395,43 @@ export const ProductForm: React.FC<Props> = ({ editingProduct = null, onSaved, o
                   {/* Description below, full width */}
                   <TextField id="description" size="small" label="Description" required multiline rows={3} value={formData.description} onChange={(e) => setFormData((p) => ({ ...p, description: e.target.value }))} placeholder="Enter product description" fullWidth sx={{ gridColumn: '1 / -1' }} />
                 </Box>
-              </Box>
-              {/* Pricing & Inventory */}
-              <Box sx={{ mt: 3 }}>
-                <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(2,1fr)' }, gap: 2 }}>
-                  <TextField id="price" size="small" label="Price (KES)" required fullWidth type="number" value={formData.price} onChange={(e) => setFormData((p) => ({ ...p, price: Number(e.target.value) }))} sx={{ '& .MuiInputBase-root': { height: 40 } }} />
-                  <TextField id="stock" size="small" label="Stock Quantity" required fullWidth type="number" value={formData.stockQuantity} onChange={(e) => setFormData((p) => ({ ...p, stockQuantity: Number(e.target.value) }))} sx={{ '& .MuiInputBase-root': { height: 40 } }} />
-                </Box>
-              </Box>
-              {/* Sizes & Colors */}
-              <Box sx={{ mt: 2 }}>
-                <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(2, minmax(0,1fr))' }, gap: 1 }}>
-                  <Box>
-                    <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'minmax(0,1fr) auto' }, gap: 1, alignItems: 'center', mb: 1 }}>
-                      <TextField size="small" placeholder="Sizes e.g., S, M, L" value={sizeInput} onChange={(e) => setSizeInput(e.target.value)} sx={{ width: '100%', boxSizing: 'border-box', minWidth: 0 }} />
-                      <MUIButton size="small" variant="outlined" onClick={addSize} sx={{ width: { xs: '100%', md: 'auto' } }}>Add</MUIButton>
-                    </Box>
-                    <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', rowGap: 6 }}>
-                      {formData.sizes.length === 0 ? <Typography variant="caption" color="text.secondary">No sizes added</Typography> : formData.sizes.map((s, i) => (
-                        <Chip key={i} label={s} onDelete={() => removeSize(i)} />
-                      ))}
-                    </Box>
-                  </Box>
-                  <Box sx={{ minWidth: 0 }}>
-                    <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'minmax(0,1fr) auto' }, gap: 1, alignItems: 'center', mb: 1 }}>
-                      <TextField size="small" placeholder="Colors e.g., Red, Blue" value={colorInput} onChange={(e) => setColorInput(e.target.value)} sx={{ width: '100%', boxSizing: 'border-box', minWidth: 0 }} />
-                      <MUIButton size="small" variant="outlined" onClick={addColor} sx={{ width: { xs: '100%', md: 'auto' } }}>Add</MUIButton>
-                    </Box>
-                    <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', rowGap: 6 }}>
-                      {formData.colors.length === 0 ? <Typography variant="caption" color="text.secondary">No colors added</Typography> : formData.colors.map((c, i) => (
-                        <Chip key={i} label={c} onDelete={() => removeColor(i)} />
-                      ))}
-                    </Box>
+
+                {/* ── 3. Pricing & Inventory ── */}
+                <Box sx={{ mt: 1 }}>
+                  <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(2,1fr)' }, gap: 2 }}>
+                    <TextField id="price" size="small" label="Price (KES)" required fullWidth type="number" value={formData.price} onChange={(e) => setFormData((p) => ({ ...p, price: Number(e.target.value) }))} sx={{ '& .MuiInputBase-root': { height: 40 } }} />
+                    <TextField id="stock" size="small" label="Stock Quantity" required fullWidth type="number" value={formData.stockQuantity} onChange={(e) => setFormData((p) => ({ ...p, stockQuantity: Number(e.target.value) }))} sx={{ '& .MuiInputBase-root': { height: 40 } }} />
                   </Box>
                 </Box>
-              </Box>
 
-              {/* Images — multi-upload */}
-              <Box sx={{ mt: 3 }}>
-                <Typography variant="subtitle2" sx={{ mb: 1 }}>Product Images</Typography>
-
-                {/* Upload button — label-based for full mobile (iOS) compatibility */}
-                <label htmlFor="product-multi-image-upload" style={{ display: 'inline-block', marginBottom: 16 }}>
-                  <input
-                    id="product-multi-image-upload"
-                    ref={multiFileInputRef}
-                    type="file"
-                    accept="image/*"
-                    multiple
-                    style={{ position: 'absolute', width: 1, height: 1, opacity: 0, overflow: 'hidden', clip: 'rect(0,0,0,0)', whiteSpace: 'nowrap' }}
-                    onChange={handleMultiImageUpload}
-                  />
-                  <MUIButton
-                    component="span"
-                    variant="outlined"
-                    startIcon={<ImagePlus size={16} />}
-                    sx={{ borderStyle: 'dashed', pointerEvents: 'none' }}
-                  >
-                    Choose Images (select multiple)
-                  </MUIButton>
-                </label>
-
-                {/* Image previews grid */}
-                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2 }}>
-                  {formData.images.map((image, index) => (
-                    <Box key={index}>
-                      <Box sx={{ position: 'relative', width: { xs: 80, sm: 96 }, height: { xs: 80, sm: 96 }, borderRadius: 1, overflow: 'hidden', border: 1, borderColor: 'divider', bgcolor: 'background.default' }}>
-                        {image && (image.startsWith('http') || image.startsWith('data:')) ? (
-                          <Image src={image} alt={`Product ${index + 1}`} fill className="object-cover" />
-                        ) : (
-                          <Box sx={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, color: 'text.secondary' }}>No image</Box>
-                        )}
-                        <IconButton size="small" sx={{ position: 'absolute', top: 2, right: 2, bgcolor: 'error.main', color: 'white', '&:hover': { bgcolor: 'error.dark' } }} onClick={() => removeImage(index)}>
-                          <CloseIcon sx={{ fontSize: 14 }} />
-                        </IconButton>
+                {/* ── 4. Sizes & Colors ── */}
+                <Box sx={{ mt: 1 }}>
+                  <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(2, minmax(0,1fr))' }, gap: 1 }}>
+                    <Box>
+                      <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'minmax(0,1fr) auto' }, gap: 1, alignItems: 'center', mb: 1 }}>
+                        <TextField size="small" placeholder="Sizes e.g., S, M, L" value={sizeInput} onChange={(e) => setSizeInput(e.target.value)} sx={{ width: '100%', boxSizing: 'border-box', minWidth: 0 }} />
+                        <MUIButton size="small" variant="outlined" onClick={addSize} sx={{ width: { xs: '100%', md: 'auto' } }}>Add</MUIButton>
                       </Box>
-
-                      {/* URL paste input per slot */}
-                      <TextField
-                        value={image}
-                        onChange={(e) => handleUrlChange(index, e.target.value)}
-                        placeholder="Paste URL"
-                        size="small"
-                        sx={{ mt: 0.5, width: { xs: 80, sm: 96 }, '& input': { fontSize: 11, py: 0.5 } }}
-                      />
+                      <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', rowGap: 6 }}>
+                        {formData.sizes.length === 0 ? <Typography variant="caption" color="text.secondary">No sizes added</Typography> : formData.sizes.map((s, i) => (
+                          <Chip key={i} label={s} onDelete={() => removeSize(i)} />
+                        ))}
+                      </Box>
                     </Box>
-                  ))}
-
-                  {/* Add blank URL slot */}
-                  <Box sx={{ display: 'flex', alignItems: 'flex-start', pt: 0 }}>
-                    <IconButton onClick={addImageSlot} title="Add image URL slot" sx={{ mt: 1, border: 1, borderColor: 'divider', borderRadius: 1 }}>
-                      <PlusIcon size={18} />
-                    </IconButton>
+                    <Box sx={{ minWidth: 0 }}>
+                      <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'minmax(0,1fr) auto' }, gap: 1, alignItems: 'center', mb: 1 }}>
+                        <TextField size="small" placeholder="Colors e.g., Red, Blue" value={colorInput} onChange={(e) => setColorInput(e.target.value)} sx={{ width: '100%', boxSizing: 'border-box', minWidth: 0 }} />
+                        <MUIButton size="small" variant="outlined" onClick={addColor} sx={{ width: { xs: '100%', md: 'auto' } }}>Add</MUIButton>
+                      </Box>
+                      <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', rowGap: 6 }}>
+                        {formData.colors.length === 0 ? <Typography variant="caption" color="text.secondary">No colors added</Typography> : formData.colors.map((c, i) => (
+                          <Chip key={i} label={c} onDelete={() => removeColor(i)} />
+                        ))}
+                      </Box>
+                    </Box>
                   </Box>
                 </Box>
+
               </Box>
             </form>
           </Box>
