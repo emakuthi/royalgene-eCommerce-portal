@@ -52,12 +52,36 @@ function PortalLogo({ size = 'md' }: { size?: 'sm' | 'md' }) {
     return () => window.removeEventListener(BRANDING_EVENT, handler);
   }, []);
 
+  const usingCustomLogo = Boolean(branding.logoSrc);
   const imgSrc = branding.logoSrc ?? '/favicon.png';
   const px = size === 'sm' ? 28 : 36;
 
+  if (!usingCustomLogo) {
+    // Default branding: use the full wordmark lockup (icon + name baked in)
+    // instead of a separate icon + text pairing. On the "md" (top header)
+    // variant, the wordmark is wide, so it only replaces the icon+text combo
+    // at lg+ where there's room — below that, fall back to the compact icon
+    // alone (same as before) to avoid crowding the mobile header.
+    return (
+      <Link href="/dashboard" className="flex items-center gap-2 flex-shrink-0">
+        {size === 'md' && (
+          <Image src="/favicon.png" alt={branding.companyName} width={px} height={px} className="object-contain lg:hidden" priority />
+        )}
+        <Image
+          src="/logo.png"
+          alt={branding.companyName}
+          width={168}
+          height={52}
+          className={`object-contain w-auto ${size === 'md' ? 'hidden lg:block h-8' : 'h-7'}`}
+          priority
+        />
+      </Link>
+    );
+  }
+
   return (
     <Link href="/dashboard" className="flex items-center gap-2 flex-shrink-0">
-      <Image src={imgSrc} alt={branding.companyName} width={px} height={px} className="object-contain" priority unoptimized={!!branding.logoSrc} />
+      <Image src={imgSrc} alt={branding.companyName} width={px} height={px} className="object-contain" priority unoptimized />
       {size === 'md' && (
         <div className="hidden lg:block">
           <p className="font-bold text-sm text-gray-900 dark:text-white leading-none">{branding.companyName}</p>
