@@ -37,8 +37,11 @@ export interface CreateOrganizationInput {
   createdBy?: string | null;
 }
 
+const TRIAL_DAYS = 14;
+
 export async function createOrganization(input: CreateOrganizationInput): Promise<Organization> {
   const now = new Date().toISOString();
+  const trialEndsAt = new Date(Date.now() + TRIAL_DAYS * 24 * 60 * 60 * 1000).toISOString();
   const { data, error } = await supabaseAdmin
     .from('Organization')
     .insert([{
@@ -46,6 +49,7 @@ export async function createOrganization(input: CreateOrganizationInput): Promis
       slug: input.slug,
       status: 'pending_verification',
       planTier: 'free',
+      trialEndsAt,
       createdBy: input.createdBy ?? null,
       createdAt: now,
       updatedAt: now,

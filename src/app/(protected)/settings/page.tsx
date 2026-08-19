@@ -1020,6 +1020,14 @@ export default function PortalSettingsPage() {
                     <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
                       Status: {organization.billingStatus || organization.status}
                     </p>
+                    {organization.planTier === 'free' && organization.billingStatus !== 'active' && organization.trialEndsAt && (() => {
+                      const daysLeft = Math.ceil((new Date(organization.trialEndsAt).getTime() - Date.now()) / (24 * 60 * 60 * 1000));
+                      return (
+                        <p className={`text-xs mt-1 font-medium ${daysLeft <= 0 ? 'text-red-600' : daysLeft <= 3 ? 'text-amber-600' : 'text-gray-500 dark:text-gray-400'}`}>
+                          {daysLeft <= 0 ? 'Your trial has ended — choose a plan below to keep going.' : `${daysLeft} day${daysLeft === 1 ? '' : 's'} left in your free trial`}
+                        </p>
+                      );
+                    })()}
                   </div>
                 </div>
               ) : (

@@ -4,6 +4,7 @@ import {
   DEV_TENANT_SLUG,
   extractSubdomain,
   isRootDomainHost,
+  isTrialExpired,
   resolveOrganizationByCustomDomainEdge,
   resolveOrganizationEdge,
   type ResolvedOrganization,
@@ -26,6 +27,22 @@ const TENANT_OPTIONAL_PATHS = [
 
 function isTenantOptional(pathname: string): boolean {
   return TENANT_OPTIONAL_PATHS.some((p) => pathname === p || pathname.startsWith(`${p}/`));
+}
+
+// Paths that stay reachable even once a trial has expired — the tenant must
+// still be able to see pricing, subscribe, and sign in/out. Everything else
+// in the portal is hard-blocked until they do.
+const TRIAL_EXEMPT_PATHS = [
+  '/settings',
+  '/trial-expired',
+  '/login',
+  '/api/portal/billing',
+  '/api/portal/organization',
+  '/api/portal/settings',
+];
+
+function isTrialExempt(pathname: string): boolean {
+  return TRIAL_EXEMPT_PATHS.some((p) => pathname === p || pathname.startsWith(`${p}/`));
 }
 
 const DEFAULT_CORS = {
@@ -93,6 +110,16 @@ export async function middleware(req: NextRequest) {
         });
       }
       return NextResponse.rewrite(new URL('/tenant-suspended', req.url));
+    }
+  } else if (isTrialExpired(org)) {
+    if (!isTenantOptional(pathname) && !isTrialExempt(pathname)) {
+      if (isApiRoute) {
+        return new NextResponse(JSON.stringify({ success: false, error: 'Trial expired — please subscribe to continue', code: 'TRIAL_EXPIRED' }), {
+          status: 402,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      return NextResponse.rewrite(new URL('/trial-expired', req.url));
     }
   }
 

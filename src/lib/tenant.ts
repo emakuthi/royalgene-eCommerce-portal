@@ -16,6 +16,25 @@ export interface ResolvedOrganization {
   id: string;
   slug: string;
   status: 'pending_verification' | 'active' | 'suspended' | 'cancelled';
+  planTier: 'free' | 'starter' | 'pro' | 'enterprise' | 'legacy';
+  trialEndsAt: string | null;
+  billingStatus: string | null;
+}
+
+const ORG_SELECT_FIELDS = 'id,slug,status,planTier,trialEndsAt,billingStatus';
+
+/**
+ * True once a free-tier trial has run out with no active subscription.
+ * "legacy" tier (grandfathered orgs, e.g. the original RoyalGene tenant)
+ * never trial-gates. Paid tiers don't either — planTier only moves off
+ * "free" once a subscription actually succeeds (src/lib/billing.server.ts),
+ * so reaching a paid tier already implies billing is in order.
+ */
+export function isTrialExpired(org: ResolvedOrganization): boolean {
+  if (org.planTier !== 'free') return false;
+  if (org.billingStatus === 'active') return false;
+  if (!org.trialEndsAt) return false;
+  return new Date(org.trialEndsAt).getTime() < Date.now();
 }
 
 /**
@@ -67,7 +86,7 @@ export async function resolveOrganizationEdge(slug: string): Promise<ResolvedOrg
   if (!supabaseUrl || !serviceKey || !slug) return null;
 
   try {
-    const url = `${supabaseUrl}/rest/v1/Organization?slug=eq.${encodeURIComponent(slug)}&select=id,slug,status&limit=1`;
+    const url = `${supabaseUrl}/rest/v1/Organization?slug=eq.${encodeURIComponent(slug)}&select=${ORG_SELECT_FIELDS}&limit=1`;
     const res = await fetch(url, {
       headers: {
         apikey: serviceKey,
@@ -97,7 +116,7 @@ export async function resolveOrganizationByCustomDomainEdge(host: string): Promi
   if (!supabaseUrl || !serviceKey || !bareHost) return null;
 
   try {
-    const url = `${supabaseUrl}/rest/v1/Organization?customDomain=eq.${encodeURIComponent(bareHost)}&customDomainStatus=eq.verified&select=id,slug,status&limit=1`;
+    const url = `${supabaseUrl}/rest/v1/Organization?customDomain=eq.${encodeURIComponent(bareHost)}&customDomainStatus=eq.verified&select=${ORG_SELECT_FIELDS}&limit=1`;
     const res = await fetch(url, {
       headers: {
         apikey: serviceKey,
