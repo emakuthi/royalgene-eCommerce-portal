@@ -162,11 +162,19 @@ export async function PUT(
     // Fallback 2: maybe the product exists in the Product table directly (no ShopStock in this shop yet)
     // Try to match by Product.id or Product.sku so we can give a useful error
     if (!shopStock && !stockError) {
-      const { data: productRow } = await supabaseAdmin
-        .from('Product')
-        .select('id')
-        .eq('id', productId)
+      // Resolve the shop's own organization first — the product being linked
+      // must belong to the SAME organization, otherwise this shop could end
+      // up stocking a completely different tenant's product.
+      const { data: shopRow } = await supabaseAdmin
+        .from('Shop')
+        .select('organizationId')
+        .eq('id', shopId)
         .maybeSingle();
+      const organizationId = shopRow?.organizationId as string | undefined;
+
+      let productQuery = supabaseAdmin.from('Product').select('id').eq('id', productId);
+      if (organizationId) productQuery = productQuery.eq('organizationId', organizationId);
+      const { data: productRow } = await productQuery.maybeSingle();
 
       if (productRow) {
         // Product exists but has no ShopStock in this shop → create one on-the-fly with quantity 0
@@ -176,6 +184,7 @@ export async function PUT(
           .from('ShopStock')
           .insert([{
             id: newStockId,
+            organizationId,
             shopId,
             productId,
             quantity: 0,

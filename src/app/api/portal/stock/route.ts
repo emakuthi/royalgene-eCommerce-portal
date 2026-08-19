@@ -265,6 +265,7 @@ export async function PUT(request: NextRequest) {
         .from('StockTransaction')
         .insert([{
           id: uuidv4(),
+          organizationId: oldStock.organizationId,
           shopStockId: stockId,
           portalUserId: portalUser.id,
           type: 'adjustment',
