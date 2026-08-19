@@ -29,6 +29,8 @@ import { jsonResponse, optionsResponse } from '@/lib/apiResponse';
 import { syncProductStockFromShopStocks } from '@/lib/supabase-db';
 import { trackFromRequest } from '@/lib/activity-tracker';
 import type { ShopStock } from '@/lib/types';
+import { assertFeatureEnabled } from '@/lib/entitlements/enforce.server';
+import { FeatureCode } from '@/lib/entitlements/feature-codes';
 
 export async function POST(request: NextRequest) {
   try {
@@ -75,6 +77,9 @@ export async function POST(request: NextRequest) {
     }
 
     const src = srcStock as ShopStock & { productId: string; shopId: string; organizationId: string };
+
+    const featureResponse = await assertFeatureEnabled(src.organizationId, FeatureCode.STOCK_TRANSFER);
+    if (featureResponse) return featureResponse;
 
     // ── Guard: even an "admin" role is org-scoped — the source stock must
     // belong to the caller's own organization (true super_admin exempt) ────

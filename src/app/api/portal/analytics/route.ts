@@ -3,6 +3,8 @@ import { requireAuth } from '@/lib/authorize';
 import { supabaseAdmin } from '@/lib/supabase-client';
 import logger from '@/lib/logger';
 import { jsonResponse } from '@/lib/apiResponse';
+import { assertFeatureEnabled } from '@/lib/entitlements/enforce.server';
+import { FeatureCode } from '@/lib/entitlements/feature-codes';
 
 // Define typed shapes we expect from Supabase queries
 interface ProfitMarginRow {
@@ -53,6 +55,11 @@ export async function GET(request: NextRequest) {
         .eq('organizationId', payload.organizationId)
         .maybeSingle();
       if (!shopCheck) return jsonResponse({ success: false, error: 'Forbidden' }, 403);
+    }
+
+    if (payload.organizationId) {
+      const featureResponse = await assertFeatureEnabled(payload.organizationId, FeatureCode.ADVANCED_ANALYTICS);
+      if (featureResponse) return featureResponse;
     }
 
     // Calculate date range

@@ -17,6 +17,8 @@ import {
   extractClientIp,
   type ActivityEvent,
 } from '@/lib/activity-tracker';
+import { assertFeatureEnabled } from '@/lib/entitlements/enforce.server';
+import { FeatureCode } from '@/lib/entitlements/feature-codes';
 
 // ─── POST: Record mobile activity events (single or batch) ─────────────────
 
@@ -94,6 +96,11 @@ export async function GET(request: NextRequest) {
 
     const payload = verifyToken(token);
     if (!payload) return jsonResponse({ success: false, error: 'Invalid token', code: 'UNAUTHORIZED' }, 401);
+
+    if (payload.organizationId) {
+      const featureResponse = await assertFeatureEnabled(payload.organizationId, FeatureCode.AUDIT_TRAIL);
+      if (featureResponse) return featureResponse;
+    }
 
     const { searchParams } = new URL(request.url);
     const page = Math.max(1, parseInt(searchParams.get('page') || '1', 10));

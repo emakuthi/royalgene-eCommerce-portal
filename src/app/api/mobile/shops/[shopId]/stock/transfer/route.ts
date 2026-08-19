@@ -18,6 +18,8 @@ import { jsonResponse } from '@/lib/apiResponse';
 import { verifyMobileShopAccess } from '@/lib/mobile-shop-auth';
 import { syncProductStockFromShopStocks } from '@/lib/supabase-db';
 import { v4 as uuidv4 } from 'uuid';
+import { assertFeatureEnabled } from '@/lib/entitlements/enforce.server';
+import { FeatureCode } from '@/lib/entitlements/feature-codes';
 
 export async function POST(
   request: NextRequest,
@@ -100,6 +102,9 @@ export async function POST(
       return jsonResponse({ success: false, error: 'Source shop not found', code: 'NOT_FOUND' }, 404);
     }
     const organizationId = srcShop.organizationId as string;
+
+    const featureResponse = await assertFeatureEnabled(organizationId, FeatureCode.STOCK_TRANSFER);
+    if (featureResponse) return featureResponse;
 
     // Verify destination shop exists AND belongs to the SAME organization as
     // the source — without this, stock could be transferred straight into a
