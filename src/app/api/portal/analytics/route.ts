@@ -1,5 +1,5 @@
-import { NextRequest } from 'next/server';
-import { verifyToken } from '@/lib/auth.server';
+import { NextRequest, NextResponse } from 'next/server';
+import { requireAuth } from '@/lib/authorize';
 import { supabaseAdmin } from '@/lib/supabase-client';
 import logger from '@/lib/logger';
 import { jsonResponse } from '@/lib/apiResponse';
@@ -28,17 +28,9 @@ export async function GET(request: NextRequest) {
   const startTime = Date.now();
 
   try {
-    const token = request.headers.get('Authorization')?.replace('Bearer ', '');
-    if (!token) {
-      logger.warn('Analytics unauthorized: no token', { endpoint: '/api/portal/analytics', method: 'GET' });
-      return jsonResponse({ success: false, error: 'Unauthorized' }, 401);
-    }
-
-    const payload = verifyToken(token);
-    if (!payload) {
-      logger.warn('Analytics unauthorized: invalid token', { endpoint: '/api/portal/analytics' });
-      return jsonResponse({ success: false, error: 'Invalid token' }, 401);
-    }
+    const auth = requireAuth(request);
+    if (auth instanceof NextResponse) return auth;
+    const payload = auth;
 
     const { searchParams } = new URL(request.url);
     const shopId = searchParams.get('shopId');
@@ -49,6 +41,18 @@ export async function GET(request: NextRequest) {
     if (!shopId) {
       logger.warn('Analytics failed: shop ID required', { endpoint: '/api/portal/analytics' });
       return jsonResponse({ success: false, error: 'Shop ID required' }, 400);
+    }
+
+    // Verify the requested shop belongs to the caller's own organization
+    // before returning any figures for it (super_admin exempt).
+    if (payload.organizationId) {
+      const { data: shopCheck } = await supabaseAdmin
+        .from('Shop')
+        .select('id')
+        .eq('id', shopId)
+        .eq('organizationId', payload.organizationId)
+        .maybeSingle();
+      if (!shopCheck) return jsonResponse({ success: false, error: 'Forbidden' }, 403);
     }
 
     // Calculate date range

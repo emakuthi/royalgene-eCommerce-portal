@@ -1,19 +1,14 @@
-import { NextRequest } from 'next/server';
-import { verifyToken, hashPassword, comparePasswords } from '@/lib/auth.server';
+import { NextRequest, NextResponse } from 'next/server';
+import { hashPassword, comparePasswords } from '@/lib/auth.server';
+import { requireAuth } from '@/lib/authorize';
 import { supabaseAdmin } from '@/lib/supabase-client';
 import { jsonResponse, optionsResponse } from '@/lib/apiResponse';
 
 export async function PUT(request: NextRequest) {
   try {
-    const token = request.headers.get('Authorization')?.replace('Bearer ', '');
-    if (!token) {
-      return jsonResponse({ success: false, error: 'Unauthorized' }, 401);
-    }
-
-    const payload = verifyToken(token);
-    if (!payload) {
-      return jsonResponse({ success: false, error: 'Invalid token' }, 401);
-    }
+    const auth = requireAuth(request);
+    if (auth instanceof NextResponse) return auth;
+    const payload = auth;
 
     const { currentPassword, newPassword } = await request.json();
 
