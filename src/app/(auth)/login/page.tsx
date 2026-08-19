@@ -68,7 +68,8 @@ export default function PortalLoginPage() {
 
 	if (!mounted) return null;
 
-	const logoSrc = branding.logoSrc ?? '/favicon.png';
+	const logoSrc = branding.logoSrc ?? '/logo.png';
+	const usingCustomLogo = Boolean(branding.logoSrc);
 
 	return (
 		<div className="min-h-screen flex">
@@ -81,13 +82,21 @@ export default function PortalLoginPage() {
 
 				{/* Logo */}
 				<div className="relative z-10 flex items-center gap-3">
-					<div className="w-10 h-10 rounded-xl bg-white/15 backdrop-blur-sm flex items-center justify-center overflow-hidden">
-						<Image src={logoSrc} alt={branding.companyName} width={32} height={32} className="object-contain" unoptimized={!!branding.logoSrc} />
-					</div>
-					<div>
-						<p className="text-white font-bold text-lg leading-none">{branding.companyName}</p>
-						<p className="text-purple-200 text-xs leading-none mt-0.5">{branding.tagline}</p>
-					</div>
+					{usingCustomLogo ? (
+						<>
+							<div className="w-10 h-10 rounded-xl bg-white/15 backdrop-blur-sm flex items-center justify-center overflow-hidden">
+								<Image src={logoSrc} alt={branding.companyName} width={32} height={32} className="object-contain" unoptimized />
+							</div>
+							<div>
+								<p className="text-white font-bold text-lg leading-none">{branding.companyName}</p>
+								<p className="text-purple-200 text-xs leading-none mt-0.5">{branding.tagline}</p>
+							</div>
+						</>
+					) : (
+						<div className="bg-white/95 rounded-xl px-3 py-2 shadow-sm">
+							<Image src={logoSrc} alt={branding.companyName} width={168} height={52} className="object-contain h-9 w-auto" />
+						</div>
+					)}
 				</div>
 
 				{/* Hero copy */}
@@ -129,13 +138,19 @@ export default function PortalLoginPage() {
 			<div className="flex-1 flex flex-col items-center justify-center p-6 sm:p-12 bg-white dark:bg-gray-950">
 				{/* Mobile logo */}
 				<div className="lg:hidden mb-8 flex items-center gap-3">
-					<div className="w-10 h-10 rounded-xl bg-[hsl(var(--primary))] flex items-center justify-center overflow-hidden">
-						<Image src={logoSrc} alt={branding.companyName} width={32} height={32} className="object-contain" unoptimized={!!branding.logoSrc} />
-					</div>
-					<div>
-						<p className="font-bold text-lg text-gray-900 dark:text-white leading-none">{branding.companyName}</p>
-						<p className="text-[hsl(var(--primary))] text-xs leading-none mt-0.5">{branding.tagline}</p>
-					</div>
+					{usingCustomLogo ? (
+						<>
+							<div className="w-10 h-10 rounded-xl bg-[hsl(var(--primary))] flex items-center justify-center overflow-hidden">
+								<Image src={logoSrc} alt={branding.companyName} width={32} height={32} className="object-contain" unoptimized />
+							</div>
+							<div>
+								<p className="font-bold text-lg text-gray-900 dark:text-white leading-none">{branding.companyName}</p>
+								<p className="text-[hsl(var(--primary))] text-xs leading-none mt-0.5">{branding.tagline}</p>
+							</div>
+						</>
+					) : (
+						<Image src={logoSrc} alt={branding.companyName} width={168} height={52} className="object-contain h-10 w-auto" />
+					)}
 				</div>
 
 				<div className="w-full max-w-sm">

@@ -25,8 +25,7 @@ export default async function LandingPage() {
       <header className="sticky top-0 z-40 border-b border-gray-100 dark:border-gray-800 bg-white/80 dark:bg-gray-950/80 backdrop-blur">
         <div className="mx-auto max-w-6xl px-4 sm:px-6 h-16 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <Image src="/logo.png" alt="Royal Gene" width={32} height={32} className="object-contain" priority />
-            <span className="font-bold text-gray-900 dark:text-white">Royal Gene Portal</span>
+            <Image src="/logo.png" alt="Royal Gene Portal" width={163} height={50} className="object-contain h-10 w-auto" priority />
           </div>
           <div className="flex items-center gap-2">
             <Button variant="ghost" asChild>
