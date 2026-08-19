@@ -20,8 +20,8 @@
  *   • portal_user          → can only transfer FROM their own shop
  */
 
-import { NextRequest } from 'next/server';
-import { verifyToken } from '@/lib/auth.server';
+import { NextRequest, NextResponse } from 'next/server';
+import { requireAuth } from '@/lib/authorize';
 import { supabaseAdmin } from '@/lib/supabase-client';
 import logger from '@/lib/logger';
 import { v4 as uuidv4 } from 'uuid';
@@ -33,14 +33,9 @@ import type { ShopStock } from '@/lib/types';
 export async function POST(request: NextRequest) {
   try {
     // ── Auth ────────────────────────────────────────────────────────────────
-    const token = request.headers.get('Authorization')?.replace('Bearer ', '');
-    if (!token) {
-      return jsonResponse({ success: false, error: 'Unauthorized' }, 401);
-    }
-    const payload = verifyToken(token);
-    if (!payload) {
-      return jsonResponse({ success: false, error: 'Invalid token' }, 401);
-    }
+    const auth = requireAuth(request);
+    if (auth instanceof NextResponse) return auth;
+    const payload = auth;
 
     // ── Parse body ──────────────────────────────────────────────────────────
     const body = await request.json() as {
@@ -79,7 +74,14 @@ export async function POST(request: NextRequest) {
       return jsonResponse({ success: false, error: 'Source stock not found' }, 404);
     }
 
-    const src = srcStock as ShopStock & { productId: string; shopId: string };
+    const src = srcStock as ShopStock & { productId: string; shopId: string; organizationId: string };
+
+    // ── Guard: even an "admin" role is org-scoped — the source stock must
+    // belong to the caller's own organization (true super_admin exempt) ────
+    if (payload.organizationId && src.organizationId !== payload.organizationId) {
+      logger.warn('Stock transfer forbidden: source stock not in caller organization', { userId: payload.userId, fromShopStockId });
+      return jsonResponse({ success: false, error: 'Forbidden' }, 403);
+    }
 
     // ── Guard: portal users can only transfer from their own shop ───────────
     if (payload.role !== 'admin' && payload.role !== 'super_admin') {
@@ -112,15 +114,23 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // ── Verify destination shop exists ───────────────────────────────────────
+    // ── Verify destination shop exists AND belongs to the SAME organization
+    // as the source — without this, stock could be transferred straight
+    // into a completely different tenant's shop. ────────────────────────────
     const { data: destShop, error: destShopErr } = await supabaseAdmin
       .from('Shop')
-      .select('id, name')
+      .select('id, name, organizationId')
       .eq('id', toShopId)
       .maybeSingle();
 
     if (destShopErr || !destShop) {
       return jsonResponse({ success: false, error: 'Destination shop not found' }, 404);
+    }
+    if (destShop.organizationId !== src.organizationId) {
+      logger.warn('Stock transfer forbidden: destination shop in a different organization', {
+        userId: payload.userId, sourceOrg: src.organizationId, destOrg: destShop.organizationId, toShopId,
+      });
+      return jsonResponse({ success: false, error: 'Destination shop must belong to the same organization' }, 403);
     }
 
     // ── Check if destination already has stock for this product ─────────────
@@ -163,6 +173,7 @@ export async function POST(request: NextRequest) {
       const newStockId = uuidv4();
       await supabaseAdmin.from('ShopStock').insert([{
         id: newStockId,
+        organizationId: src.organizationId,
         shopId: toShopId,
         productId: src.productId,
         quantity: transferQty,
@@ -176,6 +187,7 @@ export async function POST(request: NextRequest) {
     // ── StockTransaction – source (subtract) ────────────────────────────────
     await supabaseAdmin.from('StockTransaction').insert([{
       id: uuidv4(),
+      organizationId: src.organizationId,
       shopStockId: fromShopStockId,
       portalUserId,
       type: 'subtract',
@@ -188,6 +200,7 @@ export async function POST(request: NextRequest) {
     // ── StockTransaction – destination (add) ────────────────────────────────
     await supabaseAdmin.from('StockTransaction').insert([{
       id: uuidv4(),
+      organizationId: src.organizationId,
       shopStockId: destStockId,
       portalUserId,
       type: 'add',

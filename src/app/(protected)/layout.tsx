@@ -432,16 +432,17 @@ export default function ProtectedLayout({ children }: { children: React.ReactNod
   const [alertsCount, setAlertsCount] = useState<number>(0);
 
   useEffect(() => {
+    if (!token) return;
     (async () => {
       try {
-        const res = await fetch('/api/portal/alerts/count', { cache: 'no-store' });
+        const res = await fetch('/api/portal/alerts/count', { cache: 'no-store', headers: { Authorization: `Bearer ${token}` } });
         if (res.ok) {
           const json = await res.json();
           if (json?.success && typeof json.count === 'number') setAlertsCount(json.count);
         }
       } catch { /* ignore */ }
     })();
-  }, []);
+  }, [token]);
 
   // Cmd+K / Ctrl+K to open search
   useEffect(() => {

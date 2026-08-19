@@ -1,15 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase-client';
-import { verifyToken } from '@/lib/auth.server';
+import { verifyToken, type VerifiedPayload } from '@/lib/auth.server';
+import { assertTenantMatch } from '@/lib/tenant-guard';
 import { jsonResponse, optionsResponse } from '@/lib/apiResponse';
 
-function requireAdmin(request: NextRequest): NextResponse | ReturnType<typeof verifyToken> {
+function requireAdmin(request: NextRequest): NextResponse | VerifiedPayload {
   const token = request.headers.get('Authorization')?.replace('Bearer ', '');
   if (!token) return jsonResponse({ success: false, error: 'Unauthorized' }, 401);
   const payload = verifyToken(token);
   if (!payload) return jsonResponse({ success: false, error: 'Invalid token' }, 401);
   if (payload.role !== 'admin' && payload.role !== 'super_admin')
     return jsonResponse({ success: false, error: 'Admin access required' }, 403);
+  const tenantMismatch = assertTenantMatch(request, payload);
+  if (tenantMismatch) return tenantMismatch;
   return payload;
 }
 
@@ -21,10 +24,27 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   const { id } = await params;
   const { name, email, position, shopId, isActive, mobileAccess } = await request.json();
 
-  // Fetch existing portal user to get userId
+  // Fetch existing portal user to get userId — an org "admin" (not platform
+  // super_admin) may only ever touch a PortalUser belonging to their own org.
   const { data: pu, error: fetchError } = await supabaseAdmin
-    .from('PortalUser').select('id, userId').eq('id', id).single();
+    .from('PortalUser').select('id, userId, organizationId').eq('id', id).single();
   if (fetchError || !pu) return jsonResponse({ success: false, error: 'Portal user not found' }, 404);
+
+  if (auth.organizationId && pu.organizationId !== auth.organizationId) {
+    return jsonResponse({ success: false, error: 'Forbidden' }, 403);
+  }
+
+  // If reassigning to a different shop, that shop must be in the same organization.
+  if (shopId !== undefined) {
+    const { data: shopCheck } = await supabaseAdmin
+      .from('Shop')
+      .select('id, organizationId')
+      .eq('id', shopId)
+      .maybeSingle();
+    if (!shopCheck || shopCheck.organizationId !== pu.organizationId) {
+      return jsonResponse({ success: false, error: 'Forbidden: shop does not belong to this organization' }, 403);
+    }
+  }
 
   // Update PortalUser fields
   const puUpdate: Record<string, unknown> = { updatedAt: new Date().toISOString() };
@@ -62,8 +82,12 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
 
   const { id } = await params;
 
-  // Get userId first
-  const { data: pu } = await supabaseAdmin.from('PortalUser').select('userId').eq('id', id).single();
+  // Get userId first, and verify org ownership before deleting anything.
+  const { data: pu } = await supabaseAdmin.from('PortalUser').select('userId, organizationId').eq('id', id).single();
+  if (!pu) return jsonResponse({ success: false, error: 'Portal user not found' }, 404);
+  if (auth.organizationId && pu.organizationId !== auth.organizationId) {
+    return jsonResponse({ success: false, error: 'Forbidden' }, 403);
+  }
 
   const { error } = await supabaseAdmin.from('PortalUser').delete().eq('id', id);
   if (error) return jsonResponse({ success: false, error: error.message }, 500);

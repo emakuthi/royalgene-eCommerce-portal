@@ -1,16 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase-client';
-import { verifyToken } from '@/lib/auth.server';
+import { verifyToken, type VerifiedPayload } from '@/lib/auth.server';
+import { assertTenantMatch } from '@/lib/tenant-guard';
 import { jsonResponse, optionsResponse } from '@/lib/apiResponse';
 import { v4 as uuidv4 } from 'uuid';
 
-function requireAdmin(request: NextRequest): NextResponse | ReturnType<typeof verifyToken> {
+function requireAdmin(request: NextRequest): NextResponse | VerifiedPayload {
   const token = request.headers.get('Authorization')?.replace('Bearer ', '');
   if (!token) return jsonResponse({ success: false, error: 'Unauthorized' }, 401);
   const payload = verifyToken(token);
   if (!payload) return jsonResponse({ success: false, error: 'Invalid token' }, 401);
   if (payload.role !== 'admin' && payload.role !== 'super_admin')
     return jsonResponse({ success: false, error: 'Admin access required' }, 403);
+  const tenantMismatch = assertTenantMatch(request, payload);
+  if (tenantMismatch) return tenantMismatch;
   return payload;
 }
 
@@ -29,15 +32,29 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
   if (!shopId) return jsonResponse({ success: false, error: 'shopId is required' }, 400);
 
-  // Check the user exists and get their position from an existing PortalUser record
+  // Check the user exists and get their position from an existing PortalUser record.
+  // Org "admin" (not super_admin) may only manage users already in their own org.
   const { data: existingPU } = await supabaseAdmin
     .from('PortalUser')
-    .select('position')
+    .select('position, organizationId')
     .eq('userId', userId)
     .limit(1)
     .single();
 
   if (!existingPU) return jsonResponse({ success: false, error: 'Portal user not found' }, 404);
+  if (auth.organizationId && existingPU.organizationId !== auth.organizationId) {
+    return jsonResponse({ success: false, error: 'Forbidden' }, 403);
+  }
+
+  // The shop being assigned must belong to the same organization.
+  const { data: shopCheck } = await supabaseAdmin
+    .from('Shop')
+    .select('id, organizationId')
+    .eq('id', shopId)
+    .maybeSingle();
+  if (!shopCheck || shopCheck.organizationId !== existingPU.organizationId) {
+    return jsonResponse({ success: false, error: 'Forbidden: shop does not belong to this organization' }, 403);
+  }
 
   // Prevent duplicate shop assignment
   const { data: duplicate } = await supabaseAdmin
@@ -57,6 +74,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     .from('PortalUser')
     .insert([{
       id: portalUserId,
+      organizationId: existingPU.organizationId,
       userId,
       shopId,
       position: existingPU.position,
@@ -96,6 +114,18 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
   const { shopId } = await request.json();
 
   if (!shopId) return jsonResponse({ success: false, error: 'shopId is required' }, 400);
+
+  // Org "admin" may only manage users already in their own org.
+  if (auth.organizationId) {
+    const { data: ownerCheck } = await supabaseAdmin
+      .from('PortalUser')
+      .select('id')
+      .eq('userId', userId)
+      .eq('organizationId', auth.organizationId)
+      .limit(1)
+      .maybeSingle();
+    if (!ownerCheck) return jsonResponse({ success: false, error: 'Forbidden' }, 403);
+  }
 
   // Prevent removing the last shop assignment
   const { count } = await supabaseAdmin
