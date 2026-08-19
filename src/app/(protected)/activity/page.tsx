@@ -14,6 +14,8 @@ import {
   Monitor, Smartphone, Tablet, Globe, Clock,
   ShieldCheck, ShieldAlert,
 } from 'lucide-react';
+import { FeatureGate } from '@/components/entitlements/FeatureGate';
+import { FeatureCode } from '@/lib/entitlements/feature-codes';
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -202,6 +204,11 @@ function ActivityContent() {
         }
       />
 
+      <FeatureGate
+        feature={FeatureCode.AUDIT_TRAIL}
+        requiredPlanLabel="Business and higher"
+        onUpgradeClick={() => { window.location.href = '/settings?tab=billing'; }}
+      >
       {/* ── Content ── */}
       <div className="px-2 sm:px-2 py-2 pb-2 w-full">
 
@@ -359,6 +366,7 @@ function ActivityContent() {
           </CardContent>
         </Card>
       </div>
+      </FeatureGate>
     </div>
   );
 }

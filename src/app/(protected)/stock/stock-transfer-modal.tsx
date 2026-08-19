@@ -5,6 +5,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ArrowRightLeft, X } from 'lucide-react';
 import type { Shop, ShopStock, Product } from '@/lib/types';
+import { FeatureGate } from '@/components/entitlements/FeatureGate';
+import { FeatureCode } from '@/lib/entitlements/feature-codes';
 
 type ApiShopStock = ShopStock & { Product?: Product; product?: Product; shopName?: string };
 
@@ -123,7 +125,13 @@ export default function StockTransferModal({
         </div>
 
         {/* Body */}
-        <form onSubmit={(e) => void handleSubmit(e)} className="px-6 py-5 space-y-4">
+        <div className="px-6 py-5">
+        <FeatureGate
+          feature={FeatureCode.STOCK_TRANSFER}
+          requiredPlanLabel="Business and higher"
+          onUpgradeClick={() => { onClose(); window.location.href = '/settings?tab=billing'; }}
+        >
+        <form onSubmit={(e) => void handleSubmit(e)} className="space-y-4">
           {/* Product info */}
           <div className="rounded-lg bg-gray-50 dark:bg-gray-800 p-3 flex items-center gap-3">
             {prod && Array.isArray((prod as Product).images) && (prod as Product).images.length > 0 && (
@@ -212,6 +220,8 @@ export default function StockTransferModal({
             </Button>
           </div>
         </form>
+        </FeatureGate>
+        </div>
       </div>
     </div>
   );

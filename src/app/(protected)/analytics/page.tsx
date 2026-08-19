@@ -40,6 +40,8 @@ import {
   Cell,
 } from 'recharts';
 import PortalHeader from '@/components/portal/PortalHeader';
+import { FeatureGate } from '@/components/entitlements/FeatureGate';
+import { FeatureCode } from '@/lib/entitlements/feature-codes';
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                             */
@@ -399,6 +401,11 @@ export default function AnalyticsPage() {
         }
       />
 
+      <FeatureGate
+        feature={FeatureCode.ADVANCED_ANALYTICS}
+        requiredPlanLabel="Professional and higher"
+        onUpgradeClick={() => { window.location.href = '/settings?tab=billing'; }}
+      >
       <div className="px-4 sm:px-6 lg:px-8 py-6 pb-12 space-y-6">
         {/* ============================================ */}
         {/*  KPI CARDS                                   */}
@@ -752,6 +759,7 @@ export default function AnalyticsPage() {
           </Card>
         )}
       </div>
+      </FeatureGate>
     </div>
   );
 }
