@@ -76,18 +76,28 @@ export interface VercelDomainConfig {
   aRecordTarget: string;
 }
 
+interface VercelDomainConfigResponse {
+  misconfigured?: boolean;
+  recommendedCNAME?: { rank: number; value: string }[];
+  recommendedIPv4?: { rank: number; value: string[] }[];
+}
+
 /** Checks whether a domain's DNS currently points correctly at this Vercel project. */
 export async function getDomainConfig(domain: string): Promise<{ ok: true; data: VercelDomainConfig } | { ok: false; error: string }> {
-  const result = await vercelFetch<{ misconfigured?: boolean }>(`/v6/domains/${encodeURIComponent(domain)}/config`, { method: 'GET' });
+  const result = await vercelFetch<VercelDomainConfigResponse>(`/v6/domains/${encodeURIComponent(domain)}/config`, { method: 'GET' });
   if (!result.ok) return result;
+
+  // Vercel returns account/domain-specific recommended targets (ranked) —
+  // these are the actually-correct values to show, not generic fallbacks.
+  const topCname = result.data.recommendedCNAME?.slice().sort((a, b) => a.rank - b.rank)[0]?.value;
+  const topIpv4 = result.data.recommendedIPv4?.slice().sort((a, b) => a.rank - b.rank)[0]?.value?.[0];
+
   return {
     ok: true,
     data: {
       misconfigured: Boolean(result.data.misconfigured),
-      // Standard Vercel targets — shown as setup instructions regardless of
-      // current state so the tenant always knows what to point DNS at.
-      cnameTarget: 'cname.vercel-dns.com',
-      aRecordTarget: '76.76.21.21',
+      cnameTarget: (topCname || 'cname.vercel-dns.com').replace(/\.$/, ''),
+      aRecordTarget: topIpv4 || '76.76.21.21',
     },
   };
 }
