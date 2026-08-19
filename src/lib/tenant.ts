@@ -38,6 +38,26 @@ export function extractSubdomain(host: string | null | undefined, rootDomain: st
 }
 
 /**
+ * True for hosts that belong to our own root domain but aren't a tenant
+ * slug (bare apex, www, portal, or any other reserved label) — these fall
+ * back to the default tenant. False for a host extractSubdomain() also
+ * returned null for but that ISN'T ours at all (a candidate custom domain).
+ * Distinguishing these two null cases is what makes custom-domain
+ * resolution possible without misrouting our own reserved hosts.
+ */
+export function isRootDomainHost(host: string | null | undefined, rootDomain: string = ROOT_DOMAIN): boolean {
+  if (!host) return true;
+  const bareHost = host.split(':')[0].toLowerCase();
+  const bareRoot = rootDomain.split(':')[0].toLowerCase();
+
+  if (bareHost === bareRoot || bareHost === `www.${bareRoot}`) return true;
+  if (!bareHost.endsWith(`.${bareRoot}`)) return false;
+
+  const label = bareHost.slice(0, -(`.${bareRoot}`.length));
+  return RESERVED_SUBDOMAINS.includes(label);
+}
+
+/**
  * Resolves an Organization by slug via a raw PostgREST request (no supabase-js
  * import — keeps this module import-safe for Next.js middleware / edge runtime).
  */
@@ -48,6 +68,36 @@ export async function resolveOrganizationEdge(slug: string): Promise<ResolvedOrg
 
   try {
     const url = `${supabaseUrl}/rest/v1/Organization?slug=eq.${encodeURIComponent(slug)}&select=id,slug,status&limit=1`;
+    const res = await fetch(url, {
+      headers: {
+        apikey: serviceKey,
+        Authorization: `Bearer ${serviceKey}`,
+      },
+      next: { revalidate: 30 },
+    });
+    if (!res.ok) return null;
+    const rows = (await res.json()) as ResolvedOrganization[];
+    return rows[0] ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Resolves an Organization by a verified custom domain. Only ever matches
+ * customDomainStatus='verified' — this filter is the actual security gate
+ * that prevents an unverified/unproven domain claim from routing traffic,
+ * not just a UI status label. See src/lib/domains.server.ts for how a
+ * domain becomes verified.
+ */
+export async function resolveOrganizationByCustomDomainEdge(host: string): Promise<ResolvedOrganization | null> {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const bareHost = host.split(':')[0].toLowerCase();
+  if (!supabaseUrl || !serviceKey || !bareHost) return null;
+
+  try {
+    const url = `${supabaseUrl}/rest/v1/Organization?customDomain=eq.${encodeURIComponent(bareHost)}&customDomainStatus=eq.verified&select=id,slug,status&limit=1`;
     const res = await fetch(url, {
       headers: {
         apikey: serviceKey,

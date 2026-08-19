@@ -1,6 +1,13 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
-import { DEV_TENANT_SLUG, extractSubdomain, resolveOrganizationEdge } from '@/lib/tenant';
+import {
+  DEV_TENANT_SLUG,
+  extractSubdomain,
+  isRootDomainHost,
+  resolveOrganizationByCustomDomainEdge,
+  resolveOrganizationEdge,
+  type ResolvedOrganization,
+} from '@/lib/tenant';
 
 // Paths that must work even when no tenant has been resolved yet (signup,
 // email verification, and the tenant-status pages themselves).
@@ -54,8 +61,17 @@ export async function middleware(req: NextRequest) {
   // --- Tenant resolution ---------------------------------------------------
   const host = req.headers.get('host');
   const subdomainSlug = extractSubdomain(host);
-  const slug = subdomainSlug ?? DEV_TENANT_SLUG;
-  const org = await resolveOrganizationEdge(slug);
+  let org: ResolvedOrganization | null;
+  if (subdomainSlug) {
+    org = await resolveOrganizationEdge(subdomainSlug);
+  } else if (isRootDomainHost(host)) {
+    // Bare apex / www / portal / other reserved host -> default tenant.
+    org = await resolveOrganizationEdge(DEV_TENANT_SLUG);
+  } else {
+    // Not our root domain and not a recognized subdomain -> only remaining
+    // possibility is a tenant's verified custom domain.
+    org = host ? await resolveOrganizationByCustomDomainEdge(host) : null;
+  }
 
   if (!org) {
     if (isTenantOptional(pathname)) {

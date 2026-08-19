@@ -32,11 +32,13 @@ import {
   ImageIcon,
   RotateCcw,
   CreditCard,
+  Globe,
 } from 'lucide-react';
 import { useSignOut } from '@/components/portal/SignOutProvider';
 import { loadBranding, saveBranding, resetBranding, type BrandingConfig } from '@/lib/branding';
 import { getCurrentOrganization } from '@/lib/organizations';
 import { listBillingPlans, startBillingCheckout, verifyBillingReference } from '@/lib/billing';
+import { getDomainState, removeDomain, setDomain, type DomainState } from '@/lib/domains';
 import type { Organization, PlatformPlan } from '@/lib/types';
 
 // ── Tab config ────────────────────────────────────────────────────────────────
@@ -47,6 +49,7 @@ const TABS = [
   { id: 'shop',        label: 'Shop Info',    icon: Store },
   { id: 'notifications', label: 'Notifications', icon: Bell },
   { id: 'billing',     label: 'Billing',      icon: CreditCard },
+  { id: 'domain',      label: 'Domain',       icon: Globe },
   { id: 'about',       label: 'About',        icon: Info },
 ] as const;
 
@@ -217,6 +220,53 @@ export default function PortalSettingsPage() {
       toast.error(res.error || 'Failed to start checkout');
       setCheckoutBusyId(null);
     }
+  };
+
+  const [domainState, setDomainState] = useState<DomainState | null>(null);
+  const [domainLoading, setDomainLoading] = useState(false);
+  const [domainInput, setDomainInput] = useState('');
+  const [domainBusy, setDomainBusy] = useState(false);
+
+  const loadDomainState = () => {
+    if (!token) return;
+    setDomainLoading(true);
+    getDomainState(token).then((res) => {
+      if (res.success && res.data) setDomainState(res.data);
+      setDomainLoading(false);
+    });
+  };
+
+  useEffect(() => {
+    if (activeTab !== 'domain' || !token || domainState) return;
+    loadDomainState();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, token]);
+
+  const handleSetDomain = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!domainInput.trim()) return;
+    setDomainBusy(true);
+    const res = await setDomain(token, domainInput.trim());
+    if (res.success && res.data) {
+      setDomainState(res.data);
+      setDomainInput('');
+      toast.success('Domain added — follow the DNS instructions below to finish setup');
+    } else {
+      toast.error(res.error || 'Failed to add domain');
+    }
+    setDomainBusy(false);
+  };
+
+  const handleRemoveDomain = async () => {
+    setDomainBusy(true);
+    const res = await removeDomain(token);
+    if (res.success) {
+      setDomainState({ domain: null, status: null, instructions: null });
+      toast.success('Domain removed');
+    } else {
+      toast.error(res.error || 'Failed to remove domain');
+    }
+    setDomainBusy(false);
   };
 
   useEffect(() => {
@@ -1012,6 +1062,66 @@ export default function PortalSettingsPage() {
               </div>
             </Section>
           </>
+        )}
+
+        {/* ── DOMAIN ─────────────────────────────────────────────── */}
+        {activeTab === 'domain' && (
+          <Section title="Custom Domain" description="Point your own domain at your workspace instead of the default subdomain">
+            {!isBillingAdmin ? (
+              <p className="text-sm text-gray-500 dark:text-gray-400">Contact your workspace admin to configure a custom domain.</p>
+            ) : domainLoading && !domainState ? (
+              <p className="text-sm text-gray-500 dark:text-gray-400">Loading…</p>
+            ) : domainState?.domain ? (
+              <div className="space-y-5">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-gray-900 dark:text-white">{domainState.domain}</p>
+                    <p className={`text-xs mt-0.5 ${
+                      domainState.status === 'verified' ? 'text-emerald-600' : domainState.status === 'misconfigured' ? 'text-amber-600' : 'text-gray-500 dark:text-gray-400'
+                    }`}>
+                      {domainState.status === 'verified' ? 'Verified — this domain is live' : domainState.status === 'misconfigured' ? 'DNS not pointed correctly yet' : 'Pending DNS setup'}
+                    </p>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button variant="outline" size="sm" disabled={domainBusy} onClick={loadDomainState}>Check status</Button>
+                    <Button variant="outline" size="sm" className="text-red-600 hover:text-red-700" disabled={domainBusy} onClick={handleRemoveDomain}>Remove</Button>
+                  </div>
+                </div>
+
+                {domainState.status !== 'verified' && domainState.instructions && (
+                  <div className="rounded-lg border border-[hsl(var(--border))] p-4 space-y-3 text-sm">
+                    <p className="font-medium text-gray-900 dark:text-white">DNS setup</p>
+                    <p className="text-gray-500 dark:text-gray-400">
+                      At your domain registrar, add one of the following (subdomain like <code>shop.yourdomain.com</code> → CNAME; root domain like <code>yourdomain.com</code> → A record):
+                    </p>
+                    <div className="font-mono text-xs bg-gray-50 dark:bg-gray-800 rounded p-3 space-y-1">
+                      <p>CNAME → {domainState.instructions.cnameTarget}</p>
+                      <p>A → {domainState.instructions.aRecordTarget}</p>
+                    </div>
+                    {domainState.instructions.verification.length > 0 && (
+                      <>
+                        <p className="text-gray-500 dark:text-gray-400">Also add this TXT record to prove ownership:</p>
+                        <div className="font-mono text-xs bg-gray-50 dark:bg-gray-800 rounded p-3 space-y-1">
+                          {domainState.instructions.verification.map((v, i) => (
+                            <p key={i}>TXT {v.domain} → {v.value}</p>
+                          ))}
+                        </div>
+                      </>
+                    )}
+                    <p className="text-xs text-gray-400">DNS changes can take a few minutes to a few hours to propagate.</p>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <form onSubmit={handleSetDomain} className="flex items-end gap-3">
+                <div className="flex-1">
+                  <Label htmlFor="domain">Domain</Label>
+                  <Input id="domain" placeholder="shop.yourdomain.com" value={domainInput} onChange={(e) => setDomainInput(e.target.value)} disabled={domainBusy} />
+                </div>
+                <Button type="submit" disabled={domainBusy}>{domainBusy ? 'Adding…' : 'Add Domain'}</Button>
+              </form>
+            )}
+          </Section>
         )}
 
         {/* ── ABOUT ──────────────────────────────────────────────── */}
