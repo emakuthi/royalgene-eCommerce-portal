@@ -1,6 +1,6 @@
-import { NextRequest } from 'next/server';
-import { verifyToken } from '@/lib/auth.server';
+import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase-client';
+import { requireAuth } from '@/lib/authorize';
 import logger from '@/lib/logger';
 import { v4 as uuidv4 } from 'uuid';
 import { updateShopStock, recordStockTransaction } from '@/lib/db';
@@ -13,17 +13,9 @@ export async function GET(request: NextRequest) {
   const startTime = Date.now();
 
   try {
-    const token = request.headers.get('Authorization')?.replace('Bearer ', '');
-    if (!token) {
-      logger.warn('Stock fetch unauthorized: no token', { endpoint: '/api/portal/stock', method: 'GET' });
-      return jsonResponse({ success: false, error: 'Unauthorized' }, 401);
-    }
-
-    const payload = verifyToken(token);
-    if (!payload) {
-      logger.warn('Stock fetch unauthorized: invalid token', { endpoint: '/api/portal/stock' });
-      return jsonResponse({ success: false, error: 'Invalid token' }, 401);
-    }
+    const auth = requireAuth(request);
+    if (auth instanceof NextResponse) return auth;
+    const payload = auth;
 
     const { searchParams } = new URL(request.url);
     const shopId = searchParams.get('shopId');
@@ -31,25 +23,34 @@ export async function GET(request: NextRequest) {
 
     logger.info('Fetching shop stock', { shopId, fetchAll, userId: payload.userId, endpoint: '/api/portal/stock', method: 'GET' });
 
-    // If fetchAll=true (admin/super_admin only), return stock for every shop with shop name enrichment
+    // If fetchAll=true (admin/super_admin only), return stock for every shop with shop name enrichment.
+    // "admin" is an org-scoped role — they only ever see their own organization's shops/stock.
+    // Only "super_admin" (organizationId === null, platform-level) gets truly cross-tenant results.
     if (fetchAll) {
       if (payload.role !== 'admin' && payload.role !== 'super_admin') {
         return jsonResponse({ success: false, error: 'Forbidden: admin access required for all-shops stock' }, 403);
       }
 
-      // Fetch all shops first so we can enrich stock rows with shop names
-      const { data: shops, error: shopsErr } = await supabaseAdmin.from('Shop').select('id, name').eq('isActive', true);
+      let shopsQuery = supabaseAdmin.from('Shop').select('id, name').eq('isActive', true);
+      if (payload.organizationId) shopsQuery = shopsQuery.eq('organizationId', payload.organizationId);
+      const { data: shops, error: shopsErr } = await shopsQuery;
       if (shopsErr) {
         logger.error('All-stock fetch: failed to load shops', { error: shopsErr.message });
         return jsonResponse({ success: false, error: 'Failed to fetch shops' }, 500);
       }
       const shopNameMap: Record<string, string> = {};
       for (const s of (shops ?? [])) shopNameMap[s.id as string] = s.name as string;
+      const shopIds = (shops ?? []).map((s) => s.id as string);
 
-      const { data: allStocks, error: allErr } = await supabaseAdmin
+      let allStocksQuery = supabaseAdmin
         .from('ShopStock')
         .select('*, Product!ShopStock_productId_fkey(*)')
         .order('createdAt', { ascending: false });
+      // Scope to the organization's own shops even for super_admin's org-agnostic
+      // path — an org admin's shop list already IS the scope; for super_admin
+      // (no organizationId) this is intentionally left unfiltered.
+      if (payload.organizationId) allStocksQuery = allStocksQuery.in('shopId', shopIds.length > 0 ? shopIds : ['__none__']);
+      const { data: allStocks, error: allErr } = await allStocksQuery;
 
       if (allErr) {
         logger.error('All-stock fetch failed', { error: allErr.message });
@@ -67,6 +68,21 @@ export async function GET(request: NextRequest) {
     if (!shopId) {
       logger.warn('Stock fetch failed: shop ID required', { endpoint: '/api/portal/stock' });
       return jsonResponse({ success: false, error: 'Shop ID required' }, 400);
+    }
+
+    // Verify the requested shop actually belongs to the caller's organization
+    // before returning anything — prevents fetching another tenant's stock by
+    // simply passing their shopId (super_admin exempt, matching other routes).
+    if (payload.organizationId) {
+      const { data: shopCheck } = await supabaseAdmin
+        .from('Shop')
+        .select('id')
+        .eq('id', shopId)
+        .eq('organizationId', payload.organizationId)
+        .maybeSingle();
+      if (!shopCheck) {
+        return jsonResponse({ success: false, error: 'Forbidden' }, 403);
+      }
     }
 
     // Fetch shop stocks with product information
@@ -156,15 +172,9 @@ export async function PUT(request: NextRequest) {
   const startTime = Date.now();
 
   try {
-    const token = request.headers.get('Authorization')?.replace('Bearer ', '');
-    if (!token) {
-      return jsonResponse({ success: false, error: 'Unauthorized' }, 401);
-    }
-
-    const payload = verifyToken(token);
-    if (!payload) {
-      return jsonResponse({ success: false, error: 'Invalid token' }, 401);
-    }
+    const auth = requireAuth(request);
+    if (auth instanceof NextResponse) return auth;
+    const payload = auth;
 
     const { stockId, quantity, reason } = await request.json();
 
@@ -183,9 +193,25 @@ export async function PUT(request: NextRequest) {
       return jsonResponse({ success: false, error: 'Stock not found' }, 404);
     }
 
+    const oldStockTyped = oldStock as ShopStock;
+
+    // Even an "admin" role is org-scoped — verify the stock's shop actually
+    // belongs to this caller's organization before allowing any admin-path
+    // update (super_admin, with no organizationId, is exempt).
+    if (payload.organizationId) {
+      const { data: shopCheck } = await supabaseAdmin
+        .from('Shop')
+        .select('id')
+        .eq('id', oldStockTyped.shopId)
+        .eq('organizationId', payload.organizationId)
+        .maybeSingle();
+      if (!shopCheck) {
+        return jsonResponse({ success: false, error: 'Forbidden' }, 403);
+      }
+    }
+
     // Resolve portal user: allow admins/super_admin to act by synthesizing a minimal portalUser tied to the stock's shop
     let portalUser: PortalUser | null = null;
-    const oldStockTyped = oldStock as ShopStock;
     if (payload.role === 'admin' || payload.role === 'super_admin') {
       portalUser = {
         id: `admin-${payload.userId}`,

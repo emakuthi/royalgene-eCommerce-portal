@@ -1,37 +1,29 @@
-import { NextRequest } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase-client';
-import { verifyToken } from '@/lib/auth.server';
+import { requireAuth } from '@/lib/authorize';
 import logger from '@/lib/logger';
 import { v4 as uuidv4 } from 'uuid';
 import { jsonResponse, optionsResponse } from '@/lib/apiResponse';
 
 export async function GET(request: NextRequest) {
   try {
-    const token = request.headers.get('Authorization')?.replace('Bearer ', '');
-    if (!token) {
-      logger.warn('Portal fetch shops unauthorized: no token', { endpoint: '/api/portal/shops', method: 'GET' });
-      return jsonResponse({ success: false, error: 'Unauthorized' }, 401);
-    }
+    const auth = requireAuth(request);
+    if (auth instanceof NextResponse) return auth;
 
-    const payload = verifyToken(token);
-    if (!payload) {
-      logger.warn('Portal fetch shops unauthorized: invalid token', { endpoint: '/api/portal/shops' });
-      return jsonResponse({ success: false, error: 'Invalid token' }, 401);
+    let query = supabaseAdmin.from('Shop').select('*').eq('isActive', true).order('name', { ascending: true });
+    // super_admin (no organizationId) retains cross-tenant visibility; every other
+    // caller is scoped to their own organization.
+    if (auth.organizationId) {
+      query = query.eq('organizationId', auth.organizationId);
     }
-
-    // Fetch all active shops
-    const { data: shops, error } = await supabaseAdmin
-      .from('Shop')
-      .select('*')
-      .eq('isActive', true)
-      .order('name', { ascending: true });
+    const { data: shops, error } = await query;
 
     if (error) {
       logger.error('Portal fetch shops failed (supabase)', { error: error.message, endpoint: '/api/portal/shops' });
       return jsonResponse({ success: false, error: 'Failed to fetch shops' }, 500);
     }
 
-    logger.info('Portal shops fetched', { count: shops?.length || 0, userId: payload.userId, endpoint: '/api/portal/shops' });
+    logger.info('Portal shops fetched', { count: shops?.length || 0, userId: auth.userId, endpoint: '/api/portal/shops' });
 
     return jsonResponse({ success: true, data: shops || [] }, 200);
   } catch (err) {
@@ -44,47 +36,46 @@ export async function POST(request: NextRequest) {
   const startTime = Date.now();
 
   try {
-    const token = request.headers.get('Authorization')?.replace('Bearer ', '');
-    if (!token) {
-      logger.warn('Portal create shop unauthorized: no token', { endpoint: '/api/portal/shops', method: 'POST' });
-      return jsonResponse({ success: false, error: 'Unauthorized' }, 401);
-    }
+    const auth = requireAuth(request);
+    if (auth instanceof NextResponse) return auth;
 
-    const payload = verifyToken(token);
-    if (!payload) {
-      logger.warn('Portal create shop unauthorized: invalid token', { endpoint: '/api/portal/shops' });
-      return jsonResponse({ success: false, error: 'Invalid token' }, 401);
+    if (!auth.organizationId) {
+      // super_admin has no organization of their own — creating a shop
+      // without a target org would produce an unowned, unreachable row.
+      return jsonResponse({ success: false, error: 'An organization context is required to create a shop' }, 400);
     }
+    const organizationId = auth.organizationId;
 
     const body = await request.json();
     const { name, location, phone, email } = body || {};
 
-    logger.info('Portal create shop attempt', { userId: payload.userId, name, location, endpoint: '/api/portal/shops' });
+    logger.info('Portal create shop attempt', { userId: auth.userId, name, location, endpoint: '/api/portal/shops' });
 
     if (!name || !location) {
-      logger.warn('Portal create shop failed: missing fields', { userId: payload.userId, name, location, endpoint: '/api/portal/shops' });
+      logger.warn('Portal create shop failed: missing fields', { userId: auth.userId, name, location, endpoint: '/api/portal/shops' });
       return jsonResponse({ success: false, error: 'Shop name and location are required' }, 400);
     }
 
-    // Optional: prevent duplicate shop names
+    // Prevent duplicate shop names within the same organization (not globally).
     const { data: existing } = await supabaseAdmin
       .from('Shop')
       .select('id')
+      .eq('organizationId', organizationId)
       .ilike('name', name)
       .limit(1)
       .single();
 
     if (existing) {
-      logger.warn('Portal create shop failed: duplicate name', { userId: payload.userId, name, endpoint: '/api/portal/shops' });
+      logger.warn('Portal create shop failed: duplicate name', { userId: auth.userId, name, endpoint: '/api/portal/shops' });
       return jsonResponse({ success: false, error: 'A shop with that name already exists' }, 409);
     }
 
     const shopId = uuidv4();
     const now = new Date();
 
-    // Define a concrete type for the insert payload to avoid `any` and satisfy lint rules
     interface ShopInsert {
       id: string;
+      organizationId: string;
       name: string;
       location: string;
       phone: string | null;
@@ -98,6 +89,7 @@ export async function POST(request: NextRequest) {
 
     const insertPayload: ShopInsert = {
       id: shopId,
+      organizationId,
       name,
       location,
       phone: phone || null,
@@ -116,11 +108,11 @@ export async function POST(request: NextRequest) {
       .single();
 
     if (error) {
-      logger.error('Portal create shop failed (supabase)', { error: error.message, userId: payload.userId, endpoint: '/api/portal/shops' });
+      logger.error('Portal create shop failed (supabase)', { error: error.message, userId: auth.userId, endpoint: '/api/portal/shops' });
       return jsonResponse({ success: false, error: 'Failed to create shop' }, 500);
     }
 
-    logger.info('Portal shop created', { shopId: shop?.id, userId: payload.userId, endpoint: '/api/portal/shops', duration: Date.now() - startTime });
+    logger.info('Portal shop created', { shopId: shop?.id, userId: auth.userId, endpoint: '/api/portal/shops', duration: Date.now() - startTime });
 
     return jsonResponse({ success: true, data: shop }, 201);
   } catch (err) {

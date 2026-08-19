@@ -1,12 +1,12 @@
-import { NextRequest } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase-client';
-import { verifyToken } from '@/lib/auth.server';
+import { requireAuth } from '@/lib/authorize';
 import logger from '@/lib/logger';
 import { jsonResponse, optionsResponse } from '@/lib/apiResponse';
 
 /**
  * GET /api/portal/shops/[shopId]
- * Return a single shop by ID.
+ * Return a single shop by ID, scoped to the caller's organization.
  */
 export async function GET(
   request: NextRequest,
@@ -14,16 +14,12 @@ export async function GET(
 ) {
   try {
     const { shopId } = await params;
-    const token = request.headers.get('Authorization')?.replace('Bearer ', '');
-    if (!token) return jsonResponse({ success: false, error: 'Unauthorized' }, 401);
-    const payload = verifyToken(token);
-    if (!payload) return jsonResponse({ success: false, error: 'Invalid token' }, 401);
+    const auth = requireAuth(request);
+    if (auth instanceof NextResponse) return auth;
 
-    const { data: shop, error } = await supabaseAdmin
-      .from('Shop')
-      .select('*')
-      .eq('id', shopId)
-      .maybeSingle();
+    let query = supabaseAdmin.from('Shop').select('*').eq('id', shopId);
+    if (auth.organizationId) query = query.eq('organizationId', auth.organizationId);
+    const { data: shop, error } = await query.maybeSingle();
 
     if (error) {
       logger.error('Portal get shop failed', { shopId, error: error.message });
@@ -40,7 +36,7 @@ export async function GET(
 
 /**
  * PATCH /api/portal/shops/[shopId]
- * Update a shop's details.
+ * Update a shop's details, scoped to the caller's organization.
  */
 export async function PATCH(
   request: NextRequest,
@@ -48,10 +44,8 @@ export async function PATCH(
 ) {
   try {
     const { shopId } = await params;
-    const token = request.headers.get('Authorization')?.replace('Bearer ', '');
-    if (!token) return jsonResponse({ success: false, error: 'Unauthorized' }, 401);
-    const payload = verifyToken(token);
-    if (!payload) return jsonResponse({ success: false, error: 'Invalid token' }, 401);
+    const auth = requireAuth(request);
+    if (auth instanceof NextResponse) return auth;
 
     const body = await request.json() as Record<string, unknown>;
     const allowedFields = ['name', 'location', 'phone', 'email', 'manager', 'description', 'isActive'];
@@ -66,12 +60,9 @@ export async function PATCH(
 
     updates.updatedAt = new Date().toISOString();
 
-    const { data: updated, error } = await supabaseAdmin
-      .from('Shop')
-      .update(updates)
-      .eq('id', shopId)
-      .select()
-      .maybeSingle();
+    let query = supabaseAdmin.from('Shop').update(updates).eq('id', shopId);
+    if (auth.organizationId) query = query.eq('organizationId', auth.organizationId);
+    const { data: updated, error } = await query.select().maybeSingle();
 
     if (error) {
       logger.error('Portal update shop failed', { shopId, error: error.message });
@@ -79,7 +70,7 @@ export async function PATCH(
     }
     if (!updated) return jsonResponse({ success: false, error: 'Shop not found' }, 404);
 
-    logger.info('Portal shop updated', { shopId, userId: payload.userId });
+    logger.info('Portal shop updated', { shopId, userId: auth.userId });
     return jsonResponse({ success: true, data: updated }, 200);
   } catch (err) {
     logger.error('Portal update shop error', { error: err instanceof Error ? err.message : String(err) });
@@ -90,4 +81,3 @@ export async function PATCH(
 export function OPTIONS() {
   return optionsResponse('GET,PATCH,OPTIONS');
 }
-

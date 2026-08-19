@@ -1,5 +1,5 @@
-import { NextRequest } from 'next/server';
-import { verifyToken } from '@/lib/auth.server';
+import { NextRequest, NextResponse } from 'next/server';
+import { requireAuth } from '@/lib/authorize';
 import { supabaseAdmin } from '@/lib/supabase-client';
 import logger from '@/lib/logger';
 import { v4 as uuidv4 } from 'uuid';
@@ -12,17 +12,9 @@ export async function POST(request: NextRequest) {
   const startTime = Date.now();
 
   try {
-    const token = request.headers.get('Authorization')?.replace('Bearer ', '');
-    if (!token) {
-      logger.warn('Sales entry unauthorized: no token', { endpoint: '/api/portal/sales', method: 'POST' });
-      return jsonResponse({ success: false, error: 'Unauthorized' }, 401);
-    }
-
-    const payload = verifyToken(token);
-    if (!payload) {
-      logger.warn('Sales entry unauthorized: invalid token', { endpoint: '/api/portal/sales' });
-      return jsonResponse({ success: false, error: 'Invalid token' }, 401);
-    }
+    const auth = requireAuth(request);
+    if (auth instanceof NextResponse) return auth;
+    const payload = auth;
 
     const {
       shopId: payloadShopId,
@@ -70,6 +62,22 @@ export async function POST(request: NextRequest) {
       if (!effectiveShopId) {
         logger.warn('Sales entry failed: admin action requires shopId', { userId: payload.userId, endpoint: '/api/portal/sales' });
         return jsonResponse({ success: false, error: 'Shop ID required' }, 400);
+      }
+
+      // Even an "admin" role is org-scoped — verify the target shop actually
+      // belongs to this caller's organization (true super_admin, with no
+      // organizationId, is exempt).
+      if (payload.organizationId) {
+        const { data: shopCheck } = await supabaseAdmin
+          .from('Shop')
+          .select('id')
+          .eq('id', effectiveShopId)
+          .eq('organizationId', payload.organizationId)
+          .maybeSingle();
+        if (!shopCheck) {
+          logger.warn('Sales entry forbidden: shop not in caller organization', { userId: payload.userId, shopId: effectiveShopId, endpoint: '/api/portal/sales' });
+          return jsonResponse({ success: false, error: 'Forbidden' }, 403);
+        }
       }
 
       // Find an actual PortalUser for this shop to use as the portalUserId
@@ -137,6 +145,18 @@ export async function POST(request: NextRequest) {
       return jsonResponse({ success: false, error: 'Forbidden' }, 403);
     }
 
+    // Resolve the organization from the shop itself — reliable even for
+    // super_admin (who has no organizationId on their own token).
+    const { data: shopRow, error: shopErr } = await supabaseAdmin
+      .from('Shop')
+      .select('organizationId')
+      .eq('id', shopId)
+      .single();
+    if (shopErr || !shopRow) {
+      return jsonResponse({ success: false, error: 'Shop not found' }, 404);
+    }
+    const organizationId = shopRow.organizationId as string;
+
     // Get product
     const { data: product, error: productError } = await supabaseAdmin
       .from('Product')
@@ -197,6 +217,7 @@ export async function POST(request: NextRequest) {
       .from('SalesEntry')
       .insert([{
         id: saleId,
+        organizationId,
         shopId,
         portalUserId: portalUser.id,
         productId,
@@ -223,6 +244,7 @@ export async function POST(request: NextRequest) {
       .from('ProfitMargin')
       .insert([{
         id: uuidv4(),
+        organizationId,
         salesEntryId: saleId,
         costPrice: costPrice * quantity,
         sellingPrice: totalAmount,
@@ -248,6 +270,7 @@ export async function POST(request: NextRequest) {
         .from('StockTransaction')
         .insert([{
           id: uuidv4(),
+          organizationId,
           shopStockId: shopStock.id,
           portalUserId: portalUser.id,
           type: 'subtract',
@@ -262,6 +285,7 @@ export async function POST(request: NextRequest) {
         await supabaseAdmin
           .from('LowStockAlert')
           .upsert([{
+            organizationId,
             shopId,
             productId,
             productName: product.name,
@@ -309,15 +333,9 @@ export async function POST(request: NextRequest) {
 
 export async function GET(request: NextRequest) {
   try {
-    const token = request.headers.get('Authorization')?.replace('Bearer ', '');
-    if (!token) {
-      return jsonResponse({ success: false, error: 'Unauthorized' }, 401);
-    }
-
-    const payload = verifyToken(token);
-    if (!payload) {
-      return jsonResponse({ success: false, error: 'Invalid token' }, 401);
-    }
+    const auth = requireAuth(request);
+    if (auth instanceof NextResponse) return auth;
+    const payload = auth;
 
     const { searchParams } = new URL(request.url);
     let shopId = searchParams.get('shopId') || null;
@@ -341,7 +359,21 @@ export async function GET(request: NextRequest) {
       shopId = portalUser.shopId as string;
     }
 
-    // Build query — admins without a shopId get all sales across all shops
+    // If a specific shopId was requested, verify it belongs to the caller's
+    // organization before returning anything (super_admin exempt).
+    if (shopId && payload.organizationId) {
+      const { data: shopCheck } = await supabaseAdmin
+        .from('Shop')
+        .select('id')
+        .eq('id', shopId)
+        .eq('organizationId', payload.organizationId)
+        .maybeSingle();
+      if (!shopCheck) return jsonResponse({ success: false, error: 'Forbidden' }, 403);
+    }
+
+    // Build query — admins without a shopId get all sales across every shop
+    // in their OWN organization only (true super_admin, with no
+    // organizationId, gets everything).
     let query = supabaseAdmin
       .from('SalesEntry')
       .select('*, ProfitMargin(*)')
@@ -350,6 +382,8 @@ export async function GET(request: NextRequest) {
 
     if (shopId) {
       query = query.eq('shopId', shopId);
+    } else if (payload.organizationId) {
+      query = query.eq('organizationId', payload.organizationId);
     }
 
     const { data: sales, error } = await query;

@@ -43,7 +43,7 @@ function getField<T = unknown>(row: Record<string, unknown>, ...keys: string[]):
  * ============================================================
  */
 
-export async function createProduct(productData: Omit<Product, 'id' | 'createdAt' | 'updatedAt'>) {
+export async function createProduct(productData: Omit<Product, 'id' | 'createdAt' | 'updatedAt'> & { organizationId: string }) {
   try {
     if (!hasValidCredentials()) {
       throw new Error('Supabase credentials not configured');

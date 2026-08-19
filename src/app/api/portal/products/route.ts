@@ -2,8 +2,8 @@
 // It verifies the token, resolves the portal user's shop (or accepts an admin-provided shopId), creates the product
 // using the existing createProduct helper (with Supabase/fallback behavior), then creates a ShopStock row and returns it.
 
-import { NextRequest } from 'next/server';
-import { verifyToken } from '@/lib/auth.server';
+import { NextRequest, NextResponse } from 'next/server';
+import { requireAuth } from '@/lib/authorize';
 import { supabaseAdmin } from '@/lib/supabase-client';
 import logger from '@/lib/logger';
 import { createProductForShop } from '@/lib/portal-products';
@@ -15,17 +15,14 @@ type IncomingStock = { quantity?: number; lowStockThreshold?: number };
 
 export async function POST(request: NextRequest) {
   try {
-    const token = request.headers.get('Authorization')?.replace('Bearer ', '');
-    if (!token) {
-      logger.warn('Create product unauthorized: no token', { endpoint: '/api/portal/products', method: 'POST' });
-      return jsonResponse({ success: false, error: 'Unauthorized' }, 401);
-    }
+    const auth = requireAuth(request);
+    if (auth instanceof NextResponse) return auth;
+    const payload = auth;
 
-    const payload = verifyToken(token);
-    if (!payload) {
-      logger.warn('Create product unauthorized: invalid token', { endpoint: '/api/portal/products' });
-      return jsonResponse({ success: false, error: 'Invalid token' }, 401);
+    if (!payload.organizationId) {
+      return jsonResponse({ success: false, error: 'An organization context is required to create a product' }, 400);
     }
+    const organizationId = payload.organizationId;
 
     const body = await request.json() as { product?: Record<string, unknown>; stock?: IncomingStock; shopId?: string };
     const { product: productData, stock: stockData, shopId: providedShopId } = body || {};
@@ -57,15 +54,30 @@ export async function POST(request: NextRequest) {
       return jsonResponse({ success: false, error: 'Shop ID required' }, 400);
     }
 
+    // The shop must actually belong to the caller's own organization — an org
+    // "admin" providing an arbitrary shopId in the body could otherwise target
+    // another tenant's shop entirely.
+    const { data: shopCheck } = await supabaseAdmin
+      .from('Shop')
+      .select('id')
+      .eq('id', shopId)
+      .eq('organizationId', organizationId)
+      .maybeSingle();
+    if (!shopCheck) {
+      logger.warn('Create product forbidden: shop not in caller organization', { userId: payload.userId, shopId, endpoint: '/api/portal/products' });
+      return jsonResponse({ success: false, error: 'Forbidden' }, 403);
+    }
+
     // --------- New validations ---------
     const sku = String(productData.sku);
 
-    // SKU uniqueness check
+    // SKU uniqueness check, scoped to the organization's own catalog
     try {
       const { data: existing, error: skuErr } = await supabaseAdmin
         .from('Product')
         .select('*')
         .eq('sku', sku)
+        .eq('organizationId', organizationId)
         .maybeSingle();
 
       if (skuErr) {
@@ -111,7 +123,7 @@ export async function POST(request: NextRequest) {
     logger.info('Creating product for shop', { shopId, userId: payload.userId, endpoint: '/api/portal/products' });
 
     // Delegate creation to helper that can be reused in tests/scripts
-    const created = await createProductForShop(productData as Record<string, unknown>, stockData || {}, shopId, payload.userId);
+    const created = await createProductForShop(productData as Record<string, unknown>, stockData || {}, shopId, payload.userId, organizationId);
 
     // If the helper used the in-memory fallback, surface a warning so the UI can inform the user
     const createdObj = created as unknown as Record<string, unknown> | undefined;
@@ -147,17 +159,9 @@ export async function OPTIONS(request: NextRequest) {
 // New: allow portal users (shop owners) to delete the product from their shop (remove ShopStock row).
 export async function DELETE(request: NextRequest) {
   try {
-    const token = request.headers.get('Authorization')?.replace('Bearer ', '');
-    if (!token) {
-      logger.warn('Delete product unauthorized: no token', { endpoint: '/api/portal/products', method: 'DELETE' });
-      return jsonResponse({ success: false, error: 'Unauthorized' }, 401);
-    }
-
-    const payload = verifyToken(token);
-    if (!payload) {
-      logger.warn('Delete product unauthorized: invalid token', { endpoint: '/api/portal/products' });
-      return jsonResponse({ success: false, error: 'Invalid token' }, 401);
-    }
+    const auth = requireAuth(request);
+    if (auth instanceof NextResponse) return auth;
+    const payload = auth;
 
     const body = await request.json() as { id?: string; productId?: string; shopId?: string };
     const productId = String(body.id || body.productId || '');
@@ -165,6 +169,30 @@ export async function DELETE(request: NextRequest) {
 
     if (!productId) {
       return jsonResponse({ success: false, error: 'Product ID required' }, 400);
+    }
+
+    // Org-scope check for the admin path — an "admin" role is still tenant-scoped.
+    // Verify whichever resource is about to be touched (a specific shop's stock
+    // row, or the product itself for a full delete) actually belongs to the
+    // caller's own organization before anything is deleted.
+    if (payload.organizationId && (payload.role === 'admin' || payload.role === 'super_admin')) {
+      if (providedShopId) {
+        const { data: shopCheck } = await supabaseAdmin
+          .from('Shop')
+          .select('id')
+          .eq('id', providedShopId)
+          .eq('organizationId', payload.organizationId)
+          .maybeSingle();
+        if (!shopCheck) return jsonResponse({ success: false, error: 'Forbidden' }, 403);
+      } else {
+        const { data: productCheck } = await supabaseAdmin
+          .from('Product')
+          .select('id')
+          .eq('id', productId)
+          .eq('organizationId', payload.organizationId)
+          .maybeSingle();
+        if (!productCheck) return jsonResponse({ success: false, error: 'Forbidden' }, 403);
+      }
     }
 
     // Track product deletion (fire-and-forget)
@@ -294,17 +322,9 @@ export async function DELETE(request: NextRequest) {
 // Admins can update any product. Returns the updated product.
 export async function PUT(request: NextRequest) {
   try {
-    const token = request.headers.get('Authorization')?.replace('Bearer ', '');
-    if (!token) {
-      logger.warn('Update product unauthorized: no token', { endpoint: '/api/portal/products', method: 'PUT' });
-      return jsonResponse({ success: false, error: 'Unauthorized' }, 401);
-    }
-
-    const payload = verifyToken(token);
-    if (!payload) {
-      logger.warn('Update product unauthorized: invalid token', { endpoint: '/api/portal/products' });
-      return jsonResponse({ success: false, error: 'Invalid token' }, 401);
-    }
+    const auth = requireAuth(request);
+    if (auth instanceof NextResponse) return auth;
+    const payload = auth;
 
     const body = await request.json() as Record<string, unknown>;
     const productId = typeof body.id === 'string' ? body.id : (typeof body.productId === 'string' ? body.productId : undefined);
@@ -342,6 +362,19 @@ export async function PUT(request: NextRequest) {
 
       if (ssErr || !ss) {
         logger.warn('Update product forbidden: product not in user shop', { userId: payload.userId, shopId, productId, endpoint: '/api/portal/products' });
+        return jsonResponse({ success: false, error: 'Forbidden' }, 403);
+      }
+    } else if (payload.organizationId) {
+      // Org "admin" (not platform super_admin) — still verify the product is
+      // actually theirs before letting them update it by ID.
+      const { data: productCheck } = await supabaseAdmin
+        .from('Product')
+        .select('id')
+        .eq('id', productId)
+        .eq('organizationId', payload.organizationId)
+        .maybeSingle();
+      if (!productCheck) {
+        logger.warn('Update product forbidden: product not in caller organization', { userId: payload.userId, productId, endpoint: '/api/portal/products' });
         return jsonResponse({ success: false, error: 'Forbidden' }, 403);
       }
     }

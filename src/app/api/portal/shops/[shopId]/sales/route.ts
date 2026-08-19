@@ -31,7 +31,13 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     // 4) Insert sale into Supabase 'SalesEntry' table (assumes such table exists)
     const { supabaseAdmin } = await import('@/lib/supabase-client');
 
+    // Resolve organizationId from the shop itself — works uniformly for
+    // super_admin too, whose synthesized portalUser has no organizationId.
+    const { data: shopRow } = await supabaseAdmin.from('Shop').select('organizationId').eq('id', shopId).maybeSingle();
+    if (!shopRow) return jsonResponse({ success: false, error: 'Shop not found' }, 404);
+
     const sale = {
+      organizationId: shopRow.organizationId,
       shopId,
       portalUserId: portalUser.userId || portalUser.id,
       productId,

@@ -25,8 +25,12 @@ export async function createProductForShop(
   productData: Record<string, unknown>,
   stockData: IncomingStock,
   shopId: string,
-  _userId?: string
+  _userId?: string,
+  organizationId?: string,
 ): Promise<ShopStockWithProduct | ShopStock | undefined> {
+  if (!organizationId) {
+    throw new Error('organizationId is required to create a product');
+  }
   // create product then shop stock; try Supabase createProduct, fallback to in-memory DB
   let newProduct: Product | null;
 
@@ -44,6 +48,7 @@ export async function createProductForShop(
     const priceValue = asNumber(productData['price']);
 
     newProduct = await createProduct({
+      organizationId,
       name: asString(productData['name']),
       description: asString(productData['description']),
       price: priceValue,
@@ -69,6 +74,7 @@ export async function createProductForShop(
     const now = new Date().toISOString();
     const prod: Product = {
       id: uuidv4(),
+      organizationId,
       name: asString(productData['name']),
       description: asString(productData['description']),
       price: asNumber(productData['price']),
@@ -138,6 +144,7 @@ export async function createProductForShop(
 
   const stockRecord = {
     id: uuidv4(),
+    organizationId,
     shopId,
     productId: newProduct.id,
     quantity: Number(stockData?.quantity ?? 0),

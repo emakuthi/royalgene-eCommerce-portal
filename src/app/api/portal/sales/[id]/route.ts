@@ -1,5 +1,5 @@
-import { NextRequest } from 'next/server';
-import { verifyToken } from '@/lib/auth.server';
+import { NextRequest, NextResponse } from 'next/server';
+import { requireAuth } from '@/lib/authorize';
 import { supabaseAdmin } from '@/lib/supabase-client';
 import logger from '@/lib/logger';
 import { jsonResponse, optionsResponse } from '@/lib/apiResponse';
@@ -23,11 +23,9 @@ export async function PATCH(request: NextRequest, context: unknown) {
     }
     if (!saleId) return jsonResponse({ success: false, error: 'Missing sale id' }, 400);
 
-    const token = request.headers.get('Authorization')?.replace('Bearer ', '');
-    if (!token) return jsonResponse({ success: false, error: 'Unauthorized' }, 401);
-
-    const payload = verifyToken(token);
-    if (!payload) return jsonResponse({ success: false, error: 'Invalid token' }, 401);
+    const auth = requireAuth(request);
+    if (auth instanceof NextResponse) return auth;
+    const payload = auth;
 
     const body = await request.json();
     const { quantity, unitPrice, paymentMethod, customerName, customerPhone, notes } = body;
@@ -41,6 +39,13 @@ export async function PATCH(request: NextRequest, context: unknown) {
 
     if (saleErr || !existingSale) {
       return jsonResponse({ success: false, error: 'Sale not found' }, 404);
+    }
+
+    // Even an "admin" role is org-scoped — this must be checked before the
+    // admin-bypass below, otherwise an org admin could update another
+    // tenant's sale simply by knowing/guessing its id.
+    if (payload.organizationId && existingSale.organizationId !== payload.organizationId) {
+      return jsonResponse({ success: false, error: 'Forbidden' }, 403);
     }
 
     // Verify portal user permissions: the token user must be the portalUser or an admin
@@ -150,7 +155,7 @@ export async function PATCH(request: NextRequest, context: unknown) {
         // record transaction
         await supabaseAdmin
           .from('StockTransaction')
-          .insert([{ id: cryptoRandomId(), shopStockId: shopStock.id, portalUserId: portalUser.id, type: 'adjustment', quantity: -delta, reason: 'Sale update', reference: saleId, createdAt: now }]);
+          .insert([{ id: cryptoRandomId(), organizationId: existingSale.organizationId, shopStockId: shopStock.id, portalUserId: portalUser.id, type: 'adjustment', quantity: -delta, reason: 'Sale update', reference: saleId, createdAt: now }]);
       }
     }
 
