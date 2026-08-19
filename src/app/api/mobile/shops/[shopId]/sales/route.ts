@@ -53,7 +53,7 @@ export async function POST(
     // Confirm the shop exists in the Shop table and is active
     const { data: shopRow, error: shopRowError } = await supabaseAdmin
       .from('Shop')
-      .select('id, name, location, phone, address, isActive')
+      .select('id, name, location, phone, address, isActive, organizationId')
       .eq('id', shopId)
       .single();
 
@@ -186,6 +186,7 @@ export async function POST(
       .from('SalesEntry')
       .insert([{
         id: saleId,
+        organizationId: sRow['organizationId'],
         shopId,
         portalUserId: auth.portalUserId,
         productId,

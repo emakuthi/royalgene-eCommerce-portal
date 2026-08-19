@@ -89,15 +89,35 @@ export async function POST(
       );
     }
 
-    // Verify destination shop
+    // Resolve source shop's organization — needed both to scope the required
+    // inserts and to verify the destination shop below.
+    const { data: srcShop } = await supabaseAdmin
+      .from('Shop')
+      .select('organizationId')
+      .eq('id', shopId)
+      .maybeSingle();
+    if (!srcShop) {
+      return jsonResponse({ success: false, error: 'Source shop not found', code: 'NOT_FOUND' }, 404);
+    }
+    const organizationId = srcShop.organizationId as string;
+
+    // Verify destination shop exists AND belongs to the SAME organization as
+    // the source — without this, stock could be transferred straight into a
+    // completely different tenant's shop.
     const { data: destShop } = await supabaseAdmin
       .from('Shop')
-      .select('id, name')
+      .select('id, name, organizationId')
       .eq('id', toShopId)
       .maybeSingle();
 
     if (!destShop) {
       return jsonResponse({ success: false, error: 'Destination shop not found', code: 'NOT_FOUND' }, 404);
+    }
+    if (destShop.organizationId !== organizationId) {
+      logger.warn('Mobile stock transfer forbidden: destination shop in a different organization', {
+        userId: auth.payload.userId, sourceOrg: organizationId, destOrg: destShop.organizationId, toShopId,
+      });
+      return jsonResponse({ success: false, error: 'Destination shop must belong to the same organization', code: 'FORBIDDEN' }, 403);
     }
 
     const resolvedProductId = srcStock.productId as string;
@@ -137,6 +157,7 @@ export async function POST(
       destStockId = uuidv4();
       await supabaseAdmin.from('ShopStock').insert([{
         id: destStockId,
+        organizationId,
         shopId: toShopId,
         productId: resolvedProductId,
         quantity: transferQty,
@@ -150,6 +171,7 @@ export async function POST(
     await supabaseAdmin.from('StockTransaction').insert([
       {
         id: uuidv4(),
+        organizationId,
         shopStockId: srcStock.id,
         portalUserId,
         type: 'subtract',
@@ -160,6 +182,7 @@ export async function POST(
       },
       {
         id: uuidv4(),
+        organizationId,
         shopStockId: destStockId,
         portalUserId,
         type: 'add',

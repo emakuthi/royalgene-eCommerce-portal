@@ -111,7 +111,7 @@ export async function POST(
     // Verify shop access
     const { data: portalUser, error: portalError } = await supabaseAdmin
       .from('PortalUser')
-      .select('id, shopId')
+      .select('id, shopId, organizationId')
       .eq('userId', payload.userId)
       .eq('shopId', shopId)
       .single();
@@ -133,6 +133,7 @@ export async function POST(
     const now = new Date().toISOString();
     const record: Record<string, unknown> = {
       id: uuidv4(),
+      organizationId: portalUser.organizationId,
       title: title ?? null,
       message: message ?? null,
       level: level ?? 'info',

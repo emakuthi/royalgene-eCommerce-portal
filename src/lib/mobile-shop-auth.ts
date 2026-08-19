@@ -55,8 +55,25 @@ export async function verifyMobileShopAccess(
   const isAdmin =
     payload.role === 'admin' || payload.role === 'super_admin';
 
-  // Admins / super-admins bypass the PortalUser check – they can access ANY shop
+  // Admins / super-admins bypass the PortalUser membership check, but an org
+  // "admin" is still tenant-scoped — they only bypass it for shops in their
+  // OWN organization. Only true super_admin (no organizationId) bypasses
+  // unconditionally.
   if (isAdmin) {
+    if (payload.organizationId) {
+      const { data: shopCheck } = await supabaseAdmin
+        .from('Shop')
+        .select('id')
+        .eq('id', shopId)
+        .eq('organizationId', payload.organizationId)
+        .maybeSingle();
+      if (!shopCheck) {
+        return jsonResponse(
+          { success: false, error: 'Forbidden', code: 'FORBIDDEN' },
+          403,
+        );
+      }
+    }
     return {
       payload,
       isAdmin: true,
