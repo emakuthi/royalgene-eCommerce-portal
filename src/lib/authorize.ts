@@ -1,8 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { extractTokenFromHeader, verifyToken, VerifiedPayload } from './auth';
+// NOTE: import from './auth.server', not './auth' — the latter re-exports the
+// client-safe decodeJwt-based verifyToken(), which does NOT verify the JWT
+// signature. Using it here would let a caller forge any payload (including
+// organizationId), defeating the tenant cross-check below entirely.
+import { extractTokenFromHeader, verifyToken, VerifiedPayload } from './auth.server';
 import { supabaseAdmin } from './supabase-client';
 import type { PortalUser } from './types';
 import { jsonResponse } from './apiResponse';
+import { assertTenantMatch } from './tenant-guard';
 
 /**
  * Basic auth helpers for Next.js route handlers.
@@ -20,6 +25,9 @@ export function requireAuth(request: NextRequest): VerifiedPayload | NextRespons
   if (!payload) {
     return jsonResponse({ success: false, error: 'Invalid token' }, 401) as unknown as NextResponse;
   }
+
+  const tenantMismatch = assertTenantMatch(request, payload);
+  if (tenantMismatch) return tenantMismatch;
 
   return payload;
 }

@@ -13,13 +13,40 @@ export type TokenUser = {
   [k: string]: unknown;
 };
 
-export type VerifiedPayload = { userId: string; role?: string; [k: string]: unknown };
+export type VerifiedPayload = {
+  userId: string;
+  role?: string;
+  organizationId?: string | null;
+  shopId?: string | null;
+  [k: string]: unknown;
+};
 
 const JWT_SECRET = process.env.JWT_SECRET || 'dev_jwt_secret';
 
+/**
+ * @deprecated Use signAuthToken() with an explicit AuthTokenPayload instead.
+ * Kept for call sites not yet migrated — accepts an arbitrary object and
+ * signs it as-is, which is how the payload shape became inconsistent across
+ * signing sites in the first place.
+ */
 export function generateToken(user: unknown, opts?: { expiresInSeconds?: number }) {
   const expiresIn = opts?.expiresInSeconds ?? 60 * 60 * 24 * 7;
   const payload = (typeof user === 'object' && user !== null) ? (user as Record<string, unknown>) : { data: user };
+  return jwt.sign(payload as jwt.JwtPayload, JWT_SECRET, { expiresIn });
+}
+
+export interface AuthTokenPayload {
+  userId: string;
+  /** null only for role === 'super_admin' (a platform-level, cross-tenant role) */
+  organizationId: string | null;
+  email: string;
+  role: 'customer' | 'admin' | 'super_admin' | 'portal_user';
+  shopId?: string | null;
+}
+
+/** Standardized JWT signing helper — every signing site should use this. */
+export function signAuthToken(payload: AuthTokenPayload, opts?: { expiresInSeconds?: number }) {
+  const expiresIn = opts?.expiresInSeconds ?? 60 * 60 * 24 * 7;
   return jwt.sign(payload as jwt.JwtPayload, JWT_SECRET, { expiresIn });
 }
 

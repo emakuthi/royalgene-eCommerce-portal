@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 import { verifyToken, type VerifiedPayload } from '@/lib/auth.server';
 import { supabaseAdmin } from '@/lib/supabase-client';
 import { jsonResponse } from '@/lib/apiResponse';
+import { assertTenantMatch } from '@/lib/tenant-guard';
 
 /**
  * Result of a successful mobile auth + shop access check.
@@ -47,6 +48,9 @@ export async function verifyMobileShopAccess(
       401,
     );
   }
+
+  const tenantMismatch = assertTenantMatch(request, payload);
+  if (tenantMismatch) return tenantMismatch;
 
   const isAdmin =
     payload.role === 'admin' || payload.role === 'super_admin';
@@ -105,6 +109,9 @@ export function verifyMobileAuth(
       401,
     );
   }
+
+  const tenantMismatch = assertTenantMatch(request, payload);
+  if (tenantMismatch) return tenantMismatch;
 
   const isAdmin =
     payload.role === 'admin' || payload.role === 'super_admin';

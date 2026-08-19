@@ -152,7 +152,7 @@ export async function trackActivity(event: ActivityEvent): Promise<string | null
  */
 export function trackFromRequest(
   request: NextRequest,
-  payload: { userId?: string; email?: string; role?: string; shopId?: string } | null,
+  payload: { userId?: string; email?: string; role?: string; shopId?: string | null } | null,
   event: Omit<ActivityEvent, 'userId' | 'userEmail' | 'userRole' | 'ipAddress' | 'userAgent' | 'deviceType' | 'source' | 'endpoint' | 'httpMethod'>
 ): Promise<string | null> {
   const ua = request.headers.get('user-agent');

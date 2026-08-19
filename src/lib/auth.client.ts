@@ -8,7 +8,13 @@ export type TokenUser = {
   [k: string]: unknown;
 };
 
-export type VerifiedPayload = { userId: string; role?: string; [k: string]: unknown };
+export type VerifiedPayload = {
+  userId: string;
+  role?: string;
+  organizationId?: string | null;
+  shopId?: string | null;
+  [k: string]: unknown;
+};
 
 export function isJwtToken(token: string | null | undefined): boolean {
   return typeof token === 'string' && token.split('.').length === 3;

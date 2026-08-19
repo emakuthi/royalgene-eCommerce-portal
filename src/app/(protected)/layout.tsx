@@ -33,6 +33,7 @@ import {
   LayoutDashboard,
   Store,
   ChevronsUpDown,
+  ShieldCheck,
 } from 'lucide-react';
 import { usePortalStore } from '@/lib/store';
 import type { Shop } from '@/lib/types';
@@ -400,7 +401,7 @@ function ProfileDropdown() {
 // ── Protected Layout ──────────────────────────────────────────────────────────
 export default function ProtectedLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const { token } = useHydratedAuth();
+  const { token, user } = useHydratedAuth();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const drawerRef = useRef<HTMLDivElement | null>(null);
@@ -458,6 +459,9 @@ export default function ProtectedLayout({ children }: { children: React.ReactNod
     { label: 'Alerts',          href: '/alerts',      icon: <Bell className="h-5 w-5" />, badge: alertsCount },
     { label: 'Activity',        href: '/activity',    icon: <Activity className="h-5 w-5" /> },
     { label: 'Settings',        href: '/settings',    icon: <Settings className="h-5 w-5" /> },
+    ...(user?.role === 'super_admin'
+      ? [{ label: 'Platform', href: '/platform', icon: <ShieldCheck className="h-5 w-5" /> }]
+      : []),
   ];
 
   const isActive = (href: string) => {

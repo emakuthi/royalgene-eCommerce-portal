@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase-client';
-import { hashPassword, generateToken } from '@/lib/auth.server';
+import { hashPassword, signAuthToken } from '@/lib/auth.server';
 import logger from '@/lib/logger';
 import { v4 as uuidv4 } from 'uuid';
 import { jsonResponse } from '@/lib/apiResponse';
@@ -38,12 +38,36 @@ export async function POST(request: NextRequest) {
       }, 400);
     }
 
-    // Check if user already exists
+    // Validate invitation code – it's the source of truth for which
+    // organization (and shop) this registration joins. There is no
+    // single-tenant "any active shop" fallback anymore: an invitation code
+    // is required to resolve an organization.
+    const { data: invRow } = await supabaseAdmin
+      .from('InvitationCode')
+      .select('shopId, position, organizationId')
+      .eq('code', invitationCode)
+      .eq('used', false)
+      .maybeSingle();
+
+    if (!invRow) {
+      return jsonResponse({
+        success: false,
+        error: 'Invalid invitation code',
+        code: 'INVALID_INVITATION',
+      }, 400);
+    }
+
+    const resolvedShopId: string = invRow.shopId;
+    const resolvedPosition: string = invRow.position || 'staff';
+    const organizationId: string = invRow.organizationId;
+
+    // Check if user already exists within this organization
     const { data: existingUser } = await supabaseAdmin
       .from('User')
       .select('id')
       .eq('email', email.toLowerCase())
-      .single();
+      .eq('organizationId', organizationId)
+      .maybeSingle();
 
     if (existingUser) {
       logger.warn('Mobile registration failed: email already in use', {
@@ -55,40 +79,6 @@ export async function POST(request: NextRequest) {
         error: 'Email already in use',
         code: 'DUPLICATE_EMAIL',
       }, 400);
-    }
-
-    // Validate invitation code – look up in InvitationCode table first, fall
-    // back to hard-coded map for dev/staging.
-    let resolvedShopId: string | null = null;
-    let resolvedPosition: string = 'staff';
-
-    const { data: invRow } = await supabaseAdmin
-      .from('InvitationCode')
-      .select('shopId, position')
-      .eq('code', invitationCode)
-      .eq('used', false)
-      .single();
-
-    if (invRow) {
-      resolvedShopId = invRow.shopId;
-      resolvedPosition = invRow.position || 'staff';
-    } else {
-      // Fallback: check for any active shop (dev convenience)
-      const { data: shop } = await supabaseAdmin
-        .from('Shop')
-        .select('id')
-        .eq('isActive', true)
-        .limit(1)
-        .single();
-
-      if (!shop) {
-        return jsonResponse({
-          success: false,
-          error: 'Invalid invitation code',
-          code: 'INVALID_INVITATION',
-        }, 400);
-      }
-      resolvedShopId = shop.id;
     }
 
     // Hash password
@@ -108,6 +98,7 @@ export async function POST(request: NextRequest) {
         phone: phone || null,
         role: 'portal_user',
         twoFactorEnabled: false,
+        organizationId,
         createdAt: now,
         updatedAt: now,
       }]);
@@ -134,6 +125,7 @@ export async function POST(request: NextRequest) {
         shopId: resolvedShopId,
         position: resolvedPosition,
         isActive: true,
+        organizationId,
         createdAt: now,
         updatedAt: now,
       }]);
@@ -161,8 +153,9 @@ export async function POST(request: NextRequest) {
     }
 
     // Generate JWT
-    const token = generateToken({
+    const token = signAuthToken({
       userId,
+      organizationId,
       email: email.toLowerCase(),
       role: 'portal_user',
       shopId: resolvedShopId,
@@ -172,7 +165,7 @@ export async function POST(request: NextRequest) {
     const { data: shop } = await supabaseAdmin
       .from('Shop')
       .select('id, name, location, phone, address')
-      .eq('id', resolvedShopId!)
+      .eq('id', resolvedShopId)
       .single();
 
     const duration = Date.now() - startTime;

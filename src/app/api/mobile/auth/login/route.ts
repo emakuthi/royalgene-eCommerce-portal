@@ -1,5 +1,5 @@
 import { NextRequest } from 'next/server';
-import { generateToken } from '@/lib/auth.server';
+import { signAuthToken } from '@/lib/auth.server';
 import { supabaseAdmin } from '@/lib/supabase-client';
 import logger from '@/lib/logger';
 import bcrypt from 'bcryptjs';
@@ -30,12 +30,15 @@ export async function POST(request: NextRequest) {
       }, 400);
     }
 
-    // Find user by email
-    const { data: user, error: userError } = await supabaseAdmin
-      .from('User')
-      .select('*')
-      .eq('email', email.toLowerCase())
-      .single();
+    // User.email is unique per-organization, so lookup is scoped to the
+    // tenant resolved by middleware from the request subdomain (x-org-id),
+    // plus platform-level users (organizationId IS NULL).
+    const hostOrgId = request.headers.get('x-org-id');
+    let userQuery = supabaseAdmin.from('User').select('*').eq('email', email.toLowerCase());
+    userQuery = hostOrgId
+      ? userQuery.or(`organizationId.eq.${hostOrgId},organizationId.is.null`)
+      : userQuery.is('organizationId', null);
+    const { data: user, error: userError } = await userQuery.maybeSingle();
 
     if (userError || !user) {
       logger.warn('Mobile login failed: user not found', { 
@@ -117,8 +120,9 @@ export async function POST(request: NextRequest) {
     const shopId = portalUser?.shopId ?? null;
 
     // Create JWT token
-    const token = generateToken({
+    const token = signAuthToken({
       userId: user.id,
+      organizationId: user.organizationId ?? null,
       email: user.email,
       role: user.role,
       shopId

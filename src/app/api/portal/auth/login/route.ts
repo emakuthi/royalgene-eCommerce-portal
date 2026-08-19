@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 import bcryptjs from 'bcryptjs';
 import { supabaseAdmin } from '@/lib/supabase-client';
-import { generateToken } from '@/lib/auth.server';
+import { signAuthToken } from '@/lib/auth.server';
 import logger from '@/lib/logger';
 import type { User } from '@/lib/types';
 import { jsonResponse, optionsResponse } from '@/lib/apiResponse';
@@ -13,12 +13,17 @@ export async function POST(request: NextRequest) {
     const { email, password } = await request.json();
     logger.info('Portal login attempt', { email, endpoint: '/api/portal/auth/login', method: 'POST' });
 
-    // Find user
-    const { data: userData, error: userError } = await supabaseAdmin
-      .from('User')
-      .select('*')
-      .eq('email', email)
-      .single();
+    // User.email is unique per-organization (not globally), so login must be
+    // scoped to the tenant resolved by middleware from the request subdomain
+    // (x-org-id) — plus platform-level users (organizationId IS NULL), who
+    // can log in from any subdomain.
+    const hostOrgId = request.headers.get('x-org-id');
+    let userQuery = supabaseAdmin.from('User').select('*').eq('email', email.toLowerCase());
+    userQuery = hostOrgId
+      ? userQuery.or(`organizationId.eq.${hostOrgId},organizationId.is.null`)
+      : userQuery.is('organizationId', null);
+
+    const { data: userData, error: userError } = await userQuery.maybeSingle();
 
     if (userError || !userData) {
       logger.warn('Portal login failed: user not found', { email, endpoint: '/api/portal/auth/login' });
@@ -87,7 +92,13 @@ export async function POST(request: NextRequest) {
       phone: user.phone ?? undefined,
       address: user.address ?? undefined,
     };
-    const token = generateToken(typedUser);
+    const token = signAuthToken({
+      userId: user.id,
+      organizationId: user.organizationId ?? null,
+      email: user.email,
+      role: typedUser.role,
+      shopId: portalUser?.shopId ?? null,
+    });
 
     logger.info('Portal login successful', {
       userId: user.id,

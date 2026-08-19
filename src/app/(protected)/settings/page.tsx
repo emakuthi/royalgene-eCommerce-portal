@@ -31,9 +31,13 @@ import {
   Camera,
   ImageIcon,
   RotateCcw,
+  CreditCard,
 } from 'lucide-react';
 import { useSignOut } from '@/components/portal/SignOutProvider';
 import { loadBranding, saveBranding, resetBranding, type BrandingConfig } from '@/lib/branding';
+import { getCurrentOrganization } from '@/lib/organizations';
+import { listBillingPlans, startBillingCheckout, verifyBillingReference } from '@/lib/billing';
+import type { Organization, PlatformPlan } from '@/lib/types';
 
 // ── Tab config ────────────────────────────────────────────────────────────────
 const TABS = [
@@ -42,6 +46,7 @@ const TABS = [
   { id: 'security',    label: 'Security',     icon: Lock },
   { id: 'shop',        label: 'Shop Info',    icon: Store },
   { id: 'notifications', label: 'Notifications', icon: Bell },
+  { id: 'billing',     label: 'Billing',      icon: CreditCard },
   { id: 'about',       label: 'About',        icon: Info },
 ] as const;
 
@@ -165,6 +170,54 @@ export default function PortalSettingsPage() {
     dailySummary: false,
     systemAlerts: true,
   });
+
+  const [organization, setOrganization] = useState<Organization | null>(null);
+  const [billingPlans, setBillingPlans] = useState<PlatformPlan[]>([]);
+  const [billingLoading, setBillingLoading] = useState(false);
+  const [billingInterval, setBillingInterval] = useState<'monthly' | 'annually'>('monthly');
+  const [checkoutBusyId, setCheckoutBusyId] = useState<string | null>(null);
+
+  // Land directly on the Billing tab and confirm a Paystack checkout when
+  // the browser returns via the callback URL (?tab=billing&reference=...).
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('tab') === 'billing') setActiveTab('billing');
+    const reference = params.get('reference');
+    if (reference && token) {
+      verifyBillingReference(token, reference).then((res) => {
+        if (res.success && res.data?.status === 'success') {
+          toast.success('Subscription activated!');
+          getCurrentOrganization(token).then((r) => { if (r.success && r.data) setOrganization(r.data); });
+        } else if (res.success) {
+          toast.info(`Payment status: ${res.data?.status}`);
+        }
+      });
+    }
+  }, [token]);
+
+  useEffect(() => {
+    if (activeTab !== 'billing' || !token || billingPlans.length > 0) return;
+    setBillingLoading(true);
+    Promise.all([getCurrentOrganization(token), listBillingPlans(token)]).then(([orgRes, plansRes]) => {
+      if (orgRes.success && orgRes.data) setOrganization(orgRes.data);
+      if (plansRes.success && plansRes.data) setBillingPlans(plansRes.data);
+      setBillingLoading(false);
+    });
+  }, [activeTab, token, billingPlans.length]);
+
+  const isBillingAdmin = user?.role === 'admin' || user?.role === 'super_admin';
+
+  const handleUpgrade = async (plan: PlatformPlan) => {
+    setCheckoutBusyId(plan.id);
+    const res = await startBillingCheckout(token, plan.id, billingInterval);
+    if (res.success && res.data?.checkoutUrl) {
+      window.location.href = res.data.checkoutUrl;
+    } else {
+      toast.error(res.error || 'Failed to start checkout');
+      setCheckoutBusyId(null);
+    }
+  };
 
   useEffect(() => {
     setMounted(true);
@@ -904,6 +957,61 @@ export default function PortalSettingsPage() {
               </Button>
             </div>
           </Section>
+        )}
+
+        {/* ── BILLING ────────────────────────────────────────────── */}
+        {activeTab === 'billing' && (
+          <>
+            <Section title="Current Plan" description="Your workspace's active subscription">
+              {organization ? (
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-gray-900 dark:text-white capitalize">{organization.planTier} plan</p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                      Status: {organization.billingStatus || organization.status}
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <p className="text-sm text-gray-500 dark:text-gray-400">{billingLoading ? 'Loading…' : 'No billing information available.'}</p>
+              )}
+            </Section>
+
+            <Section title="Available Plans" description={isBillingAdmin ? 'Upgrade your workspace at any time' : 'Contact your workspace admin to change plans'}>
+              <div className="flex items-center gap-2 mb-4">
+                <Button variant={billingInterval === 'monthly' ? 'default' : 'outline'} size="sm" onClick={() => setBillingInterval('monthly')}>Monthly</Button>
+                <Button variant={billingInterval === 'annually' ? 'default' : 'outline'} size="sm" onClick={() => setBillingInterval('annually')}>Annual</Button>
+              </div>
+              <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {billingPlans.map((plan) => {
+                  const priceKobo = billingInterval === 'annually' ? plan.annualPriceKobo : plan.monthlyPriceKobo;
+                  const isCurrent = organization?.planTier === plan.tier;
+                  return (
+                    <div key={plan.id} className="rounded-xl border border-[hsl(var(--border))] p-4 flex flex-col gap-3">
+                      <div>
+                        <p className="font-semibold text-gray-900 dark:text-white">{plan.name}</p>
+                        {plan.description && <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{plan.description}</p>}
+                      </div>
+                      <p className="text-2xl font-bold text-gray-900 dark:text-white">
+                        KES {(priceKobo / 100).toLocaleString('en-KE')}
+                        <span className="text-sm font-normal text-gray-500 dark:text-gray-400">/{billingInterval === 'annually' ? 'yr' : 'mo'}</span>
+                      </p>
+                      <Button
+                        className="mt-auto"
+                        disabled={!isBillingAdmin || isCurrent || checkoutBusyId === plan.id}
+                        onClick={() => handleUpgrade(plan)}
+                      >
+                        {isCurrent ? 'Current Plan' : checkoutBusyId === plan.id ? 'Redirecting…' : 'Upgrade'}
+                      </Button>
+                    </div>
+                  );
+                })}
+                {!billingLoading && billingPlans.length === 0 && (
+                  <p className="text-sm text-gray-500 dark:text-gray-400 col-span-full">No plans are available yet.</p>
+                )}
+              </div>
+            </Section>
+          </>
         )}
 
         {/* ── ABOUT ──────────────────────────────────────────────── */}

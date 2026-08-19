@@ -4,16 +4,59 @@ export interface User {
   password: string;
   name: string;
   role: 'customer' | 'admin' | 'super_admin' | 'portal_user';
+  /** null only for role === 'super_admin' (a platform-level, cross-tenant role) */
+  organizationId?: string | null;
   phone?: string | null;
   address?: string | null;
   twoFactorEnabled: boolean;
   twoFactorSecret?: string | null;
+  emailVerifiedAt?: string | null;
   createdAt: string | Date;
   updatedAt?: Date;
 }
 
+export interface Organization {
+  id: string;
+  name: string;
+  slug: string;
+  status: 'pending_verification' | 'active' | 'suspended' | 'cancelled';
+  planTier: 'free' | 'starter' | 'pro' | 'enterprise' | 'legacy';
+  paystackCustomerCode?: string | null;
+  paystackSubscriptionCode?: string | null;
+  paystackPlanCode?: string | null;
+  billingEmail?: string | null;
+  billingStatus?: string | null;
+  trialEndsAt?: string | null;
+  logoUrl?: string | null;
+  tagline?: string | null;
+  themeSettings?: ThemeSettings | null;
+  customDomain?: string | null;
+  createdBy?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PlatformPlan {
+  id: string;
+  tier: 'starter' | 'pro' | 'enterprise';
+  name: string;
+  description?: string | null;
+  monthlyPriceKobo: number;
+  annualPriceKobo: number;
+  currency: string;
+  paystackMonthlyPlanCode?: string | null;
+  paystackAnnualPlanCode?: string | null;
+  maxShops?: number | null;
+  maxUsers?: number | null;
+  isActive: boolean;
+  displayOrder: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface Product {
   id: string;
+  organizationId?: string;
   name: string;
   description: string;
   price: number;
@@ -163,6 +206,7 @@ export interface DiscountCode {
 
 export interface Shop {
   id: string;
+  organizationId?: string;
   name: string;
   location: string;
   phone?: string;
@@ -177,6 +221,7 @@ export interface Shop {
 
 export interface PortalUser {
   id: string;
+  organizationId?: string;
   userId: string;
   shopId: string;
   shop?: Shop;
