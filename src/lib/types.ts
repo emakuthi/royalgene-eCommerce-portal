@@ -20,7 +20,7 @@ export interface Organization {
   name: string;
   slug: string;
   status: 'pending_verification' | 'active' | 'suspended' | 'cancelled';
-  planTier: 'free' | 'starter' | 'pro' | 'enterprise' | 'legacy';
+  planTier: 'free' | 'starter' | 'business' | 'pro' | 'enterprise' | 'legacy';
   paystackCustomerCode?: string | null;
   paystackSubscriptionCode?: string | null;
   paystackPlanCode?: string | null;
@@ -31,6 +31,7 @@ export interface Organization {
   tagline?: string | null;
   themeSettings?: ThemeSettings | null;
   customDomain?: string | null;
+  customDomainStatus?: 'pending' | 'verified' | 'misconfigured' | null;
   createdBy?: string | null;
   createdAt: string;
   updatedAt: string;
@@ -38,11 +39,15 @@ export interface Organization {
 
 export interface PlatformPlan {
   id: string;
-  tier: 'starter' | 'pro' | 'enterprise';
+  code?: string | null;
+  tier: 'starter' | 'business' | 'pro' | 'enterprise';
   name: string;
   description?: string | null;
   monthlyPriceKobo: number;
   annualPriceKobo: number;
+  /** Display-only reference pricing for the pricing-page currency toggle — checkout always charges in KES. */
+  monthlyPriceUSD?: number | null;
+  annualPriceUSD?: number | null;
   currency: string;
   paystackMonthlyPlanCode?: string | null;
   paystackAnnualPlanCode?: string | null;
@@ -50,6 +55,33 @@ export interface PlatformPlan {
   maxUsers?: number | null;
   isActive: boolean;
   displayOrder: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PlanEntitlement {
+  id: string;
+  planId: string;
+  code: string;
+  limitValue?: number | null;
+  enabled: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type SubscriptionStatus = 'trialing' | 'active' | 'past_due' | 'suspended' | 'cancelled' | 'expired';
+
+export interface TenantSubscription {
+  id: string;
+  organizationId: string;
+  planId?: string | null;
+  status: SubscriptionStatus;
+  billingInterval?: 'monthly' | 'annually' | null;
+  currentPeriodStart?: string | null;
+  currentPeriodEnd?: string | null;
+  trialStart?: string | null;
+  trialEnd?: string | null;
+  cancelledAt?: string | null;
   createdAt: string;
   updatedAt: string;
 }

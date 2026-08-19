@@ -23,6 +23,8 @@ const TENANT_OPTIONAL_PATHS = [
   '/tenant-suspended',
   '/api/health',
   '/api/webhooks/paystack',
+  '/api/plans',
+  '/pricing',
 ];
 
 function isTenantOptional(pathname: string): boolean {

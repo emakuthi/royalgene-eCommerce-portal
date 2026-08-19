@@ -10,6 +10,7 @@ import { createProductForShop } from '@/lib/portal-products';
 import type { ShopStock, Product } from '@/lib/types';
 import { jsonResponse, optionsResponse } from '@/lib/apiResponse';
 import { trackFromRequest } from '@/lib/activity-tracker';
+import { assertCanCreate } from '@/lib/entitlements/enforce.server';
 
 type IncomingStock = { quantity?: number; lowStockThreshold?: number };
 
@@ -67,6 +68,9 @@ export async function POST(request: NextRequest) {
       logger.warn('Create product forbidden: shop not in caller organization', { userId: payload.userId, shopId, endpoint: '/api/portal/products' });
       return jsonResponse({ success: false, error: 'Forbidden' }, 403);
     }
+
+    const limitResponse = await assertCanCreate(organizationId, 'PRODUCT');
+    if (limitResponse) return limitResponse;
 
     // --------- New validations ---------
     const sku = String(productData.sku);

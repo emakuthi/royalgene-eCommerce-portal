@@ -37,9 +37,21 @@ import {
 import { useSignOut } from '@/components/portal/SignOutProvider';
 import { loadBranding, saveBranding, resetBranding, type BrandingConfig } from '@/lib/branding';
 import { getCurrentOrganization } from '@/lib/organizations';
-import { listBillingPlans, startBillingCheckout, verifyBillingReference } from '@/lib/billing';
+import {
+  startBillingCheckout,
+  verifyBillingReference,
+  getBillingSubscription,
+  cancelBillingSubscription,
+  listPublicPlans,
+  type SubscriptionSnapshot,
+  type PublicPlan,
+} from '@/lib/billing';
 import { getDomainState, removeDomain, setDomain, type DomainState } from '@/lib/domains';
-import type { Organization, PlatformPlan } from '@/lib/types';
+import type { Organization } from '@/lib/types';
+import { PlanBadge } from '@/components/entitlements/PlanBadge';
+import { SubscriptionStatusBadge } from '@/components/entitlements/SubscriptionStatusBadge';
+import { UsageSummary } from '@/components/entitlements/UsageSummary';
+import { PlanComparison } from '@/components/entitlements/PlanComparison';
 
 // ── Tab config ────────────────────────────────────────────────────────────────
 const TABS = [
@@ -175,10 +187,12 @@ export default function PortalSettingsPage() {
   });
 
   const [organization, setOrganization] = useState<Organization | null>(null);
-  const [billingPlans, setBillingPlans] = useState<PlatformPlan[]>([]);
+  const [billingPlans, setBillingPlans] = useState<PublicPlan[]>([]);
   const [billingLoading, setBillingLoading] = useState(false);
   const [billingInterval, setBillingInterval] = useState<'monthly' | 'annually'>('monthly');
   const [checkoutBusyId, setCheckoutBusyId] = useState<string | null>(null);
+  const [subscriptionSnapshot, setSubscriptionSnapshot] = useState<SubscriptionSnapshot | null>(null);
+  const [cancelBusy, setCancelBusy] = useState(false);
 
   // Land directly on the Billing tab and confirm a Paystack checkout when
   // the browser returns via the callback URL (?tab=billing&reference=...).
@@ -202,16 +216,17 @@ export default function PortalSettingsPage() {
   useEffect(() => {
     if (activeTab !== 'billing' || !token || billingPlans.length > 0) return;
     setBillingLoading(true);
-    Promise.all([getCurrentOrganization(token), listBillingPlans(token)]).then(([orgRes, plansRes]) => {
+    Promise.all([getCurrentOrganization(token), listPublicPlans(), getBillingSubscription(token)]).then(([orgRes, plansRes, subRes]) => {
       if (orgRes.success && orgRes.data) setOrganization(orgRes.data);
       if (plansRes.success && plansRes.data) setBillingPlans(plansRes.data);
+      if (subRes.success && subRes.data) setSubscriptionSnapshot(subRes.data);
       setBillingLoading(false);
     });
   }, [activeTab, token, billingPlans.length]);
 
   const isBillingAdmin = user?.role === 'admin' || user?.role === 'super_admin';
 
-  const handleUpgrade = async (plan: PlatformPlan) => {
+  const handleUpgrade = async (plan: PublicPlan) => {
     setCheckoutBusyId(plan.id);
     const res = await startBillingCheckout(token, plan.id, billingInterval);
     if (res.success && res.data?.checkoutUrl) {
@@ -220,6 +235,19 @@ export default function PortalSettingsPage() {
       toast.error(res.error || 'Failed to start checkout');
       setCheckoutBusyId(null);
     }
+  };
+
+  const handleCancelSubscription = async () => {
+    setCancelBusy(true);
+    const res = await cancelBillingSubscription(token);
+    if (res.success) {
+      toast.success('Subscription cancelled. Your data is safe — resubscribe anytime.');
+      const subRes = await getBillingSubscription(token);
+      if (subRes.success && subRes.data) setSubscriptionSnapshot(subRes.data);
+    } else {
+      toast.error(res.error || 'Failed to cancel subscription');
+    }
+    setCancelBusy(false);
   };
 
   const [domainState, setDomainState] = useState<DomainState | null>(null);
@@ -1014,60 +1042,55 @@ export default function PortalSettingsPage() {
           <>
             <Section title="Current Plan" description="Your workspace's active subscription">
               {organization ? (
-                <div className="flex items-center justify-between">
+                <div className="flex items-start justify-between gap-4 flex-wrap">
                   <div>
-                    <p className="text-sm font-medium text-gray-900 dark:text-white capitalize">{organization.planTier} plan</p>
-                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                      Status: {organization.billingStatus || organization.status}
-                    </p>
+                    <div className="flex items-center gap-2">
+                      <PlanBadge name={subscriptionSnapshot?.plan?.name || `${organization.planTier} plan`} tier={organization.planTier} />
+                      <SubscriptionStatusBadge status={subscriptionSnapshot?.isLegacyUnlimited ? 'legacy' : subscriptionSnapshot?.subscription?.status || organization.status} />
+                    </div>
                     {organization.planTier === 'free' && organization.billingStatus !== 'active' && organization.trialEndsAt && (() => {
                       const daysLeft = Math.ceil((new Date(organization.trialEndsAt).getTime() - Date.now()) / (24 * 60 * 60 * 1000));
                       return (
-                        <p className={`text-xs mt-1 font-medium ${daysLeft <= 0 ? 'text-red-600' : daysLeft <= 3 ? 'text-amber-600' : 'text-gray-500 dark:text-gray-400'}`}>
+                        <p className={`text-xs mt-2 font-medium ${daysLeft <= 0 ? 'text-red-600' : daysLeft <= 3 ? 'text-amber-600' : 'text-gray-500 dark:text-gray-400'}`}>
                           {daysLeft <= 0 ? 'Your trial has ended — choose a plan below to keep going.' : `${daysLeft} day${daysLeft === 1 ? '' : 's'} left in your free trial`}
                         </p>
                       );
                     })()}
                   </div>
+                  {isBillingAdmin && subscriptionSnapshot?.subscription?.status === 'active' && (
+                    <Button variant="outline" size="sm" disabled={cancelBusy} onClick={handleCancelSubscription} className="text-red-600 hover:text-red-700">
+                      {cancelBusy ? 'Cancelling…' : 'Cancel subscription'}
+                    </Button>
+                  )}
                 </div>
               ) : (
                 <p className="text-sm text-gray-500 dark:text-gray-400">{billingLoading ? 'Loading…' : 'No billing information available.'}</p>
               )}
             </Section>
 
+            {isBillingAdmin && (
+              <Section title="Usage" description="Where you stand against your plan's limits">
+                <UsageSummary />
+              </Section>
+            )}
+
             <Section title="Available Plans" description={isBillingAdmin ? 'Upgrade your workspace at any time' : 'Contact your workspace admin to change plans'}>
               <div className="flex items-center gap-2 mb-4">
                 <Button variant={billingInterval === 'monthly' ? 'default' : 'outline'} size="sm" onClick={() => setBillingInterval('monthly')}>Monthly</Button>
                 <Button variant={billingInterval === 'annually' ? 'default' : 'outline'} size="sm" onClick={() => setBillingInterval('annually')}>Annual</Button>
               </div>
-              <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                {billingPlans.map((plan) => {
-                  const priceKobo = billingInterval === 'annually' ? plan.annualPriceKobo : plan.monthlyPriceKobo;
-                  const isCurrent = organization?.planTier === plan.tier;
-                  return (
-                    <div key={plan.id} className="rounded-xl border border-[hsl(var(--border))] p-4 flex flex-col gap-3">
-                      <div>
-                        <p className="font-semibold text-gray-900 dark:text-white">{plan.name}</p>
-                        {plan.description && <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{plan.description}</p>}
-                      </div>
-                      <p className="text-2xl font-bold text-gray-900 dark:text-white">
-                        KES {(priceKobo / 100).toLocaleString('en-KE')}
-                        <span className="text-sm font-normal text-gray-500 dark:text-gray-400">/{billingInterval === 'annually' ? 'yr' : 'mo'}</span>
-                      </p>
-                      <Button
-                        className="mt-auto"
-                        disabled={!isBillingAdmin || isCurrent || checkoutBusyId === plan.id}
-                        onClick={() => handleUpgrade(plan)}
-                      >
-                        {isCurrent ? 'Current Plan' : checkoutBusyId === plan.id ? 'Redirecting…' : 'Upgrade'}
-                      </Button>
-                    </div>
-                  );
-                })}
-                {!billingLoading && billingPlans.length === 0 && (
-                  <p className="text-sm text-gray-500 dark:text-gray-400 col-span-full">No plans are available yet.</p>
-                )}
-              </div>
+              {billingPlans.length > 0 ? (
+                <PlanComparison
+                  plans={billingPlans}
+                  currency="KES"
+                  interval={billingInterval}
+                  currentPlanTier={organization?.planTier}
+                  busyPlanId={checkoutBusyId}
+                  onSelect={isBillingAdmin ? handleUpgrade : undefined}
+                />
+              ) : (
+                <p className="text-sm text-gray-500 dark:text-gray-400">{billingLoading ? 'Loading…' : 'No plans are available yet.'}</p>
+              )}
             </Section>
           </>
         )}

@@ -74,11 +74,14 @@ export function listPlatformPlans(token?: string | null) {
 }
 
 export interface CreatePlatformPlanInput {
-  tier: 'starter' | 'pro' | 'enterprise';
+  tier: 'starter' | 'business' | 'pro' | 'enterprise';
+  code?: string;
   name: string;
   description?: string;
   monthlyPriceKobo: number;
   annualPriceKobo: number;
+  monthlyPriceUSD?: number | null;
+  annualPriceUSD?: number | null;
   maxShops?: number | null;
   maxUsers?: number | null;
   displayOrder?: number;
@@ -99,5 +102,45 @@ export function updatePlatformPlan(
   return request<PlatformPlan>(`/api/platform/plans/${encodeURIComponent(id)}`, token, {
     method: 'PATCH',
     body: JSON.stringify(payload),
+  });
+}
+
+export interface PlanEntitlementRow {
+  id: string;
+  planId: string;
+  code: string;
+  limitValue: number | null;
+  enabled: boolean;
+}
+
+export function getPlanEntitlements(token: string | null | undefined, planId: string) {
+  return request<PlanEntitlementRow[]>(`/api/platform/plans/${encodeURIComponent(planId)}/entitlements`, token);
+}
+
+export function updatePlanEntitlements(
+  token: string | null | undefined,
+  planId: string,
+  patches: { code: string; enabled?: boolean; limitValue?: number | null }[],
+) {
+  return request<PlanEntitlementRow[]>(`/api/platform/plans/${encodeURIComponent(planId)}/entitlements`, token, {
+    method: 'PATCH',
+    body: JSON.stringify({ patches }),
+  });
+}
+
+export function getOrganizationSubscription(token: string | null | undefined, organizationId: string) {
+  return request<unknown>(`/api/platform/organizations/${encodeURIComponent(organizationId)}/subscription`, token);
+}
+
+export type SubscriptionAction =
+  | { action: 'assignPlan'; planId: string; status?: string; billingInterval?: 'monthly' | 'annually' | null }
+  | { action: 'extendTrial'; extraDays: number }
+  | { action: 'suspend' }
+  | { action: 'reactivate' };
+
+export function manageOrganizationSubscription(token: string | null | undefined, organizationId: string, body: SubscriptionAction) {
+  return request<unknown>(`/api/platform/organizations/${encodeURIComponent(organizationId)}/subscription`, token, {
+    method: 'POST',
+    body: JSON.stringify(body),
   });
 }

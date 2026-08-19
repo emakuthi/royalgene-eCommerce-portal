@@ -1,8 +1,9 @@
 import Image from 'next/image';
 import Link from 'next/link';
-import { Store, Package, BarChart3, ShieldCheck, Building2, Check } from 'lucide-react';
+import { Store, Package, BarChart3, ShieldCheck, Building2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { listPlans } from '@/lib/billing-plans.server';
+import { listPlansWithEntitlements } from '@/lib/billing-plans.server';
+import { PricingSection } from '@/components/entitlements/PricingSection';
 
 const FEATURES = [
   { icon: Store, label: 'Shop Management', desc: 'Manage all your shop locations in one place' },
@@ -12,12 +13,8 @@ const FEATURES = [
   { icon: Building2, label: 'Multi-Shop, One Workspace', desc: 'Run every location from a single dashboard' },
 ];
 
-function formatKes(kobo: number): string {
-  return `KES ${(kobo / 100).toLocaleString('en-KE')}`;
-}
-
 export default async function LandingPage() {
-  const plans = await listPlans(true);
+  const plans = await listPlansWithEntitlements(true);
 
   return (
     <div className="min-h-screen bg-white dark:bg-gray-950">
@@ -82,47 +79,7 @@ export default async function LandingPage() {
             <p className="mt-3 text-gray-500 dark:text-gray-400">Start free, upgrade whenever you're ready — no commitment up front.</p>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 max-w-5xl mx-auto">
-            <div className="rounded-2xl border border-[hsl(var(--border))] bg-white dark:bg-gray-900 p-6 flex flex-col gap-4">
-              <div>
-                <p className="font-semibold text-gray-900 dark:text-white">Free</p>
-                <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Everything you need to get started</p>
-              </div>
-              <p className="text-3xl font-bold text-gray-900 dark:text-white">KES 0</p>
-              <Button asChild className="mt-auto">
-                <Link href="/signup">Start free</Link>
-              </Button>
-            </div>
-
-            {plans.map((plan) => (
-              <div key={plan.id} className="rounded-2xl border border-[hsl(var(--border))] bg-white dark:bg-gray-900 p-6 flex flex-col gap-4">
-                <div>
-                  <p className="font-semibold text-gray-900 dark:text-white">{plan.name}</p>
-                  {plan.description && <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">{plan.description}</p>}
-                </div>
-                <p className="text-3xl font-bold text-gray-900 dark:text-white">
-                  {formatKes(plan.monthlyPriceKobo)}
-                  <span className="text-sm font-normal text-gray-500 dark:text-gray-400">/mo</span>
-                </p>
-                <p className="text-xs text-gray-500 dark:text-gray-400">
-                  or {formatKes(plan.annualPriceKobo)}/yr
-                </p>
-                {(plan.maxShops || plan.maxUsers) && (
-                  <ul className="space-y-1.5 text-sm text-gray-600 dark:text-gray-300">
-                    {plan.maxShops && (
-                      <li className="flex items-center gap-2"><Check className="h-4 w-4 text-[hsl(var(--primary))]" /> Up to {plan.maxShops} shops</li>
-                    )}
-                    {plan.maxUsers && (
-                      <li className="flex items-center gap-2"><Check className="h-4 w-4 text-[hsl(var(--primary))]" /> Up to {plan.maxUsers} team members</li>
-                    )}
-                  </ul>
-                )}
-                <Button asChild variant="outline" className="mt-auto">
-                  <Link href="/signup">Start free, upgrade anytime</Link>
-                </Button>
-              </div>
-            ))}
-          </div>
+          <PricingSection plans={plans} />
         </div>
       </section>
 

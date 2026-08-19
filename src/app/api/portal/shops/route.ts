@@ -4,6 +4,7 @@ import { requireAuth } from '@/lib/authorize';
 import logger from '@/lib/logger';
 import { v4 as uuidv4 } from 'uuid';
 import { jsonResponse, optionsResponse } from '@/lib/apiResponse';
+import { assertCanCreate } from '@/lib/entitlements/enforce.server';
 
 export async function GET(request: NextRequest) {
   try {
@@ -45,6 +46,9 @@ export async function POST(request: NextRequest) {
       return jsonResponse({ success: false, error: 'An organization context is required to create a shop' }, 400);
     }
     const organizationId = auth.organizationId;
+
+    const limitResponse = await assertCanCreate(organizationId, 'BRANCH');
+    if (limitResponse) return limitResponse;
 
     const body = await request.json();
     const { name, location, phone, email } = body || {};

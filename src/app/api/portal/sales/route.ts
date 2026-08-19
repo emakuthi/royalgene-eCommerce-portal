@@ -7,6 +7,7 @@ import type { ShopStock, PortalUser as PortalUserType } from '@/lib/types';
 import { syncProductStockFromShopStocks } from '@/lib/supabase-db';
 import { jsonResponse, optionsResponse } from '@/lib/apiResponse';
 import { trackFromRequest } from '@/lib/activity-tracker';
+import { assertCanCreate } from '@/lib/entitlements/enforce.server';
 
 export async function POST(request: NextRequest) {
   const startTime = Date.now();
@@ -156,6 +157,9 @@ export async function POST(request: NextRequest) {
       return jsonResponse({ success: false, error: 'Shop not found' }, 404);
     }
     const organizationId = shopRow.organizationId as string;
+
+    const limitResponse = await assertCanCreate(organizationId, 'TRANSACTION');
+    if (limitResponse) return limitResponse;
 
     // Get product
     const { data: product, error: productError } = await supabaseAdmin

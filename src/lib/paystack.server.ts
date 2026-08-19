@@ -132,3 +132,23 @@ export function verifyWebhookSignature(rawBody: string, signatureHeader: string 
     return false;
   }
 }
+
+export interface PaystackSubscriptionData {
+  subscription_code: string;
+  email_token: string;
+  status: string;
+}
+
+/** Fetches a subscription to obtain its email_token, required by /subscription/disable. */
+export async function fetchSubscription(codeOrId: string): Promise<{ ok: true; data: PaystackSubscriptionData } | { ok: false; error: string }> {
+  return paystackFetch<PaystackSubscriptionData>(`/subscription/${encodeURIComponent(codeOrId)}`, { method: 'GET' });
+}
+
+export async function disableSubscription(code: string, emailToken: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  const result = await paystackFetch<unknown>('/subscription/disable', {
+    method: 'POST',
+    body: JSON.stringify({ code, token: emailToken }),
+  });
+  if (!result.ok) return result;
+  return { ok: true };
+}

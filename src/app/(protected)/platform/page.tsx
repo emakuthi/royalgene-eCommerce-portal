@@ -15,17 +15,23 @@ import { PortalProtected } from '@/components/portal-protected';
 import { useHydratedAuth } from '@/lib/hooks';
 import {
   createPlatformPlan,
+  getPlanEntitlements,
   getPlatformOverview,
   getPlatformSelfSignupEnabled,
   listPlatformOrganizations,
   listPlatformPlans,
+  manageOrganizationSubscription,
   setPlatformSelfSignupEnabled,
+  updatePlanEntitlements,
   updatePlatformOrganization,
   updatePlatformPlan,
   type OrganizationWithCounts,
   type PlatformOverview,
+  type PlanEntitlementRow,
 } from '@/lib/platform';
 import type { Organization, PlatformPlan } from '@/lib/types';
+import { FeatureCode, LimitCode, WIRED_FEATURE_CODES, WIRED_LIMIT_CODES } from '@/lib/entitlements/feature-codes';
+import { FEATURE_LABELS } from '@/components/entitlements/feature-labels';
 
 function formatKes(kobo: number): string {
   return `KES ${(kobo / 100).toLocaleString('en-KE', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
@@ -38,7 +44,7 @@ const STATUS_STYLES: Record<Organization['status'], string> = {
   cancelled: 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400',
 };
 
-const PLAN_TIERS: Organization['planTier'][] = ['free', 'starter', 'pro', 'enterprise', 'legacy'];
+const PLAN_TIERS: Organization['planTier'][] = ['free', 'starter', 'business', 'pro', 'enterprise', 'legacy'];
 
 function Toggle({ checked, onChange, disabled }: { checked: boolean; onChange: (v: boolean) => void; disabled?: boolean }) {
   return (
@@ -82,13 +88,28 @@ function PlatformAdminConsole() {
   const [creatingPlan, setCreatingPlan] = useState(false);
   const [newPlan, setNewPlan] = useState({
     tier: 'starter' as PlatformPlan['tier'],
+    code: '',
     name: '',
     description: '',
     monthlyPriceKes: '',
     annualPriceKes: '',
+    monthlyPriceUsd: '',
+    annualPriceUsd: '',
     maxShops: '',
     maxUsers: '',
   });
+
+  // Entitlements matrix editor
+  const [entitlementsPlanId, setEntitlementsPlanId] = useState<string | null>(null);
+  const [entitlementRows, setEntitlementRows] = useState<PlanEntitlementRow[]>([]);
+  const [entitlementsLoading, setEntitlementsLoading] = useState(false);
+  const [entitlementsSaving, setEntitlementsSaving] = useState(false);
+
+  // Manage-subscription dialog
+  const [subDialogOrg, setSubDialogOrg] = useState<OrganizationWithCounts | null>(null);
+  const [subAssignPlanId, setSubAssignPlanId] = useState('');
+  const [subExtraDays, setSubExtraDays] = useState('14');
+  const [subBusy, setSubBusy] = useState(false);
 
   const loadAll = useCallback(async () => {
     if (!token) return;
@@ -170,10 +191,13 @@ function PlatformAdminConsole() {
     setCreatingPlan(true);
     const res = await createPlatformPlan(token, {
       tier: newPlan.tier,
+      code: newPlan.code || undefined,
       name: newPlan.name,
       description: newPlan.description || undefined,
       monthlyPriceKobo,
       annualPriceKobo,
+      monthlyPriceUSD: newPlan.monthlyPriceUsd ? Math.round(parseFloat(newPlan.monthlyPriceUsd) * 100) : null,
+      annualPriceUSD: newPlan.annualPriceUsd ? Math.round(parseFloat(newPlan.annualPriceUsd) * 100) : null,
       maxShops: newPlan.maxShops ? Number(newPlan.maxShops) : null,
       maxUsers: newPlan.maxUsers ? Number(newPlan.maxUsers) : null,
     });
@@ -181,11 +205,64 @@ function PlatformAdminConsole() {
       setPlans((prev) => [...prev, res.data as PlatformPlan]);
       toast.success(`Plan "${res.data.name}" created`);
       setPlanDialogOpen(false);
-      setNewPlan({ tier: 'starter', name: '', description: '', monthlyPriceKes: '', annualPriceKes: '', maxShops: '', maxUsers: '' });
+      setNewPlan({ tier: 'starter', code: '', name: '', description: '', monthlyPriceKes: '', annualPriceKes: '', monthlyPriceUsd: '', annualPriceUsd: '', maxShops: '', maxUsers: '' });
     } else {
       toast.error(res.error || 'Failed to create plan');
     }
     setCreatingPlan(false);
+  };
+
+  const loadEntitlements = async (planId: string) => {
+    setEntitlementsPlanId(planId);
+    setEntitlementsLoading(true);
+    const res = await getPlanEntitlements(token, planId);
+    if (res.success && res.data) setEntitlementRows(res.data);
+    else toast.error(res.error || 'Failed to load entitlements');
+    setEntitlementsLoading(false);
+  };
+
+  const updateEntitlementRow = (code: string, patch: Partial<Pick<PlanEntitlementRow, 'enabled' | 'limitValue'>>) => {
+    setEntitlementRows((prev) => {
+      const existing = prev.find((r) => r.code === code);
+      if (existing) return prev.map((r) => (r.code === code ? { ...r, ...patch } : r));
+      return [...prev, { id: `new-${code}`, planId: entitlementsPlanId!, code, enabled: true, limitValue: null, ...patch }];
+    });
+  };
+
+  const saveEntitlements = async () => {
+    if (!entitlementsPlanId) return;
+    setEntitlementsSaving(true);
+    const patches = entitlementRows.map((r) => ({ code: r.code, enabled: r.enabled, limitValue: r.limitValue }));
+    const res = await updatePlanEntitlements(token, entitlementsPlanId, patches);
+    if (res.success && res.data) {
+      setEntitlementRows(res.data);
+      toast.success('Entitlements saved');
+    } else {
+      toast.error(res.error || 'Failed to save entitlements');
+    }
+    setEntitlementsSaving(false);
+  };
+
+  const runSubscriptionAction = async (action: 'assignPlan' | 'extendTrial' | 'suspend' | 'reactivate') => {
+    if (!subDialogOrg) return;
+    setSubBusy(true);
+    const res = await manageOrganizationSubscription(
+      token,
+      subDialogOrg.id,
+      action === 'assignPlan'
+        ? { action, planId: subAssignPlanId }
+        : action === 'extendTrial'
+          ? { action, extraDays: Number(subExtraDays) || 14 }
+          : { action },
+    );
+    if (res.success) {
+      toast.success('Subscription updated');
+      void loadAll();
+      setSubDialogOrg(null);
+    } else {
+      toast.error(res.error || 'Failed to update subscription');
+    }
+    setSubBusy(false);
   };
 
   return (
@@ -274,26 +351,35 @@ function PlatformAdminConsole() {
                         {new Date(org.createdAt).toLocaleDateString()}
                       </td>
                       <td className="py-4">
-                        {org.status === 'suspended' ? (
+                        <div className="flex items-center gap-2 flex-wrap">
+                          {org.status === 'suspended' ? (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              disabled={orgBusyId === org.id}
+                              onClick={() => updateOrgStatus(org, 'active')}
+                            >
+                              <CheckCircle2 className="h-4 w-4 mr-1" /> Activate
+                            </Button>
+                          ) : (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="text-red-600 hover:text-red-700"
+                              disabled={orgBusyId === org.id || org.status === 'cancelled'}
+                              onClick={() => updateOrgStatus(org, 'suspended')}
+                            >
+                              <XCircle className="h-4 w-4 mr-1" /> Suspend
+                            </Button>
+                          )}
                           <Button
                             size="sm"
                             variant="outline"
-                            disabled={orgBusyId === org.id}
-                            onClick={() => updateOrgStatus(org, 'active')}
+                            onClick={() => { setSubDialogOrg(org); setSubAssignPlanId(''); setSubExtraDays('14'); }}
                           >
-                            <CheckCircle2 className="h-4 w-4 mr-1" /> Activate
+                            Subscription
                           </Button>
-                        ) : (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="text-red-600 hover:text-red-700"
-                            disabled={orgBusyId === org.id || org.status === 'cancelled'}
-                            onClick={() => updateOrgStatus(org, 'suspended')}
-                          >
-                            <XCircle className="h-4 w-4 mr-1" /> Suspend
-                          </Button>
-                        )}
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -355,14 +441,19 @@ function PlatformAdminConsole() {
                         </Badge>
                       </td>
                       <td className="py-4">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          disabled={planBusyId === plan.id}
-                          onClick={() => togglePlanActive(plan)}
-                        >
-                          {plan.isActive ? 'Deactivate' : 'Activate'}
-                        </Button>
+                        <div className="flex items-center gap-2">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={planBusyId === plan.id}
+                            onClick={() => togglePlanActive(plan)}
+                          >
+                            {plan.isActive ? 'Deactivate' : 'Activate'}
+                          </Button>
+                          <Button size="sm" variant="outline" onClick={() => loadEntitlements(plan.id)}>
+                            Entitlements
+                          </Button>
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -378,6 +469,74 @@ function PlatformAdminConsole() {
             </div>
           </CardContent>
         </Card>
+
+        {/* Entitlements matrix editor for the plan selected above */}
+        {entitlementsPlanId && (
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0">
+              <CardTitle>Entitlements — {plans.find((p) => p.id === entitlementsPlanId)?.name}</CardTitle>
+              <Button size="sm" disabled={entitlementsSaving || entitlementsLoading} onClick={saveEntitlements}>
+                {entitlementsSaving ? 'Saving…' : 'Save changes'}
+              </Button>
+            </CardHeader>
+            <CardContent>
+              {entitlementsLoading ? (
+                <p className="text-sm text-gray-500 dark:text-gray-400">Loading…</p>
+              ) : (
+                <div className="space-y-6">
+                  <div>
+                    <p className="text-sm font-medium text-gray-900 dark:text-white mb-2">Features</p>
+                    <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                      {Object.values(FeatureCode).map((code) => {
+                        const row = entitlementRows.find((r) => r.code === code);
+                        const enabled = row?.enabled ?? false;
+                        const isWired = (WIRED_FEATURE_CODES as readonly string[]).includes(code);
+                        return (
+                          <label key={code} className="flex items-center gap-2 text-sm px-2 py-1.5 rounded-md hover:bg-gray-50 dark:hover:bg-gray-800">
+                            <input
+                              type="checkbox"
+                              checked={enabled}
+                              onChange={(e) => updateEntitlementRow(code, { enabled: e.target.checked })}
+                              className="rounded border-[hsl(var(--border))]"
+                            />
+                            <span className="text-gray-700 dark:text-gray-300">
+                              {FEATURE_LABELS[code] || code}
+                              {!isWired && <span className="text-gray-400"> (not yet built)</span>}
+                            </span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-gray-900 dark:text-white mb-2">Limits</p>
+                    <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                      {Object.values(LimitCode).map((code) => {
+                        const row = entitlementRows.find((r) => r.code === code);
+                        const isWired = (WIRED_LIMIT_CODES as readonly string[]).includes(code);
+                        return (
+                          <div key={code}>
+                            <Label className="text-xs">
+                              {code.replace(/_/g, ' ')}
+                              {!isWired && <span className="text-gray-400"> (not enforced)</span>}
+                            </Label>
+                            <Input
+                              type="number"
+                              min="0"
+                              placeholder="Unlimited"
+                              value={row?.limitValue ?? ''}
+                              onChange={(e) => updateEntitlementRow(code, { limitValue: e.target.value ? Number(e.target.value) : null })}
+                            />
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        )}
       </div>
 
       {/* Create Plan Dialog */}
@@ -392,17 +551,24 @@ function PlatformAdminConsole() {
               <Label>Plan Name *</Label>
               <Input value={newPlan.name} onChange={(e) => setNewPlan((p) => ({ ...p, name: e.target.value }))} placeholder="e.g. Pro" />
             </div>
-            <div>
-              <Label>Tier *</Label>
-              <select
-                className="w-full rounded-md border border-[hsl(var(--border))] bg-transparent px-3 py-2 text-sm"
-                value={newPlan.tier}
-                onChange={(e) => setNewPlan((p) => ({ ...p, tier: e.target.value as PlatformPlan['tier'] }))}
-              >
-                <option value="starter">Starter</option>
-                <option value="pro">Pro</option>
-                <option value="enterprise">Enterprise</option>
-              </select>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label>Tier *</Label>
+                <select
+                  className="w-full rounded-md border border-[hsl(var(--border))] bg-transparent px-3 py-2 text-sm"
+                  value={newPlan.tier}
+                  onChange={(e) => setNewPlan((p) => ({ ...p, tier: e.target.value as PlatformPlan['tier'] }))}
+                >
+                  <option value="starter">Starter</option>
+                  <option value="business">Business</option>
+                  <option value="pro">Professional</option>
+                  <option value="enterprise">Enterprise</option>
+                </select>
+              </div>
+              <div>
+                <Label>Code</Label>
+                <Input value={newPlan.code} onChange={(e) => setNewPlan((p) => ({ ...p, code: e.target.value.toUpperCase() }))} placeholder="e.g. PROFESSIONAL" />
+              </div>
             </div>
             <div>
               <Label>Description</Label>
@@ -420,6 +586,16 @@ function PlatformAdminConsole() {
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
+                <Label>Monthly Price (USD, display-only)</Label>
+                <Input type="number" min="0" step="0.01" value={newPlan.monthlyPriceUsd} onChange={(e) => setNewPlan((p) => ({ ...p, monthlyPriceUsd: e.target.value }))} placeholder="12" />
+              </div>
+              <div>
+                <Label>Annual Price (USD, display-only)</Label>
+                <Input type="number" min="0" step="0.01" value={newPlan.annualPriceUsd} onChange={(e) => setNewPlan((p) => ({ ...p, annualPriceUsd: e.target.value }))} placeholder="120" />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
                 <Label>Max Shops</Label>
                 <Input type="number" min="0" value={newPlan.maxShops} onChange={(e) => setNewPlan((p) => ({ ...p, maxShops: e.target.value }))} placeholder="Unlimited" />
               </div>
@@ -433,6 +609,53 @@ function PlatformAdminConsole() {
               <Button variant="outline" type="button" onClick={() => setPlanDialogOpen(false)}>Cancel</Button>
             </div>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Manage Subscription Dialog */}
+      <Dialog open={Boolean(subDialogOrg)} onOpenChange={(open) => !open && setSubDialogOrg(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Manage subscription — {subDialogOrg?.name}</DialogTitle>
+            <DialogDescription>Full subscription lifecycle control. Assigning a plan or reactivating sets the subscription to active immediately.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-5 mt-1">
+            <div>
+              <Label>Assign plan</Label>
+              <div className="flex gap-2 mt-1">
+                <select
+                  className="flex-1 rounded-md border border-[hsl(var(--border))] bg-transparent px-3 py-2 text-sm"
+                  value={subAssignPlanId}
+                  onChange={(e) => setSubAssignPlanId(e.target.value)}
+                >
+                  <option value="">Select a plan…</option>
+                  {plans.map((p) => (
+                    <option key={p.id} value={p.id}>{p.name}</option>
+                  ))}
+                </select>
+                <Button size="sm" disabled={!subAssignPlanId || subBusy} onClick={() => runSubscriptionAction('assignPlan')}>
+                  Assign
+                </Button>
+              </div>
+            </div>
+            <div>
+              <Label>Extend trial</Label>
+              <div className="flex gap-2 mt-1">
+                <Input type="number" min="1" value={subExtraDays} onChange={(e) => setSubExtraDays(e.target.value)} className="flex-1" />
+                <Button size="sm" variant="outline" disabled={subBusy} onClick={() => runSubscriptionAction('extendTrial')}>
+                  Add days
+                </Button>
+              </div>
+            </div>
+            <div className="flex gap-3">
+              <Button variant="outline" className="flex-1" disabled={subBusy} onClick={() => runSubscriptionAction('suspend')}>
+                Suspend subscription
+              </Button>
+              <Button variant="outline" className="flex-1" disabled={subBusy} onClick={() => runSubscriptionAction('reactivate')}>
+                Reactivate
+              </Button>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
     </div>

@@ -2,6 +2,7 @@ import 'server-only';
 import { supabaseAdmin } from './supabase-client';
 import type { PlatformPlan } from './types';
 import logger from './logger';
+import { upsertTenantSubscription } from './entitlements/tenant-subscription-store.server';
 
 export async function recordBillingEvent(input: {
   eventType: string;
@@ -66,6 +67,18 @@ export async function applySuccessfulSubscription(input: ApplySuccessfulSubscrip
     logger.error('[billing] failed to apply subscription', { error: error.message, organizationId: input.organizationId });
     throw new Error(error.message);
   }
+
+  // Keep the entitlement system's own record of the subscription in sync —
+  // the Organization row above is a denormalized copy middleware.ts reads at
+  // the edge; TenantSubscription is what entitlement-service.server.ts
+  // actually resolves limits/features against.
+  const now = new Date().toISOString();
+  await upsertTenantSubscription(input.organizationId, {
+    planId: input.plan.id,
+    status: 'active',
+    billingInterval: input.interval,
+    currentPeriodStart: now,
+  });
 
   await recordBillingEvent({
     eventType: 'subscription.applied',

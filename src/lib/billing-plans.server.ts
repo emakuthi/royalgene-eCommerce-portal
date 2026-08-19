@@ -25,10 +25,13 @@ export async function getPlanByTier(tier: string): Promise<PlatformPlan | null> 
 
 export interface CreatePlanInput {
   tier: string;
+  code?: string | null;
   name: string;
   description?: string | null;
   monthlyPriceKobo: number;
   annualPriceKobo: number;
+  monthlyPriceUSD?: number | null;
+  annualPriceUSD?: number | null;
   currency?: string;
   maxShops?: number | null;
   maxUsers?: number | null;
@@ -54,10 +57,13 @@ export async function createPlan(input: CreatePlanInput): Promise<PlatformPlan> 
     .from('PlatformPlan')
     .insert([{
       tier: input.tier,
+      code: input.code ?? null,
       name: input.name,
       description: input.description ?? null,
       monthlyPriceKobo: input.monthlyPriceKobo,
       annualPriceKobo: input.annualPriceKobo,
+      monthlyPriceUSD: input.monthlyPriceUSD ?? null,
+      annualPriceUSD: input.annualPriceUSD ?? null,
       currency,
       paystackMonthlyPlanCode: monthlyCode,
       paystackAnnualPlanCode: annualCode,
@@ -76,8 +82,11 @@ export async function createPlan(input: CreatePlanInput): Promise<PlatformPlan> 
 }
 
 export interface UpdatePlanInput {
+  code?: string | null;
   name?: string;
   description?: string | null;
+  monthlyPriceUSD?: number | null;
+  annualPriceUSD?: number | null;
   maxShops?: number | null;
   maxUsers?: number | null;
   isActive?: boolean;
@@ -99,4 +108,28 @@ export async function updatePlan(id: string, input: UpdatePlanInput): Promise<Pl
     .maybeSingle();
   if (error) throw new Error(error.message);
   return data as PlatformPlan | null;
+}
+
+export interface PlanWithEntitlements extends PlatformPlan {
+  entitlements: { code: string; enabled: boolean; limitValue: number | null }[];
+}
+
+/** For the public pricing page and the super-admin entitlement matrix — the plan catalog plus what each plan actually unlocks, DB as source of truth. */
+export async function listPlansWithEntitlements(onlyActive = false): Promise<PlanWithEntitlements[]> {
+  const plans = await listPlans(onlyActive);
+  if (plans.length === 0) return [];
+
+  const { data: entitlementRows } = await supabaseAdmin
+    .from('PlanEntitlement')
+    .select('planId, code, enabled, limitValue')
+    .in('planId', plans.map((p) => p.id));
+
+  const byPlan = new Map<string, { code: string; enabled: boolean; limitValue: number | null }[]>();
+  for (const row of (entitlementRows ?? []) as { planId: string; code: string; enabled: boolean; limitValue: number | null }[]) {
+    const list = byPlan.get(row.planId) ?? [];
+    list.push({ code: row.code, enabled: row.enabled, limitValue: row.limitValue });
+    byPlan.set(row.planId, list);
+  }
+
+  return plans.map((plan) => ({ ...plan, entitlements: byPlan.get(plan.id) ?? [] }));
 }

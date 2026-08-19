@@ -4,6 +4,7 @@ import { verifyToken, hashPassword, type VerifiedPayload } from '@/lib/auth.serv
 import { jsonResponse, optionsResponse } from '@/lib/apiResponse';
 import { assertTenantMatch } from '@/lib/tenant-guard';
 import { v4 as uuidv4 } from 'uuid';
+import { assertCanCreate } from '@/lib/entitlements/enforce.server';
 
 function requireAdmin(request: NextRequest): NextResponse | VerifiedPayload {
   const token = request.headers.get('Authorization')?.replace('Bearer ', '');
@@ -77,6 +78,9 @@ export async function POST(request: NextRequest) {
   if (targetShop.organizationId !== organizationId) {
     return jsonResponse({ success: false, error: 'Shop does not belong to your organization' }, 403);
   }
+
+  const limitResponse = await assertCanCreate(organizationId, 'USER');
+  if (limitResponse) return limitResponse;
 
   // Check email uniqueness within the organization
   const { data: existing } = await supabaseAdmin

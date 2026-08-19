@@ -1,6 +1,7 @@
 import 'server-only';
 import { supabaseAdmin } from './supabase-client';
 import type { Organization } from './types';
+import logger from './logger';
 
 export async function getOrganizationBySlug(slug: string): Promise<Organization | null> {
   const { data, error } = await supabaseAdmin
@@ -60,7 +61,38 @@ export async function createOrganization(input: CreateOrganizationInput): Promis
   if (error || !data) {
     throw new Error(error?.message || 'Failed to create organization');
   }
+
+  await createTrialSubscription(data.id, trialEndsAt);
+
   return data as Organization;
+}
+
+/**
+ * New tenants get Professional-level entitlements during their trial (per
+ * the subscription spec), not Starter — TenantSubscription.planId points at
+ * Professional while Organization.planTier stays 'free' so the existing
+ * middleware trial-lockout logic (which only ever reads Organization) is
+ * unaffected. Fails soft: a missing Professional plan (e.g. seed migration
+ * not run yet) must never block signup — it just means entitlements resolve
+ * to "no plan" (blocked creation, not blocked signup) until an admin seeds plans.
+ */
+async function createTrialSubscription(organizationId: string, trialEndsAt: string): Promise<void> {
+  const { data: professionalPlan } = await supabaseAdmin.from('PlatformPlan').select('id').eq('tier', 'pro').maybeSingle();
+  const now = new Date().toISOString();
+
+  const { error } = await supabaseAdmin.from('TenantSubscription').insert([{
+    organizationId,
+    planId: professionalPlan?.id ?? null,
+    status: 'trialing',
+    trialStart: now,
+    trialEnd: trialEndsAt,
+    createdAt: now,
+    updatedAt: now,
+  }]);
+
+  if (error) {
+    logger.warn('[organizations] failed to create trial TenantSubscription', { error: error.message, organizationId });
+  }
 }
 
 export async function activateOrganization(organizationId: string): Promise<void> {

@@ -5,6 +5,7 @@ import { jsonResponse } from '@/lib/apiResponse';
 import { v4 as uuidv4 } from 'uuid';
 import type { ShopStock } from '@/lib/types';
 import { verifyMobileShopAccess } from '@/lib/mobile-shop-auth';
+import { assertCanCreate } from '@/lib/entitlements/enforce.server';
 
 /**
  * POST /api/mobile/shops/[shopId]/sales
@@ -82,6 +83,12 @@ export async function POST(
         error: 'Shop is not active',
         code: 'SHOP_INACTIVE'
       }, 403);
+    }
+
+    const organizationId = typeof sRow['organizationId'] === 'string' ? (sRow['organizationId'] as string) : null;
+    if (organizationId) {
+      const limitResponse = await assertCanCreate(organizationId, 'TRANSACTION');
+      if (limitResponse) return limitResponse;
     }
 
     // Get product details
