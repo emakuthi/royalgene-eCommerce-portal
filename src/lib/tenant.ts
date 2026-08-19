@@ -7,7 +7,10 @@ export const ROOT_DOMAIN = (process.env.NEXT_PUBLIC_ROOT_DOMAIN || 'localhost:30
 export const DEV_TENANT_SLUG = process.env.DEV_TENANT_SLUG || 'royalgene';
 
 // Subdomains that are never a tenant slug — reserved for platform surfaces.
-export const RESERVED_SUBDOMAINS = ['www', 'api', 'app', 'admin', 'mail', 'platform'];
+// "portal" is the production entry host (portal.<root-domain>) and is
+// treated the same as the bare apex/www: it resolves to the default tenant
+// (DEV_TENANT_SLUG), not a tenant slug lookup.
+export const RESERVED_SUBDOMAINS = ['www', 'portal', 'api', 'app', 'admin', 'mail', 'platform'];
 
 export interface ResolvedOrganization {
   id: string;
