@@ -1,23 +1,20 @@
 import { NextRequest } from 'next/server';
+import { randomInt, createHash } from 'node:crypto';
 import { supabaseAdmin } from '@/lib/supabase-client';
 import { jsonResponse, optionsResponse } from '@/lib/apiResponse';
+import { sendWorkspaceCodeEmail } from '@/lib/email/workspace-code-email';
 import logger from '@/lib/logger';
 
+const CODE_TTL_MS = 10 * 60 * 1000; // 10 minutes
+
 /**
- * POST /api/auth/find-workspace — { email } -> which workspace(s) this email
- * has portal access to. Tenant-optional (see middleware.ts TENANT_OPTIONAL_PATHS)
- * — by definition the caller doesn't know their tenant's subdomain yet (this
- * is what the mobile app's "find my workspace" flow calls). User.email is
- * unique per-organization, not globally, so one email can legitimately match
- * more than one workspace.
- *
- * Deliberately always returns 200 with a (possibly empty) list rather than a
- * 404/error when nothing matches — this can't be used to tell "no account
- * anywhere" apart from "account exists but isn't tied to an organization"
- * (e.g. a platform super_admin). It still reveals which named workspace(s)
- * an email belongs to, which is the normal tradeoff for a "find my
- * workspace" flow in a B2B product — reconsider if this app ever becomes
- * consumer-facing and needs stricter enumeration protection.
+ * POST /api/auth/find-workspace — { email } -> sends a one-time code to that
+ * email if it belongs to any organization, then GET the actual workspace(s)
+ * from POST /api/auth/verify-workspace-code once the user proves they
+ * control the inbox. Always responds the same way regardless of whether the
+ * email matched anything (`{sent: true}`) — the response itself can't be
+ * used to enumerate which emails have an account; only actually receiving
+ * the email would confirm that, which requires controlling the inbox.
  */
 export async function POST(request: NextRequest) {
   try {
@@ -25,11 +22,12 @@ export async function POST(request: NextRequest) {
     if (!email || typeof email !== 'string') {
       return jsonResponse({ success: false, error: 'Email is required' }, 400);
     }
+    const normalizedEmail = email.trim().toLowerCase();
 
     const { data: users, error } = await supabaseAdmin
       .from('User')
       .select('organizationId')
-      .eq('email', email.trim().toLowerCase())
+      .eq('email', normalizedEmail)
       .not('organizationId', 'is', null);
 
     if (error) {
@@ -37,18 +35,30 @@ export async function POST(request: NextRequest) {
       return jsonResponse({ success: false, error: 'Lookup failed' }, 500);
     }
 
-    const orgIds = Array.from(new Set((users ?? []).map((u) => u.organizationId as string).filter(Boolean)));
-    if (orgIds.length === 0) {
-      return jsonResponse({ success: true, data: { organizations: [] } });
+    const hasOrg = (users ?? []).length > 0;
+    if (hasOrg) {
+      const code = randomInt(100000, 1000000).toString();
+      const codeHash = createHash('sha256').update(code).digest('hex');
+      const now = new Date();
+
+      const { error: insertError } = await supabaseAdmin.from('WorkspaceLookupCode').insert([{
+        email: normalizedEmail,
+        codeHash,
+        expiresAt: new Date(now.getTime() + CODE_TTL_MS).toISOString(),
+        createdAt: now.toISOString(),
+      }]);
+
+      if (insertError) {
+        logger.error('[find-workspace] failed to store code', { error: insertError.message });
+      } else {
+        const sendResult = await sendWorkspaceCodeEmail({ to: normalizedEmail, code });
+        if (!sendResult.ok) {
+          logger.warn('[find-workspace] failed to send code email', { error: sendResult.error });
+        }
+      }
     }
 
-    const { data: orgs } = await supabaseAdmin
-      .from('Organization')
-      .select('name, slug')
-      .in('id', orgIds)
-      .eq('status', 'active');
-
-    return jsonResponse({ success: true, data: { organizations: orgs ?? [] } });
+    return jsonResponse({ success: true, data: { sent: true } });
   } catch (err) {
     logger.error('[find-workspace] error', { error: err instanceof Error ? err.message : String(err) });
     return jsonResponse({ success: false, error: 'Internal server error' }, 500);
