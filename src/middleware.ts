@@ -17,6 +17,7 @@ const TENANT_OPTIONAL_PATHS = [
   '/api/auth/signup-status',
   '/api/auth/check-slug',
   '/api/auth/verify-email',
+  '/api/auth/find-workspace',
   '/signup',
   '/verify-email',
   '/tenant-not-found',
