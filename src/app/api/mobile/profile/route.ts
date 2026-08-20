@@ -32,16 +32,27 @@ export async function GET(request: NextRequest) {
     // Get user details
     const { data: user, error: userError } = await supabaseAdmin
       .from('User')
-      .select('id, name, email, phone, role')
+      .select('id, name, email, phone, role, organizationId')
       .eq('id', payload.userId)
       .single();
 
     if (userError || !user) {
-      return jsonResponse({ 
-        success: false, 
+      return jsonResponse({
+        success: false,
         error: 'User not found',
         code: 'NOT_FOUND'
       }, 404);
+    }
+
+    // Organization identity — see login/route.ts for why this is included.
+    let organization: { id: string; name: string; slug: string } | null = null;
+    if (user.organizationId) {
+      const { data: orgRow } = await supabaseAdmin
+        .from('Organization')
+        .select('id, name, slug')
+        .eq('id', user.organizationId)
+        .maybeSingle();
+      organization = (orgRow as typeof organization) ?? null;
     }
 
     // Get portal user & shop details (user may have multiple shop assignments)
@@ -81,6 +92,8 @@ export async function GET(request: NextRequest) {
           email: user.email,
           phone: user.phone,
           role: user.role,
+          organizationId: user.organizationId ?? null,
+          organization,
           shop: portalUser.Shop ? {
             id: portalUser.Shop.id,
             name: portalUser.Shop.name,

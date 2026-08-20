@@ -128,6 +128,22 @@ export async function POST(request: NextRequest) {
       shopId
     });
 
+    // Organization identity — the mobile app has no way to check/display which
+    // tenant a session belongs to today; this closes that gap. Also worth
+    // knowing: the user lookup above is already scoped to the org resolved
+    // from the request's host (x-org-id) OR platform-level users, so a mobile
+    // client hardcoded to one host can only ever authenticate users of that
+    // one tenant — this doesn't change that, it just makes it checkable.
+    let organization: { id: string; name: string; slug: string } | null = null;
+    if (user.organizationId) {
+      const { data: orgRow } = await supabaseAdmin
+        .from('Organization')
+        .select('id, name, slug')
+        .eq('id', user.organizationId)
+        .maybeSingle();
+      organization = (orgRow as typeof organization) ?? null;
+    }
+
     // Get shop details (if user has a linked shop)
     let shop: Record<string, unknown> | null = null;
     if (shopId) {
@@ -195,8 +211,10 @@ export async function POST(request: NextRequest) {
           email: user.email,
           name: user.name,
           phone: user.phone,
-          role: user.role
+          role: user.role,
+          organizationId: user.organizationId ?? null
         },
+        organization,
         shop: shop ? formatShop(shop) : null,
         // Only present for admins without a specific shop – lets them pick one
         shops: allShops ? allShops.map(formatShop) : undefined
