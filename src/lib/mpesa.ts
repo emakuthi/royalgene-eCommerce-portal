@@ -1,4 +1,5 @@
 import logger from '@/lib/logger';
+import { getMpesaConfig } from '@/lib/integrations/tenant-integration-config.server';
 
 /**
  * M-Pesa Payment Integration
@@ -317,39 +318,18 @@ function sanitizeMpesaDescription(input?: string): string {
     .substring(0, 13) || fallback; // max 13 characters
 }
 
-// Export singleton instance
-let mpesaClient: MpesaClient | null = null;
-
-export function initializeMpesa(config: MpesaConfig): MpesaClient {
-  mpesaClient = new MpesaClient(config);
-  return mpesaClient;
-}
-
-export function getMpesaClient(): MpesaClient {
-  if (!mpesaClient) {
-    const config: MpesaConfig = {
-      consumerKey: (process.env.MPESA_CONSUMER_KEY || '').trim(),
-      consumerSecret: (process.env.MPESA_CONSUMER_SECRET || '').trim(),
-      businessShortCode: (process.env.MPESA_BUSINESS_SHORT_CODE || '').trim(),
-      passkey: (process.env.MPESA_PASSKEY || '').trim(),
-      environment: ((process.env.MPESA_ENVIRONMENT as 'sandbox' | 'production') || 'sandbox').trim() as 'sandbox' | 'production',
-      callbackUrl: (process.env.MPESA_CALLBACK_URL || 'https://yourdomain.com/api/mpesa/callback').trim(),
-    };
-
-    // Basic early validation to help surface credential issues quickly
-    const missing: string[] = [];
-    if (!config.consumerKey) missing.push('MPESA_CONSUMER_KEY');
-    if (!config.consumerSecret) missing.push('MPESA_CONSUMER_SECRET');
-    if (!config.businessShortCode) missing.push('MPESA_BUSINESS_SHORT_CODE');
-    if (!config.passkey) missing.push('MPESA_PASSKEY');
-    if (missing.length) {
-      console.error('[M-Pesa] Missing configuration:', missing.join(', '));
-      throw new Error(`Missing M-Pesa configuration: ${missing.join(', ')}. Set the environment variables for MPESA.`);
-    }
-
-    mpesaClient = new MpesaClient(config);
-  }
-  return mpesaClient;
+/**
+ * Builds an MpesaClient from that organization's own stored, decrypted
+ * credentials (src/lib/integrations/tenant-integration-config.server.ts) —
+ * every tenant has their own paybill/till, so there is no global/env-var
+ * fallback. Returns null if the org hasn't configured M-Pesa yet; callers
+ * (a future checkout flow) decide how to handle that (e.g. hide M-Pesa as a
+ * payment option).
+ */
+export async function getMpesaClientForOrganization(organizationId: string): Promise<MpesaClient | null> {
+  const config = await getMpesaConfig(organizationId);
+  if (!config) return null;
+  return new MpesaClient(config);
 }
 
 export type { MpesaConfig, StkPushRequest, StkPushResponse, MpesaAuthResponse };

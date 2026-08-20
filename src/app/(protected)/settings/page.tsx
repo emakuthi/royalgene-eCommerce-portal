@@ -33,6 +33,7 @@ import {
   RotateCcw,
   CreditCard,
   Globe,
+  Plug,
 } from 'lucide-react';
 import { useSignOut } from '@/components/portal/SignOutProvider';
 import { loadBranding, saveBranding, resetBranding, type BrandingConfig } from '@/lib/branding';
@@ -52,6 +53,9 @@ import { PlanBadge } from '@/components/entitlements/PlanBadge';
 import { SubscriptionStatusBadge } from '@/components/entitlements/SubscriptionStatusBadge';
 import { UsageSummary } from '@/components/entitlements/UsageSummary';
 import { PlanComparison } from '@/components/entitlements/PlanComparison';
+import { FeatureGate } from '@/components/entitlements/FeatureGate';
+import { FeatureCode } from '@/lib/entitlements/feature-codes';
+import { getMpesaConfig, setMpesaConfig, removeMpesaConfig, type MpesaConfigSummary } from '@/lib/integrations';
 
 // ── Tab config ────────────────────────────────────────────────────────────────
 const TABS = [
@@ -62,6 +66,7 @@ const TABS = [
   { id: 'notifications', label: 'Notifications', icon: Bell },
   { id: 'billing',     label: 'Billing',      icon: CreditCard },
   { id: 'domain',      label: 'Domain',       icon: Globe },
+  { id: 'integrations', label: 'Integrations', icon: Plug },
   { id: 'about',       label: 'About',        icon: Info },
 ] as const;
 
@@ -295,6 +300,50 @@ export default function PortalSettingsPage() {
       toast.error(res.error || 'Failed to remove domain');
     }
     setDomainBusy(false);
+  };
+
+  // ── M-Pesa integration (Integrations tab) ──────────────────────────────
+  const [mpesaConfig, setMpesaConfigState] = useState<MpesaConfigSummary | null>(null);
+  const [mpesaLoading, setMpesaLoading] = useState(false);
+  const [mpesaBusy, setMpesaBusy] = useState(false);
+  const [mpesaForm, setMpesaForm] = useState({
+    consumerKey: '', consumerSecret: '', businessShortCode: '', passkey: '',
+    environment: 'sandbox' as 'sandbox' | 'production', callbackUrl: '',
+  });
+
+  useEffect(() => {
+    if (activeTab !== 'integrations' || !token) return;
+    setMpesaLoading(true);
+    getMpesaConfig(token).then((res) => {
+      if (res.success) setMpesaConfigState(res.data ?? null);
+      setMpesaLoading(false);
+    });
+  }, [activeTab, token]);
+
+  const handleSaveMpesaConfig = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setMpesaBusy(true);
+    const res = await setMpesaConfig(token, mpesaForm);
+    if (res.success) {
+      setMpesaConfigState(res.data ?? null);
+      setMpesaForm({ consumerKey: '', consumerSecret: '', businessShortCode: '', passkey: '', environment: 'sandbox', callbackUrl: '' });
+      toast.success('M-Pesa credentials saved');
+    } else {
+      toast.error(res.error || 'Failed to save M-Pesa credentials');
+    }
+    setMpesaBusy(false);
+  };
+
+  const handleRemoveMpesaConfig = async () => {
+    setMpesaBusy(true);
+    const res = await removeMpesaConfig(token);
+    if (res.success) {
+      setMpesaConfigState(null);
+      toast.success('M-Pesa credentials removed');
+    } else {
+      toast.error(res.error || 'Failed to remove M-Pesa credentials');
+    }
+    setMpesaBusy(false);
   };
 
   useEffect(() => {
@@ -1151,6 +1200,85 @@ export default function PortalSettingsPage() {
                 </div>
                 <Button type="submit" disabled={domainBusy}>{domainBusy ? 'Adding…' : 'Add Domain'}</Button>
               </form>
+            )}
+          </Section>
+        )}
+
+        {/* ── INTEGRATIONS ───────────────────────────────────────── */}
+        {activeTab === 'integrations' && (
+          <Section title="M-Pesa" description="Connect your own Safaricom Daraja API credentials so customer payments go straight to your paybill/till">
+            {!isBillingAdmin ? (
+              <p className="text-sm text-gray-500 dark:text-gray-400">Contact your workspace admin to configure M-Pesa.</p>
+            ) : mpesaLoading ? (
+              <p className="text-sm text-gray-500 dark:text-gray-400">Loading…</p>
+            ) : (
+              <FeatureGate
+                feature={FeatureCode.MPESA_INTEGRATION}
+                requiredPlanLabel="your current plan"
+                onUpgradeClick={() => { window.location.href = '/settings?tab=billing'; }}
+              >
+                {mpesaConfig ? (
+                  <div className="space-y-4">
+                    <div className="rounded-lg border border-[hsl(var(--border))] p-4 flex items-center justify-between">
+                      <div>
+                        <p className="text-sm font-medium text-gray-900 dark:text-white">
+                          Shortcode {mpesaConfig.businessShortCode} · {mpesaConfig.environment}
+                        </p>
+                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                          Configured {new Date(mpesaConfig.configuredAt).toLocaleDateString()} — credentials are encrypted and never shown again
+                        </p>
+                      </div>
+                      <Button variant="outline" size="sm" disabled={mpesaBusy} onClick={handleRemoveMpesaConfig} className="text-red-600 hover:text-red-700">
+                        {mpesaBusy ? 'Removing…' : 'Remove'}
+                      </Button>
+                    </div>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">To change credentials, remove the current configuration and add new ones below.</p>
+                  </div>
+                ) : null}
+
+                {!mpesaConfig && (
+                  <form onSubmit={handleSaveMpesaConfig} className="space-y-4 max-w-lg">
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <Label>Consumer Key *</Label>
+                        <Input value={mpesaForm.consumerKey} onChange={(e) => setMpesaForm((f) => ({ ...f, consumerKey: e.target.value }))} required />
+                      </div>
+                      <div>
+                        <Label>Consumer Secret *</Label>
+                        <Input type="password" value={mpesaForm.consumerSecret} onChange={(e) => setMpesaForm((f) => ({ ...f, consumerSecret: e.target.value }))} required />
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <Label>Business Shortcode *</Label>
+                        <Input value={mpesaForm.businessShortCode} onChange={(e) => setMpesaForm((f) => ({ ...f, businessShortCode: e.target.value }))} placeholder="174379" required />
+                      </div>
+                      <div>
+                        <Label>Passkey *</Label>
+                        <Input type="password" value={mpesaForm.passkey} onChange={(e) => setMpesaForm((f) => ({ ...f, passkey: e.target.value }))} required />
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <Label>Environment *</Label>
+                        <select
+                          className="w-full rounded-md border border-[hsl(var(--border))] bg-transparent px-3 py-2 text-sm"
+                          value={mpesaForm.environment}
+                          onChange={(e) => setMpesaForm((f) => ({ ...f, environment: e.target.value as 'sandbox' | 'production' }))}
+                        >
+                          <option value="sandbox">Sandbox</option>
+                          <option value="production">Production</option>
+                        </select>
+                      </div>
+                      <div>
+                        <Label>Callback URL *</Label>
+                        <Input value={mpesaForm.callbackUrl} onChange={(e) => setMpesaForm((f) => ({ ...f, callbackUrl: e.target.value }))} placeholder="https://yourshop.example.com/api/mpesa/callback" required />
+                      </div>
+                    </div>
+                    <Button type="submit" disabled={mpesaBusy}>{mpesaBusy ? 'Saving…' : 'Save M-Pesa Credentials'}</Button>
+                  </form>
+                )}
+              </FeatureGate>
             )}
           </Section>
         )}
