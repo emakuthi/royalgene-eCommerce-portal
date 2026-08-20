@@ -6,6 +6,8 @@ import { v4 as uuidv4 } from 'uuid';
 import type { ShopStock } from '@/lib/types';
 import { verifyMobileShopAccess } from '@/lib/mobile-shop-auth';
 import { assertCanCreate } from '@/lib/entitlements/enforce.server';
+import { generateTaxInvoiceForSale } from '@/lib/etims/tax-invoice.server';
+import { syncSaleToQuickBooks } from '@/lib/accounting/sync-sale-to-quickbooks.server';
 
 /**
  * POST /api/mobile/shops/[shopId]/sales
@@ -257,6 +259,10 @@ export async function POST(
       duration,
       endpoint: `/api/mobile/shops/${shopId}/sales`
     });
+
+    // Fire-and-forget integrations — a sale must never fail because one of these had a problem.
+    void generateTaxInvoiceForSale(saleId);
+    void syncSaleToQuickBooks(saleId);
 
     return jsonResponse({
       success: true,

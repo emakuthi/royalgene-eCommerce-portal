@@ -57,3 +57,37 @@ export function setMpesaConfig(token: string | null | undefined, input: SetMpesa
 export function removeMpesaConfig(token?: string | null) {
   return request<null>('/api/portal/integrations/mpesa', token, { method: 'DELETE' });
 }
+
+// ── eTIMS tax profile ────────────────────────────────────────────────────
+
+export function getTaxProfile(token?: string | null) {
+  return request<{ kraPin: string | null }>('/api/portal/tax-profile', token);
+}
+
+export function setTaxProfile(token: string | null | undefined, kraPin: string) {
+  return request<{ kraPin: string }>('/api/portal/tax-profile', token, {
+    method: 'PATCH',
+    body: JSON.stringify({ kraPin }),
+  });
+}
+
+// ── QuickBooks ───────────────────────────────────────────────────────────
+
+export interface QuickBooksStatus {
+  connected: boolean;
+  realmId: string | null;
+  connectedAt: string | null;
+  platformConfigured: boolean;
+}
+
+export function getQuickBooksStatus(token?: string | null) {
+  return request<QuickBooksStatus>('/api/portal/integrations/quickbooks/status', token);
+}
+
+export function getQuickBooksAuthorizationUrl(token?: string | null) {
+  return request<{ authorizationUrl: string }>('/api/portal/integrations/quickbooks/connect', token);
+}
+
+export function disconnectQuickBooks(token?: string | null) {
+  return request<null>('/api/portal/integrations/quickbooks/disconnect', token, { method: 'POST' });
+}

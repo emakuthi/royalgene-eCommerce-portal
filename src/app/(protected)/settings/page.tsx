@@ -55,7 +55,11 @@ import { UsageSummary } from '@/components/entitlements/UsageSummary';
 import { PlanComparison } from '@/components/entitlements/PlanComparison';
 import { FeatureGate } from '@/components/entitlements/FeatureGate';
 import { FeatureCode } from '@/lib/entitlements/feature-codes';
-import { getMpesaConfig, setMpesaConfig, removeMpesaConfig, type MpesaConfigSummary } from '@/lib/integrations';
+import {
+  getMpesaConfig, setMpesaConfig, removeMpesaConfig, type MpesaConfigSummary,
+  getTaxProfile, setTaxProfile,
+  getQuickBooksStatus, getQuickBooksAuthorizationUrl, disconnectQuickBooks, type QuickBooksStatus,
+} from '@/lib/integrations';
 
 // ── Tab config ────────────────────────────────────────────────────────────────
 const TABS = [
@@ -344,6 +348,88 @@ export default function PortalSettingsPage() {
       toast.error(res.error || 'Failed to remove M-Pesa credentials');
     }
     setMpesaBusy(false);
+  };
+
+  // ── eTIMS tax profile (Integrations tab) ───────────────────────────────
+  const [kraPin, setKraPinState] = useState<string | null>(null);
+  const [kraPinInput, setKraPinInput] = useState('');
+  const [kraPinLoading, setKraPinLoading] = useState(false);
+  const [kraPinBusy, setKraPinBusy] = useState(false);
+
+  useEffect(() => {
+    if (activeTab !== 'integrations' || !token) return;
+    setKraPinLoading(true);
+    getTaxProfile(token).then((res) => {
+      if (res.success) setKraPinState(res.data?.kraPin ?? null);
+      setKraPinLoading(false);
+    });
+  }, [activeTab, token]);
+
+  const handleSaveKraPin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!kraPinInput.trim()) return;
+    setKraPinBusy(true);
+    const res = await setTaxProfile(token, kraPinInput.trim());
+    if (res.success) {
+      setKraPinState(res.data?.kraPin ?? null);
+      setKraPinInput('');
+      toast.success('KRA PIN saved — new sales will generate tax invoices');
+    } else {
+      toast.error(res.error || 'Failed to save KRA PIN');
+    }
+    setKraPinBusy(false);
+  };
+
+  // ── QuickBooks Online (Integrations tab) ───────────────────────────────
+  const [qbStatus, setQbStatus] = useState<QuickBooksStatus | null>(null);
+  const [qbLoading, setQbLoading] = useState(false);
+  const [qbBusy, setQbBusy] = useState(false);
+
+  const loadQuickBooksStatus = () => {
+    if (!token) return;
+    setQbLoading(true);
+    getQuickBooksStatus(token).then((res) => {
+      if (res.success && res.data) setQbStatus(res.data);
+      setQbLoading(false);
+    });
+  };
+
+  useEffect(() => {
+    if (activeTab !== 'integrations' || !token) return;
+    loadQuickBooksStatus();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, token]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('tab') === 'integrations') setActiveTab('integrations');
+    const qb = params.get('qb');
+    if (qb === 'connected') toast.success('QuickBooks connected');
+    else if (qb === 'error') toast.error('Failed to connect QuickBooks — please try again');
+  }, []);
+
+  const handleConnectQuickBooks = async () => {
+    setQbBusy(true);
+    const res = await getQuickBooksAuthorizationUrl(token);
+    if (res.success && res.data?.authorizationUrl) {
+      window.location.href = res.data.authorizationUrl;
+    } else {
+      toast.error(res.error || 'Failed to start QuickBooks connection');
+      setQbBusy(false);
+    }
+  };
+
+  const handleDisconnectQuickBooks = async () => {
+    setQbBusy(true);
+    const res = await disconnectQuickBooks(token);
+    if (res.success) {
+      setQbStatus({ connected: false, realmId: null, connectedAt: null, platformConfigured: qbStatus?.platformConfigured ?? true });
+      toast.success('QuickBooks disconnected');
+    } else {
+      toast.error(res.error || 'Failed to disconnect QuickBooks');
+    }
+    setQbBusy(false);
   };
 
   useEffect(() => {
@@ -1206,6 +1292,7 @@ export default function PortalSettingsPage() {
 
         {/* ── INTEGRATIONS ───────────────────────────────────────── */}
         {activeTab === 'integrations' && (
+          <>
           <Section title="M-Pesa" description="Connect your own Safaricom Daraja API credentials so customer payments go straight to your paybill/till">
             {!isBillingAdmin ? (
               <p className="text-sm text-gray-500 dark:text-gray-400">Contact your workspace admin to configure M-Pesa.</p>
@@ -1281,6 +1368,76 @@ export default function PortalSettingsPage() {
               </FeatureGate>
             )}
           </Section>
+
+          <Section title="Tax Invoicing (eTIMS)" description="Generates KRA-format invoices with a QR code on every sale — for your own records, not submitted to KRA">
+            {!isBillingAdmin ? (
+              <p className="text-sm text-gray-500 dark:text-gray-400">Contact your workspace admin to configure tax invoicing.</p>
+            ) : kraPinLoading ? (
+              <p className="text-sm text-gray-500 dark:text-gray-400">Loading…</p>
+            ) : (
+              <FeatureGate
+                feature={FeatureCode.ETIMS_INTEGRATION}
+                requiredPlanLabel="your current plan"
+                onUpgradeClick={() => { window.location.href = '/settings?tab=billing'; }}
+              >
+                {kraPin ? (
+                  <div className="rounded-lg border border-[hsl(var(--border))] p-4">
+                    <p className="text-sm font-medium text-gray-900 dark:text-white">KRA PIN: {kraPin}</p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                      New sales now generate a tax invoice — view it from the sale&apos;s detail page.
+                    </p>
+                  </div>
+                ) : (
+                  <form onSubmit={handleSaveKraPin} className="flex items-end gap-3 max-w-md">
+                    <div className="flex-1">
+                      <Label htmlFor="kraPin">KRA PIN</Label>
+                      <Input id="kraPin" placeholder="P000000000A" value={kraPinInput} onChange={(e) => setKraPinInput(e.target.value)} disabled={kraPinBusy} />
+                    </div>
+                    <Button type="submit" disabled={kraPinBusy}>{kraPinBusy ? 'Saving…' : 'Save'}</Button>
+                  </form>
+                )}
+                <p className="text-xs text-gray-400 mt-3">
+                  These invoices follow KRA&apos;s documented format for your own records — this is not a live submission to KRA&apos;s
+                  OSCU/VSCU system, which requires separate device/software certification.
+                </p>
+              </FeatureGate>
+            )}
+          </Section>
+
+          <Section title="QuickBooks Online" description="Sync each sale to your own QuickBooks company as a sales receipt">
+            {!isBillingAdmin ? (
+              <p className="text-sm text-gray-500 dark:text-gray-400">Contact your workspace admin to connect QuickBooks.</p>
+            ) : qbLoading ? (
+              <p className="text-sm text-gray-500 dark:text-gray-400">Loading…</p>
+            ) : (
+              <FeatureGate
+                feature={FeatureCode.ACCOUNTING_INTEGRATION}
+                requiredPlanLabel="your current plan"
+                onUpgradeClick={() => { window.location.href = '/settings?tab=billing'; }}
+              >
+                {!qbStatus?.platformConfigured ? (
+                  <p className="text-sm text-gray-500 dark:text-gray-400">QuickBooks isn&apos;t configured on this platform yet. Contact your platform administrator.</p>
+                ) : qbStatus?.connected ? (
+                  <div className="rounded-lg border border-[hsl(var(--border))] p-4 flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-medium text-gray-900 dark:text-white">Connected to QuickBooks</p>
+                      {qbStatus.connectedAt && (
+                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Since {new Date(qbStatus.connectedAt).toLocaleDateString()}</p>
+                      )}
+                    </div>
+                    <Button variant="outline" size="sm" disabled={qbBusy} onClick={handleDisconnectQuickBooks} className="text-red-600 hover:text-red-700">
+                      {qbBusy ? 'Disconnecting…' : 'Disconnect'}
+                    </Button>
+                  </div>
+                ) : (
+                  <Button disabled={qbBusy} onClick={handleConnectQuickBooks}>
+                    {qbBusy ? 'Redirecting…' : 'Connect to QuickBooks'}
+                  </Button>
+                )}
+              </FeatureGate>
+            )}
+          </Section>
+          </>
         )}
 
         {/* ── ABOUT ──────────────────────────────────────────────── */}

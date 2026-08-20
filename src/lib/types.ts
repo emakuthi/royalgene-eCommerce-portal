@@ -32,6 +32,8 @@ export interface Organization {
   themeSettings?: ThemeSettings | null;
   customDomain?: string | null;
   customDomainStatus?: 'pending' | 'verified' | 'misconfigured' | null;
+  /** KRA PIN for eTIMS-format invoice generation — an identifier, not a secret. */
+  kraPin?: string | null;
   createdBy?: string | null;
   createdAt: string;
   updatedAt: string;
@@ -102,6 +104,8 @@ export interface Product {
   sku: string;
   featured: boolean;
   trending: boolean;
+  /** KRA VAT classification: A=exempt, B=16% standard (default), C=zero-rated, D=non-VAT. */
+  taxType?: 'A' | 'B' | 'C' | 'D';
   createdAt: string;
   updatedAt: string;
 }
@@ -316,6 +320,31 @@ export interface ProfitMargin {
   sellingPrice: number; // In cents
   profit: number; // In cents
   marginPercentage: number;
+  createdAt: string;
+}
+
+export interface TaxInvoiceLineItem {
+  description: string;
+  quantity: number;
+  unitPrice: number; // cents
+  taxType: 'A' | 'B' | 'C' | 'D';
+  taxAmount: number; // cents
+  totalAmount: number; // cents
+}
+
+/** A KRA-format invoice generated for a sale — NOT submitted to KRA (no live OSCU/VSCU integration exists). */
+export interface TaxInvoice {
+  id: string;
+  organizationId: string;
+  salesEntryId: string;
+  invoiceNumber: string;
+  kraPin: string;
+  itemsJson: TaxInvoiceLineItem[];
+  totalTaxableAmount: number; // cents
+  totalTaxAmount: number; // cents
+  totalAmount: number; // cents
+  qrCodeData: string;
+  status: 'generated';
   createdAt: string;
 }
 

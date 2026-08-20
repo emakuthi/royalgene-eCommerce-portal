@@ -7,6 +7,8 @@ import type { ShopStock, PortalUser as PortalUserType } from '@/lib/types';
 import { syncProductStockFromShopStocks } from '@/lib/supabase-db';
 import { jsonResponse, optionsResponse } from '@/lib/apiResponse';
 import { trackFromRequest } from '@/lib/activity-tracker';
+import { generateTaxInvoiceForSale } from '@/lib/etims/tax-invoice.server';
+import { syncSaleToQuickBooks } from '@/lib/accounting/sync-sale-to-quickbooks.server';
 import { assertCanCreate } from '@/lib/entitlements/enforce.server';
 
 export async function POST(request: NextRequest) {
@@ -323,6 +325,13 @@ export async function POST(request: NextRequest) {
       shopId: typeof shopId === 'string' ? shopId : undefined,
       details: { productId, quantity, unitPrice, paymentMethod },
     });
+
+    // Fire-and-forget integrations — a sale must never fail because one of these had a problem.
+    const newSaleId = typeof saleData === 'object' && saleData !== null ? String((saleData as Record<string, unknown>).id || '') : '';
+    if (newSaleId) {
+      void generateTaxInvoiceForSale(newSaleId);
+      void syncSaleToQuickBooks(newSaleId);
+    }
 
     return jsonResponse({ success: true, data: saleData }, 200);
   } catch (error) {
