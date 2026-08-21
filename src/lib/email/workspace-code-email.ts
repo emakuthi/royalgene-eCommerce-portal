@@ -1,5 +1,5 @@
 import 'server-only';
-import { sendEmail } from './resend-client';
+import { sendEmail } from './smtp-client';
 
 /** Sent by POST /api/auth/find-workspace — a one-time code to prove the requester controls this email before their workspace membership is disclosed. */
 export async function sendWorkspaceCodeEmail(opts: { to: string; code: string }): Promise<{ ok: boolean; error?: string }> {

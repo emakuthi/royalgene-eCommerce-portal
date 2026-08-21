@@ -1,6 +1,6 @@
 import 'server-only';
 import { getOrgUrl } from '../urls';
-import { sendEmail } from './resend-client';
+import { sendEmail } from './smtp-client';
 
 export async function sendVerificationEmail(opts: {
   to: string;

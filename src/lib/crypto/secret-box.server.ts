@@ -4,7 +4,7 @@ import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
 /**
  * App-layer AES-256-GCM for secrets that must never sit in the DB as
  * plaintext (M-Pesa/future-integration API credentials). Deliberately NOT
- * fail-soft like paystack.server.ts/resend-client.ts — a missing or
+ * fail-soft like paystack.server.ts/smtp-client.ts — a missing or
  * malformed key throws immediately, so a misconfigured deployment can never
  * silently persist a plaintext secret. Callers (the API routes) turn that
  * throw into a clear 503, not a crash.
