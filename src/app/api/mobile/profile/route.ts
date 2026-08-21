@@ -55,7 +55,12 @@ export async function GET(request: NextRequest) {
       organization = (orgRow as typeof organization) ?? null;
     }
 
-    // Get portal user & shop details (user may have multiple shop assignments)
+    // Get portal user & shop details (user may have multiple shop assignments).
+    // Admins/super_admins manage shops org-wide and are not required to have a
+    // PortalUser link (mirrors the same exemption at mobile login and in
+    // GET /api/mobile/shops) — only non-admin shopkeepers 404 without one.
+    const isAdmin = user.role === 'admin' || user.role === 'super_admin';
+
     const { data: portalUsers, error: portalError } = await supabaseAdmin
       .from('PortalUser')
       .select('*, Shop(id, name, location)')
@@ -63,9 +68,9 @@ export async function GET(request: NextRequest) {
 
     const portalUser = portalUsers && portalUsers.length > 0 ? portalUsers[0] : null;
 
-    if (portalError || !portalUser) {
-      return jsonResponse({ 
-        success: false, 
+    if (!isAdmin && (portalError || !portalUser)) {
+      return jsonResponse({
+        success: false,
         error: 'Portal user not found',
         code: 'NOT_FOUND'
       }, 404);
@@ -80,6 +85,7 @@ export async function GET(request: NextRequest) {
     logger.info('Mobile profile retrieved', {
       userId: payload.userId,
       shopCount: allShops.length,
+      isAdmin,
       endpoint: '/api/mobile/profile'
     });
 
@@ -94,7 +100,7 @@ export async function GET(request: NextRequest) {
           role: user.role,
           organizationId: user.organizationId ?? null,
           organization,
-          shop: portalUser.Shop ? {
+          shop: portalUser?.Shop ? {
             id: portalUser.Shop.id,
             name: portalUser.Shop.name,
             location: portalUser.Shop.location
