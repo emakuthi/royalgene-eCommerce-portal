@@ -33,66 +33,75 @@ export async function GET(request: NextRequest) {
 
     const payload = verifyToken(token);
     if (!payload) {
-      return jsonResponse({ 
-        success: false, 
+      return jsonResponse({
+        success: false,
         error: 'Invalid token',
         code: 'UNAUTHORIZED'
       }, 401);
     }
 
-    // Get portal user to find their shop(s)
-    const { data: portalUsers, error: portalError } = await supabaseAdmin
-      .from('PortalUser')
-      .select('shopId')
-      .eq('userId', payload.userId);
+    const isAdmin = payload.role === 'admin' || payload.role === 'super_admin';
 
-    if (portalError || !portalUsers || portalUsers.length === 0) {
-      logger.warn('Mobile shops list: no portal user found', { 
-        userId: payload.userId,
-        endpoint: '/api/mobile/shops'
-      });
-      return jsonResponse({
-        success: true,
-        data: { shops: [] }
-      }, 200);
-    }
-
-    const shopIds = (portalUsers as Array<Record<string, unknown>>)
-      .map(p => typeof p.shopId === 'string' || typeof p.shopId === 'number' ? String(p.shopId) : undefined)
-      .filter(Boolean) as string[];
-
-    // If there are no valid shop IDs, return empty list early
-    if (!shopIds || shopIds.length === 0) {
-      logger.info('Mobile shops list retrieved: no shops for user', {
-        userId: payload.userId,
-        shopCount: 0,
-        endpoint: '/api/mobile/shops'
-      });
-
-      return jsonResponse({
-        success: true,
-        data: { shops: [] }
-      }, 200);
-    }
-
-    // Get shop details. Use .eq for a single id (some clients / drivers behave better)
+    // Get shop details. Admins (and super_admin) see every shop in their org
+    // (a true super_admin has no organizationId and retains cross-tenant
+    // visibility, matching /api/portal/shops) rather than only shops they
+    // happen to have an explicit PortalUser link to — mirrors the "For admin
+    // users without a specific shop, fetch all shops they can manage" logic
+    // already used at mobile login. Non-admin shopkeepers stay scoped to
+    // whichever shop(s) their PortalUser record(s) link them to.
     let shops: Array<Record<string, unknown>> | null = null;
     try {
-      if (shopIds.length === 1) {
-        const { data, error } = await supabaseAdmin
+      if (isAdmin) {
+        let shopsQuery = supabaseAdmin
           .from('Shop')
-          // DB column is `phone` (snake/camel mismatch). Request `phone` and map to `phoneNumber` below.
           .select('id, name, location, phone, address')
-          .eq('id', shopIds[0]);
+          .eq('isActive', true)
+          .order('name', { ascending: true });
+        if (payload.organizationId) {
+          shopsQuery = shopsQuery.eq('organizationId', payload.organizationId);
+        }
+        const { data, error } = await shopsQuery;
         if (error) throw error;
         shops = data || [];
       } else {
-        const { data, error } = await supabaseAdmin
-          .from('Shop')
-          .select('id, name, location, phone, address')
-          .in('id', shopIds);
-        if (error) throw error;
-        shops = data || [];
+        // Get portal user to find their shop(s)
+        const { data: portalUsers, error: portalError } = await supabaseAdmin
+          .from('PortalUser')
+          .select('shopId')
+          .eq('userId', payload.userId);
+
+        if (portalError) throw portalError;
+
+        const shopIds = ((portalUsers ?? []) as Array<Record<string, unknown>>)
+          .map(p => typeof p.shopId === 'string' || typeof p.shopId === 'number' ? String(p.shopId) : undefined)
+          .filter(Boolean) as string[];
+
+        if (shopIds.length === 0) {
+          logger.info('Mobile shops list retrieved: no shops for user', {
+            userId: payload.userId,
+            shopCount: 0,
+            endpoint: '/api/mobile/shops'
+          });
+          return jsonResponse({ success: true, data: { shops: [] } }, 200);
+        }
+
+        // Use .eq for a single id (some clients / drivers behave better)
+        if (shopIds.length === 1) {
+          const { data, error } = await supabaseAdmin
+            .from('Shop')
+            // DB column is `phone` (snake/camel mismatch). Request `phone` and map to `phoneNumber` below.
+            .select('id, name, location, phone, address')
+            .eq('id', shopIds[0]);
+          if (error) throw error;
+          shops = data || [];
+        } else {
+          const { data, error } = await supabaseAdmin
+            .from('Shop')
+            .select('id, name, location, phone, address')
+            .in('id', shopIds);
+          if (error) throw error;
+          shops = data || [];
+        }
       }
     } catch (shopsError: unknown) {
       // Log full error object to help debugging (avoid leaking to clients)
@@ -100,7 +109,6 @@ export async function GET(request: NextRequest) {
         userId: payload.userId,
         error: shopsError instanceof Error ? shopsError.message : String(shopsError),
         rawError: shopsError,
-        shopIds,
         endpoint: '/api/mobile/shops'
       });
 

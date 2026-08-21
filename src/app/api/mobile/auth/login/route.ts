@@ -156,13 +156,19 @@ export async function POST(request: NextRequest) {
     }
 
     // For admin users without a specific shop, fetch all shops they can manage
+    // (scoped to their own org — a true super_admin has no organizationId and
+    // retains cross-tenant visibility, matching /api/portal/shops).
     let allShops: Array<Record<string, unknown>> | null = null;
     if (isAdmin && !shopId) {
-      const { data: shops } = await supabaseAdmin
+      let shopsQuery = supabaseAdmin
         .from('Shop')
         .select('id, name, location, phone, address')
         .eq('isActive', true)
         .order('name', { ascending: true });
+      if (user.organizationId) {
+        shopsQuery = shopsQuery.eq('organizationId', user.organizationId);
+      }
+      const { data: shops } = await shopsQuery;
       allShops = (shops as Array<Record<string, unknown>>) ?? [];
     }
 
