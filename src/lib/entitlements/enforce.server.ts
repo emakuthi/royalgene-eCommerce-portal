@@ -4,6 +4,7 @@ import { jsonResponse } from '../apiResponse';
 import { getStorageUsageBytes } from '../storage-usage.server';
 import { canCreate, getActiveSubscription, getLimit, hasFeature } from './entitlement-service.server';
 import { LimitCode, type FeatureCodeValue, type ResourceTypeValue } from './feature-codes';
+import { checkUsageThresholds } from './usage-notifications.server';
 
 /**
  * Call right after resolving the caller's organizationId and before the
@@ -14,7 +15,12 @@ import { LimitCode, type FeatureCodeValue, type ResourceTypeValue } from './feat
  */
 export async function assertCanCreate(organizationId: string, resource: ResourceTypeValue): Promise<NextResponse | null> {
   const result = await canCreate(organizationId, resource);
-  if (result.allowed) return null;
+  if (result.allowed) {
+    // Fire-and-forget: usage after this create succeeds = currentUsage + 1
+    // (each of these resources is created one row at a time).
+    void checkUsageThresholds(organizationId, result.feature, result.currentUsage + 1, result.limit);
+    return null;
+  }
 
   return jsonResponse(
     {
@@ -45,7 +51,11 @@ export async function assertStorageQuota(organizationId: string, additionalBytes
   const limitBytes = limitGB * 1024 ** 3;
   const usageBytes = await getStorageUsageBytes(organizationId);
 
-  if (usageBytes + additionalBytes <= limitBytes) return null;
+  if (usageBytes + additionalBytes <= limitBytes) {
+    const projectedUsageGB = (usageBytes + additionalBytes) / 1024 ** 3;
+    void checkUsageThresholds(organizationId, LimitCode.STORAGE_GB, projectedUsageGB, limitGB);
+    return null;
+  }
 
   const currentUsageGB = Math.round((usageBytes / 1024 ** 3) * 100) / 100;
   return jsonResponse(
