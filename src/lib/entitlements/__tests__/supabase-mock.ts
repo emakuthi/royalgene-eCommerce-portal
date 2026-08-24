@@ -75,6 +75,23 @@ export function createSupabaseMock(tables: MockTables) {
         rows = rows.filter((r) => (r[col] ?? null) === val);
         return builder;
       }),
+      // Minimal support for the one shape this codebase actually uses:
+      // "col.eq.value,col.is.null" (OR'd conditions, comma-separated,
+      // dot-separated column/operator/value per condition) — not a general
+      // Postgrest filter-string parser.
+      or: vi.fn((filterString: string) => {
+        const conditions = filterString.split(',').map((part) => {
+          const [col, op, ...rest] = part.split('.');
+          return { col, op, val: rest.join('.') };
+        });
+        rows = rows.filter((r) =>
+          conditions.some(({ col, op, val }) => {
+            if (op === 'is') return (r[col] ?? null) === (val === 'null' ? null : val);
+            return String(r[col]) === val;
+          }),
+        );
+        return builder;
+      }),
       order: vi.fn(() => builder),
       limit: vi.fn(() => builder),
       insert: vi.fn((newRows: Record<string, unknown>[]) => {
