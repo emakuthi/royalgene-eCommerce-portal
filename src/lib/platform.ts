@@ -43,6 +43,26 @@ export function getPlatformOverview(token?: string | null) {
   return request<PlatformOverview>('/api/platform/overview', token);
 }
 
+export interface PlatformCapacity {
+  totalTenants: number;
+  totalUsers: number;
+  totalShops: number;
+  totalProducts: number;
+  monthlyTransactions: number;
+  totalStorageBytes: number;
+  tenantsNearingLimit: Array<{
+    organizationId: string;
+    organizationName: string;
+    limitCode: string;
+    threshold: number;
+    notifiedAt: string;
+  }>;
+}
+
+export function getPlatformCapacity(token?: string | null) {
+  return request<PlatformCapacity>('/api/platform/capacity', token);
+}
+
 export function listPlatformOrganizations(token?: string | null) {
   return request<OrganizationWithCounts[]>('/api/platform/organizations', token);
 }

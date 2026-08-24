@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { toast } from 'sonner';
-import { Building2, CheckCircle2, Clock, PauseCircle, Plus, ShieldCheck, Users, XCircle } from 'lucide-react';
+import { AlertTriangle, Building2, CheckCircle2, Clock, Database, Package, PauseCircle, Plus, Receipt, ShieldCheck, Users, XCircle } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -16,6 +16,7 @@ import { useHydratedAuth } from '@/lib/hooks';
 import {
   createPlatformPlan,
   getPlanEntitlements,
+  getPlatformCapacity,
   getPlatformOverview,
   getPlatformSelfSignupEnabled,
   listPlatformOrganizations,
@@ -26,6 +27,7 @@ import {
   updatePlatformOrganization,
   updatePlatformPlan,
   type OrganizationWithCounts,
+  type PlatformCapacity,
   type PlatformOverview,
   type PlanEntitlementRow,
 } from '@/lib/platform';
@@ -36,6 +38,21 @@ import { FEATURE_LABELS } from '@/components/entitlements/feature-labels';
 function formatKes(kobo: number): string {
   return `KES ${(kobo / 100).toLocaleString('en-KE', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
 }
+
+function formatBytes(bytes: number): string {
+  if (bytes <= 0) return '0 GB';
+  const gb = bytes / 1024 ** 3;
+  if (gb >= 1) return `${gb.toLocaleString('en-KE', { maximumFractionDigits: 1 })} GB`;
+  return `${(bytes / 1024 ** 2).toLocaleString('en-KE', { maximumFractionDigits: 1 })} MB`;
+}
+
+const LIMIT_CODE_LABELS: Record<string, string> = {
+  USERS: 'team members',
+  BRANCHES: 'branches/shops',
+  PRODUCTS: 'products',
+  MONTHLY_TRANSACTIONS: 'monthly transactions',
+  STORAGE_GB: 'storage',
+};
 
 const STATUS_STYLES: Record<Organization['status'], string> = {
   active: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300',
@@ -78,6 +95,7 @@ function PlatformAdminConsole() {
   const { token } = useHydratedAuth();
   const [loading, setLoading] = useState(true);
   const [overview, setOverview] = useState<PlatformOverview | null>(null);
+  const [capacity, setCapacity] = useState<PlatformCapacity | null>(null);
   const [organizations, setOrganizations] = useState<OrganizationWithCounts[]>([]);
   const [selfSignupEnabled, setSelfSignupEnabledState] = useState(true);
   const [signupToggleBusy, setSignupToggleBusy] = useState(false);
@@ -114,17 +132,19 @@ function PlatformAdminConsole() {
   const loadAll = useCallback(async () => {
     if (!token) return;
     setLoading(true);
-    const [overviewRes, orgsRes, settingsRes, plansRes] = await Promise.all([
+    const [overviewRes, capacityRes, orgsRes, settingsRes, plansRes] = await Promise.all([
       getPlatformOverview(token),
+      getPlatformCapacity(token),
       listPlatformOrganizations(token),
       getPlatformSelfSignupEnabled(token),
       listPlatformPlans(token),
     ]);
     if (overviewRes.success && overviewRes.data) setOverview(overviewRes.data);
+    if (capacityRes.success && capacityRes.data) setCapacity(capacityRes.data);
     if (orgsRes.success && orgsRes.data) setOrganizations(orgsRes.data);
     if (settingsRes.success && settingsRes.data) setSelfSignupEnabledState(settingsRes.data.selfSignupEnabled);
     if (plansRes.success && plansRes.data) setPlans(plansRes.data);
-    if (!overviewRes.success || !orgsRes.success || !settingsRes.success || !plansRes.success) {
+    if (!overviewRes.success || !capacityRes.success || !orgsRes.success || !settingsRes.success || !plansRes.success) {
       toast.error('Failed to load some platform data');
     }
     setLoading(false);
@@ -284,6 +304,55 @@ function PlatformAdminConsole() {
           <StatCard title="Total Users" value={loading ? '-' : overview?.totalUsers ?? 0} icon={<Users className="h-8 w-8 text-sky-600" />} />
           <StatCard title="Total Shops" value={loading ? '-' : overview?.totalShops ?? 0} icon={<ShieldCheck className="h-8 w-8 text-violet-600" />} />
         </div>
+
+        {/* Capacity — application-metered cross-tenant usage */}
+        <Section
+          title="Capacity"
+          description="Application-metered usage across every tenant. Supabase infrastructure-level metrics (database/disk usage, connection pool, etc.) require Management API access this app doesn't have configured, so they're intentionally not shown here rather than guessed."
+        >
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+            <StatCard title="Total Products" value={loading ? '-' : capacity?.totalProducts ?? 0} icon={<Package className="h-8 w-8 text-indigo-600" />} />
+            <StatCard title="Transactions This Month" value={loading ? '-' : (capacity?.monthlyTransactions ?? 0).toLocaleString()} icon={<Receipt className="h-8 w-8 text-teal-600" />} />
+            <StatCard title="Total Storage Used" value={loading ? '-' : formatBytes(capacity?.totalStorageBytes ?? 0)} icon={<Database className="h-8 w-8 text-orange-600" />} />
+          </div>
+
+          <div>
+            <h3 className="text-sm font-medium text-gray-900 dark:text-white mb-2 flex items-center gap-2">
+              <AlertTriangle className="h-4 w-4 text-amber-500" />
+              Tenants nearing a plan limit this month
+            </h3>
+            {loading ? (
+              <p className="text-sm text-gray-500 dark:text-gray-400">Loading…</p>
+            ) : !capacity?.tenantsNearingLimit.length ? (
+              <p className="text-sm text-gray-500 dark:text-gray-400">No tenant has crossed a usage threshold this month.</p>
+            ) : (
+              <div className="space-y-2">
+                {capacity.tenantsNearingLimit.map((t, i) => (
+                  <div
+                    key={`${t.organizationId}-${t.limitCode}-${i}`}
+                    className="flex items-center justify-between text-sm px-3 py-2 rounded-lg bg-gray-50 dark:bg-gray-800"
+                  >
+                    <span className="text-gray-900 dark:text-white font-medium">{t.organizationName}</span>
+                    <span className="text-gray-500 dark:text-gray-400">
+                      {LIMIT_CODE_LABELS[t.limitCode] ?? t.limitCode}
+                    </span>
+                    <Badge
+                      className={`text-xs px-2 py-0.5 ${
+                        t.threshold >= 100
+                          ? 'bg-red-50 text-red-700 dark:bg-red-900/40 dark:text-red-300'
+                          : t.threshold >= 90
+                            ? 'bg-amber-50 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300'
+                            : 'bg-sky-50 text-sky-700 dark:bg-sky-900/40 dark:text-sky-300'
+                      }`}
+                    >
+                      {t.threshold}%
+                    </Badge>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </Section>
 
         {/* Self-onboarding toggle */}
         <Section title="Self-Onboarding" description="Whether new customers can create their own workspace at /signup without your involvement">
