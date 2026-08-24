@@ -3,6 +3,7 @@ import { supabaseAdmin } from '@/lib/supabase-client';
 import logger from '@/lib/logger';
 import { jsonResponse } from '@/lib/apiResponse';
 import { verifyMobileShopAccess } from '@/lib/mobile-shop-auth';
+import { deleteUploadedFiles } from '@/lib/storage-usage.server';
 
 /**
  * GET /api/mobile/shops/[shopId]/products/[productId]
@@ -234,6 +235,20 @@ export async function PUT(
     }
 
     if (Object.keys(productUpdates).length > 0) {
+      // If images is being replaced, capture what's disappearing so the
+      // corresponding files can be cleaned up from Storage afterward.
+      let removedImageUrls: string[] = [];
+      if (Array.isArray(productUpdates.images)) {
+        const { data: existingProduct } = await supabaseAdmin
+          .from('Product')
+          .select('images')
+          .eq('id', resolvedProductId)
+          .maybeSingle();
+        const oldImages = ((existingProduct as { images?: string[] } | null)?.images ?? []) as string[];
+        const newImages = productUpdates.images as string[];
+        removedImageUrls = oldImages.filter((url) => !newImages.includes(url));
+      }
+
       productUpdates.updatedAt = new Date().toISOString();
       const { error: prodUpdateError } = await supabaseAdmin
         .from('Product')
@@ -246,6 +261,10 @@ export async function PUT(
           error: prodUpdateError.message,
         });
         return jsonResponse({ success: false, error: 'Failed to update product', code: 'INTERNAL_ERROR' }, 500);
+      }
+
+      if (removedImageUrls.length > 0) {
+        void deleteUploadedFiles(removedImageUrls, auth.payload.organizationId);
       }
     }
 

@@ -11,6 +11,7 @@ import type { ShopStock, Product } from '@/lib/types';
 import { jsonResponse, optionsResponse } from '@/lib/apiResponse';
 import { trackFromRequest } from '@/lib/activity-tracker';
 import { assertCanCreate } from '@/lib/entitlements/enforce.server';
+import { deleteUploadedFiles } from '@/lib/storage-usage.server';
 
 type IncomingStock = { quantity?: number; lowStockThreshold?: number };
 
@@ -394,6 +395,21 @@ export async function PUT(request: NextRequest) {
       return jsonResponse({ success: false, error: 'No updatable fields provided' }, 400);
     }
 
+    // If the images array is being replaced, capture what's disappearing so
+    // the corresponding files can be cleaned up from Storage after the
+    // update succeeds — otherwise a removed image just stays orphaned.
+    let removedImageUrls: string[] = [];
+    if (Array.isArray(updates.images)) {
+      const { data: existingProduct } = await supabaseAdmin
+        .from('Product')
+        .select('images, organizationId')
+        .eq('id', productId)
+        .maybeSingle();
+      const oldImages = ((existingProduct as { images?: string[] } | null)?.images ?? []) as string[];
+      const newImages = updates.images as string[];
+      removedImageUrls = oldImages.filter((url) => !newImages.includes(url));
+    }
+
     updates.updatedAt = new Date().toISOString();
 
     const { data: updated, error: updateError } = await supabaseAdmin
@@ -406,6 +422,10 @@ export async function PUT(request: NextRequest) {
     if (updateError) {
       logger.error('Failed to update product', { productId, error: updateError.message });
       return jsonResponse({ success: false, error: 'Failed to update product' }, 500);
+    }
+
+    if (removedImageUrls.length > 0) {
+      void deleteUploadedFiles(removedImageUrls, payload.organizationId);
     }
 
     // Track product update

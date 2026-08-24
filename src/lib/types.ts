@@ -74,7 +74,10 @@ export interface PlanOverageRate {
   updatedAt: string;
 }
 
-export interface Invoice {
+// Named BillingInvoice (not Invoice) — this file already has an unrelated
+// Invoice interface below (order invoices: orderId/invoiceNumber/dueDate)
+// that TypeScript would otherwise silently declaration-merge this into.
+export interface BillingInvoice {
   id: string;
   organizationId: string;
   period: string;
@@ -82,14 +85,14 @@ export interface Invoice {
   overageKobo: number;
   totalKobo: number;
   currency: string;
-  breakdown: InvoiceLineItem[] | null;
+  breakdown: BillingInvoiceLineItem[] | null;
   status: 'due' | 'paid' | 'void';
   paidAt?: string | null;
   createdAt: string;
   updatedAt: string;
 }
 
-export interface InvoiceLineItem {
+export interface BillingInvoiceLineItem {
   limitCode: string;
   description: string;
   quantity: number;

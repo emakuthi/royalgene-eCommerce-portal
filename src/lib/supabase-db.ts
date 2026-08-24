@@ -1,6 +1,7 @@
 import { supabaseAdmin, supabaseClient } from './supabase-client';
 import { v4 as uuidv4 } from 'uuid';
 import type { User, Product, Order, Invoice, Receipt, PaymentDetails, BankTransferDetails, MpesaDetails, CardDetails } from './types';
+import { deleteUploadedFiles } from './storage-usage.server';
 
 // Helper function to check if credentials are available
 export function hasValidCredentials(): boolean {
@@ -124,6 +125,16 @@ export async function deleteProduct(productId: string) {
   try {
     console.log('[Supabase] Deleting product:', productId);
 
+    // Fetch images + organizationId before the row is gone — needed to
+    // clean up Storage/the usage ledger afterward.
+    const { data: existingProduct } = await supabaseAdmin
+      .from('Product')
+      .select('images, organizationId')
+      .eq('id', productId)
+      .maybeSingle();
+    const imagesToDelete = ((existingProduct as { images?: string[] } | null)?.images ?? []) as string[];
+    const productOrgId = (existingProduct as { organizationId?: string } | null)?.organizationId;
+
     const { error } = await supabaseAdmin
       .from('Product')
       .delete()
@@ -147,6 +158,10 @@ export async function deleteProduct(productId: string) {
       }
     } catch (stockDeleteErr) {
       console.warn('[Supabase] Error deleting ShopStock rows after product deletion:', errorToMessage(stockDeleteErr));
+    }
+
+    if (imagesToDelete.length > 0) {
+      void deleteUploadedFiles(imagesToDelete, productOrgId);
     }
 
     console.log('[Supabase] Product deleted successfully:', productId);

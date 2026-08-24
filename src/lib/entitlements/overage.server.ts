@@ -2,7 +2,7 @@ import 'server-only';
 import { v4 as uuidv4 } from 'uuid';
 import { supabaseAdmin } from '../supabase-client';
 import { getStorageUsageGB } from '../storage-usage.server';
-import type { Invoice, InvoiceLineItem, PlanOverageRate } from '../types';
+import type { BillingInvoice, BillingInvoiceLineItem, PlanOverageRate } from '../types';
 import { getActiveSubscription, getLimit, getUsage } from './entitlement-service.server';
 import { LimitCode, WIRED_LIMIT_CODES, type LimitCodeValue, type ResourceTypeValue } from './feature-codes';
 
@@ -40,7 +40,7 @@ async function currentUsageFor(organizationId: string, limitCode: LimitCodeValue
  * computation, same philosophy as every other usage check in this module —
  * no running overage counter to keep in sync.
  */
-export async function computeOverageLineItems(organizationId: string): Promise<{ overageKobo: number; lineItems: InvoiceLineItem[] }> {
+export async function computeOverageLineItems(organizationId: string): Promise<{ overageKobo: number; lineItems: BillingInvoiceLineItem[] }> {
   const ctx = await getActiveSubscription(organizationId);
   if (!ctx || !ctx.plan || ctx.isLegacyUnlimited || !ctx.plan.allowOverage) {
     return { overageKobo: 0, lineItems: [] };
@@ -53,7 +53,7 @@ export async function computeOverageLineItems(organizationId: string): Promise<{
   const rates = (rateRows ?? []) as PlanOverageRate[];
   if (rates.length === 0) return { overageKobo: 0, lineItems: [] };
 
-  const lineItems: InvoiceLineItem[] = [];
+  const lineItems: BillingInvoiceLineItem[] = [];
   let overageKobo = 0;
 
   for (const rate of rates) {
@@ -87,7 +87,7 @@ export async function computeOverageLineItems(organizationId: string): Promise<{
  * re-generating the same period recomputes and overwrites rather than
  * duplicating, since usage may still be changing mid-period.
  */
-export async function generateInvoice(organizationId: string, period: string = currentPeriodKey()): Promise<Invoice | null> {
+export async function generateInvoice(organizationId: string, period: string = currentPeriodKey()): Promise<BillingInvoice | null> {
   const ctx = await getActiveSubscription(organizationId);
   if (!ctx || !ctx.plan) return null;
 
@@ -115,9 +115,9 @@ export async function generateInvoice(organizationId: string, period: string = c
 
   if (existing) {
     // Never silently rewrite a settled invoice.
-    if (existing.status !== 'due') return (await supabaseAdmin.from('Invoice').select('*').eq('id', existing.id).maybeSingle()).data as Invoice | null;
+    if (existing.status !== 'due') return (await supabaseAdmin.from('Invoice').select('*').eq('id', existing.id).maybeSingle()).data as BillingInvoice | null;
     const { data } = await supabaseAdmin.from('Invoice').update(record).eq('id', existing.id).select().maybeSingle();
-    return data as Invoice | null;
+    return data as BillingInvoice | null;
   }
 
   const { data } = await supabaseAdmin
@@ -125,5 +125,5 @@ export async function generateInvoice(organizationId: string, period: string = c
     .insert([{ id: uuidv4(), ...record, status: 'due', createdAt: new Date().toISOString() }])
     .select()
     .maybeSingle();
-  return data as Invoice | null;
+  return data as BillingInvoice | null;
 }

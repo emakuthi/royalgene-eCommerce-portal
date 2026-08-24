@@ -1,5 +1,3 @@
-import { supabaseAdmin, IMAGE_BUCKET } from './supabase-client';
-
 /**
  * Upload image to Supabase Storage via the portal upload API.
  * @param file - Image file to upload
@@ -85,41 +83,13 @@ export async function uploadProductImage(
   return data.url;
 }
 
-/**
- * Delete image from Supabase Storage
- * @param imageUrl - Public URL of the image
- */
-export async function deleteProductImage(imageUrl: string): Promise<void> {
-  console.log('[Image Delete] Stage 1: Starting image deletion', {
-    imageUrl,
-    timestamp: new Date().toISOString(),
-  });
-
-  // Extract filename from URL
-  const match = imageUrl.match(/\/storage\/v1\/object\/public\/products\/(.+?)(?:\?|$)/);
-  if (!match || !match[1]) {
-    console.error('[Image Delete] Stage 1 FAILED: Invalid image URL format', { imageUrl });
-    throw new Error('Invalid image URL');
-  }
-  console.log('[Image Delete] Stage 2: URL parsed successfully', { filename: match[1] });
-
-  const filename = decodeURIComponent(match[1]);
-  console.log('[Image Delete] Stage 3: Filename decoded', { filename });
-
-  const { error } = await supabaseAdmin.storage
-    .from(IMAGE_BUCKET)
-    .remove([filename]);
-  console.log('[Image Delete] Stage 4: Deletion request sent to storage', {
-    timestamp: new Date().toISOString(),
-  });
-
-  if (error) {
-    console.error('[Image Delete] Stage 4 FAILED: Storage deletion failed', {
-      error: error.message
-    });
-    throw new Error(`Failed to delete image: ${error.message}`);
-  }
-
-  console.log('[Image Delete] COMPLETED: Image deleted successfully', { filename });
-}
+// Deletion is no longer client-triggered: removing an image from the
+// product form just changes local state (see components/image-upload.tsx),
+// and the backend (portal/mobile product PUT and full-product DELETE
+// routes) diffs the submitted images array against what's actually stored
+// and deletes whatever disappeared — see src/lib/storage-usage.server.ts's
+// deleteUploadedFile(s). The previous deleteProductImage() here imported
+// supabaseAdmin (the service-role client) directly into a module reachable
+// from 'use client' components — a real key-exposure risk — and had zero
+// callers, so it was removed rather than fixed in place.
 
