@@ -71,6 +71,10 @@ export function createSupabaseMock(tables: MockTables) {
         rows = rows.filter((r) => vals.includes(r[col]));
         return builder;
       }),
+      is: vi.fn((col: string, val: null | boolean) => {
+        rows = rows.filter((r) => (r[col] ?? null) === val);
+        return builder;
+      }),
       order: vi.fn(() => builder),
       limit: vi.fn(() => builder),
       insert: vi.fn((newRows: Record<string, unknown>[]) => {

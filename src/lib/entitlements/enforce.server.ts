@@ -1,8 +1,9 @@
 import 'server-only';
 import { NextResponse } from 'next/server';
 import { jsonResponse } from '../apiResponse';
-import { canCreate, getActiveSubscription, hasFeature } from './entitlement-service.server';
-import type { FeatureCodeValue, ResourceTypeValue } from './feature-codes';
+import { getStorageUsageBytes } from '../storage-usage.server';
+import { canCreate, getActiveSubscription, getLimit, hasFeature } from './entitlement-service.server';
+import { LimitCode, type FeatureCodeValue, type ResourceTypeValue } from './feature-codes';
 
 /**
  * Call right after resolving the caller's organizationId and before the
@@ -24,6 +25,38 @@ export async function assertCanCreate(organizationId: string, resource: Resource
       feature: result.feature,
       limit: result.limit,
       currentUsage: result.currentUsage,
+      upgradeRequired: true,
+    },
+    403,
+  ) as unknown as NextResponse;
+}
+
+/**
+ * Call right before a Supabase Storage upload, with the incoming file's byte
+ * size. Unlike assertCanCreate this isn't a row-count resource, so it isn't
+ * routed through ResourceType/canCreate — it compares live SUM(sizeBytes)
+ * (from TenantFileUpload) against the plan's STORAGE_GB limit directly.
+ */
+export async function assertStorageQuota(organizationId: string, additionalBytes: number): Promise<NextResponse | null> {
+  // getLimit already resolves legacy-unlimited -> null and restricted/no-plan -> 0.
+  const limitGB = await getLimit(organizationId, LimitCode.STORAGE_GB);
+  if (limitGB === null) return null;
+
+  const limitBytes = limitGB * 1024 ** 3;
+  const usageBytes = await getStorageUsageBytes(organizationId);
+
+  if (usageBytes + additionalBytes <= limitBytes) return null;
+
+  const currentUsageGB = Math.round((usageBytes / 1024 ** 3) * 100) / 100;
+  return jsonResponse(
+    {
+      success: false,
+      error: `You've reached your plan's storage limit.`,
+      code: 'PLAN_LIMIT_REACHED',
+      message: `You've reached your plan's storage limit.`,
+      feature: LimitCode.STORAGE_GB,
+      limit: limitGB,
+      currentUsage: currentUsageGB,
       upgradeRequired: true,
     },
     403,

@@ -65,7 +65,7 @@ export const LimitCode = {
   WAREHOUSES: 'WAREHOUSES', // defined only — no warehouse entity distinct from Shop exists
   PRODUCTS: 'PRODUCTS', // wired — Product count per org
   MONTHLY_TRANSACTIONS: 'MONTHLY_TRANSACTIONS', // wired — SalesEntry count in the current calendar month
-  STORAGE_GB: 'STORAGE_GB', // defined only — no per-tenant file-size accounting exists
+  STORAGE_GB: 'STORAGE_GB', // wired — SUM(sizeBytes) from TenantFileUpload per org, converted to GB
 } as const;
 
 export type LimitCodeValue = (typeof LimitCode)[keyof typeof LimitCode];
@@ -75,6 +75,7 @@ export const WIRED_LIMIT_CODES: readonly LimitCodeValue[] = [
   LimitCode.BRANCHES,
   LimitCode.PRODUCTS,
   LimitCode.MONTHLY_TRANSACTIONS,
+  LimitCode.STORAGE_GB,
 ];
 
 /** Resource types that can be created and are subject to a plan limit. Maps 1:1 to a LimitCode. */

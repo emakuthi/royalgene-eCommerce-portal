@@ -36,6 +36,8 @@ function baseTables(): MockTables {
       { planId: PLAN_PRO, code: 'BARCODE', enabled: true, limitValue: null },
       { planId: PLAN_PRO, code: 'PRODUCTS', enabled: true, limitValue: 50000 },
       { planId: PLAN_ENTERPRISE, code: 'PRODUCTS', enabled: true, limitValue: null },
+      { planId: PLAN_STARTER, code: 'STORAGE_GB', enabled: true, limitValue: 2 },
+      { planId: PLAN_ENTERPRISE, code: 'STORAGE_GB', enabled: true, limitValue: null },
     ],
     Product: [
       { id: 'p1', organizationId: ORG_STARTER },
@@ -44,6 +46,7 @@ function baseTables(): MockTables {
     PortalUser: [],
     Shop: [],
     SalesEntry: [],
+    TenantFileUpload: [],
   };
 }
 
@@ -120,5 +123,25 @@ describe('entitlement-service', () => {
     const orgAResult = await canCreate(ORG_STARTER, 'PRODUCT');
     expect(orgAResult.allowed).toBe(false);
     expect(orgAResult.currentUsage).toBe(2);
+  });
+
+  it('getStorageUsageGB sums undeleted TenantFileUpload rows, ignoring other orgs and soft-deleted rows', async () => {
+    mockTables.TenantFileUpload = [
+      { organizationId: ORG_STARTER, sizeBytes: 512 * 1024 * 1024, deletedAt: null }, // 0.5 GB
+      { organizationId: ORG_STARTER, sizeBytes: 512 * 1024 * 1024, deletedAt: null }, // 0.5 GB
+      { organizationId: ORG_STARTER, sizeBytes: 1024 * 1024 * 1024, deletedAt: '2026-01-01T00:00:00.000Z' }, // soft-deleted, excluded
+      { organizationId: ORG_ENTERPRISE, sizeBytes: 5 * 1024 * 1024 * 1024, deletedAt: null }, // other org, excluded
+    ];
+    const { getStorageUsageGB } = await import('../../storage-usage.server');
+    expect(await getStorageUsageGB(ORG_STARTER)).toBe(1);
+  });
+
+  it('getTenantEntitlementSummary includes STORAGE_GB with the plan limit and live usage', async () => {
+    mockTables.TenantFileUpload = [
+      { organizationId: ORG_STARTER, sizeBytes: 1024 * 1024 * 1024, deletedAt: null }, // 1 GB
+    ];
+    const { getTenantEntitlementSummary } = await import('../entitlement-service.server');
+    const summary = await getTenantEntitlementSummary(ORG_STARTER);
+    expect(summary.limits.STORAGE_GB).toMatchObject({ limit: 2, usage: 1, remaining: 1 });
   });
 });

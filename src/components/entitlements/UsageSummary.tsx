@@ -9,6 +9,11 @@ const LIMIT_LABELS: Partial<Record<LimitCodeValue, string>> = {
   [LimitCode.BRANCHES]: 'Branches / shops',
   [LimitCode.PRODUCTS]: 'Products',
   [LimitCode.MONTHLY_TRANSACTIONS]: 'Sales this month',
+  [LimitCode.STORAGE_GB]: 'Storage',
+};
+
+const LIMIT_UNITS: Partial<Record<LimitCodeValue, string>> = {
+  [LimitCode.STORAGE_GB]: 'GB',
 };
 
 /** Every wired UsageMeter for the caller's own org, in one composite — used by the Settings Billing tab. */
@@ -27,7 +32,7 @@ export function UsageSummary() {
     <div className="grid sm:grid-cols-2 gap-4">
       {codes.map((code) => {
         const entry = limits[code]!;
-        return <UsageMeter key={code} label={LIMIT_LABELS[code]!} usage={entry.usage} limit={entry.limit} />;
+        return <UsageMeter key={code} label={LIMIT_LABELS[code]!} usage={entry.usage} limit={entry.limit} unit={LIMIT_UNITS[code]} />;
       })}
     </div>
   );

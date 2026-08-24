@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin, IMAGE_BUCKET } from '@/lib/supabase-client';
 import { verifyToken } from '@/lib/auth.server';
+import { assertStorageQuota } from '@/lib/entitlements/enforce.server';
+import { recordFileUpload } from '@/lib/storage-usage.server';
 import { v4 as uuidv4 } from 'uuid';
 
 interface UploadResponse {
@@ -69,11 +71,20 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Build a unique filename
+    // Check the tenant's plan-wide storage quota before spending the upload.
+    // Platform-level accounts (no organizationId) have no tenant to meter.
+    if (payload.organizationId) {
+      const quotaResponse = await assertStorageQuota(payload.organizationId, file.size);
+      if (quotaResponse) return quotaResponse;
+    }
+
+    // Build a unique filename, prefixed by tenant so files are attributable
+    // and (eventually) listable per-org directly in Storage.
     const extension = file.name.split('.').pop() || 'jpg';
+    const pathPrefix = payload.organizationId ? `${payload.organizationId}/` : '';
     const filename = customName
-      ? `${customName}-${uuidv4()}.${extension}`
-      : `${uuidv4()}.${extension}`;
+      ? `${pathPrefix}${customName}-${uuidv4()}.${extension}`
+      : `${pathPrefix}${uuidv4()}.${extension}`;
 
     // Upload to Supabase Storage
     const buffer = await file.arrayBuffer();
@@ -90,6 +101,17 @@ export async function POST(request: NextRequest) {
         { success: false, error: `Upload failed: ${error.message}` },
         { status: 500 }
       );
+    }
+
+    if (payload.organizationId) {
+      await recordFileUpload({
+        organizationId: payload.organizationId,
+        bucket: IMAGE_BUCKET,
+        storagePath: data.path,
+        sizeBytes: file.size,
+        contentType: file.type,
+        uploadedBy: payload.userId,
+      });
     }
 
     // Return the public URL

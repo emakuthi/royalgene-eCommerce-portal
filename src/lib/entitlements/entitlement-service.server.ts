@@ -1,5 +1,6 @@
 import 'server-only';
 import { supabaseAdmin } from '../supabase-client';
+import { getStorageUsageGB } from '../storage-usage.server';
 import type { Organization, PlatformPlan, TenantSubscription } from '../types';
 import {
   FeatureCode,
@@ -210,6 +211,15 @@ export async function getTenantEntitlementSummary(organizationId: string): Promi
   const limits: Partial<Record<LimitCodeValue, { limit: number | null; usage: number; remaining: number | null }>> = {};
   await Promise.all(
     WIRED_LIMIT_CODES.map(async (code) => {
+      if (code === LimitCode.STORAGE_GB) {
+        // Bytes-based, not a row-count resource — doesn't fit the
+        // ResourceType/canCreate model the other limits use.
+        const limitGB = ctx.isLegacyUnlimited ? null : await getLimit(organizationId, LimitCode.STORAGE_GB);
+        const usageGB = await getStorageUsageGB(organizationId);
+        const remaining = limitGB === null ? null : Math.max(Math.round((limitGB - usageGB) * 100) / 100, 0);
+        limits[code] = { limit: limitGB, usage: usageGB, remaining };
+        return;
+      }
       const resource = LIMIT_CODE_TO_RESOURCE[code];
       if (!resource) return;
       const result = await canCreate(organizationId, resource);

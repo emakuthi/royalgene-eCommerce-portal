@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin, IMAGE_BUCKET } from '@/lib/supabase-client';
 import { verifyMobileAuth } from '@/lib/mobile-shop-auth';
+import { assertStorageQuota } from '@/lib/entitlements/enforce.server';
+import { recordFileUpload } from '@/lib/storage-usage.server';
 import { v4 as uuidv4 } from 'uuid';
 
 /**
@@ -52,11 +54,22 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Build a unique filename
+    const organizationId = authResult.payload.organizationId;
+
+    // Check the tenant's plan-wide storage quota before spending the upload.
+    // Platform-level accounts (no organizationId) have no tenant to meter.
+    if (organizationId) {
+      const quotaResponse = await assertStorageQuota(organizationId, file.size);
+      if (quotaResponse) return quotaResponse;
+    }
+
+    // Build a unique filename, prefixed by tenant so files are attributable
+    // and (eventually) listable per-org directly in Storage.
     const extension = file.name.split('.').pop() || 'jpg';
+    const pathPrefix = organizationId ? `${organizationId}/mobile/` : 'mobile/';
     const filename = customName
-      ? `mobile/${customName}-${uuidv4()}.${extension}`
-      : `mobile/${uuidv4()}.${extension}`;
+      ? `${pathPrefix}${customName}-${uuidv4()}.${extension}`
+      : `${pathPrefix}${uuidv4()}.${extension}`;
 
     // Upload to Supabase Storage
     const buffer = await file.arrayBuffer();
@@ -73,6 +86,17 @@ export async function POST(request: NextRequest) {
         { success: false, error: `Upload failed: ${error.message}`, code: 'INTERNAL_ERROR' },
         { status: 500 },
       );
+    }
+
+    if (organizationId) {
+      await recordFileUpload({
+        organizationId,
+        bucket: IMAGE_BUCKET,
+        storagePath: data.path,
+        sizeBytes: file.size,
+        contentType: file.type,
+        uploadedBy: authResult.payload.userId,
+      });
     }
 
     // Get and return the public URL
