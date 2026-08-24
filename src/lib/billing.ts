@@ -77,6 +77,30 @@ export function cancelBillingSubscription(token?: string | null) {
   return request<TenantSubscription>('/api/portal/billing/cancel', token, { method: 'POST' });
 }
 
+export interface InvoiceLineItem {
+  limitCode: string;
+  description: string;
+  quantity: number;
+  unitPriceKobo: number;
+  subtotalKobo: number;
+}
+
+export interface InvoiceSnapshot {
+  id: string;
+  organizationId: string;
+  period: string;
+  basePriceKobo: number;
+  overageKobo: number;
+  totalKobo: number;
+  currency: string;
+  breakdown: InvoiceLineItem[] | null;
+  status: 'due' | 'paid' | 'void';
+}
+
+export function getBillingInvoice(token?: string | null) {
+  return request<InvoiceSnapshot>('/api/portal/billing/invoice', token);
+}
+
 export interface PublicPlan extends PlatformPlan {
   entitlements: { code: string; enabled: boolean; limitValue: number | null }[];
 }

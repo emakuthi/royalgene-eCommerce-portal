@@ -52,6 +52,7 @@ import type { Organization } from '@/lib/types';
 import { PlanBadge } from '@/components/entitlements/PlanBadge';
 import { SubscriptionStatusBadge } from '@/components/entitlements/SubscriptionStatusBadge';
 import { UsageSummary } from '@/components/entitlements/UsageSummary';
+import { InvoicePreview } from '@/components/entitlements/InvoicePreview';
 import { PlanComparison } from '@/components/entitlements/PlanComparison';
 import { FeatureGate } from '@/components/entitlements/FeatureGate';
 import { FeatureCode } from '@/lib/entitlements/feature-codes';
@@ -1206,6 +1207,7 @@ export default function PortalSettingsPage() {
             {isBillingAdmin && (
               <Section title="Usage" description="Where you stand against your plan's limits">
                 <UsageSummary />
+                <InvoicePreview />
               </Section>
             )}
 

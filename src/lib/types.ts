@@ -55,10 +55,46 @@ export interface PlatformPlan {
   paystackAnnualPlanCode?: string | null;
   maxShops?: number | null;
   maxUsers?: number | null;
+  /** When true, assertCanCreate/assertStorageQuota let a tenant exceed their hard limit instead of blocking — billed via generateInvoice() instead. */
+  allowOverage?: boolean;
   isActive: boolean;
   displayOrder: number;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface PlanOverageRate {
+  id: string;
+  planId: string;
+  limitCode: string;
+  unit: number;
+  pricePerUnitKobo: number;
+  currency: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface Invoice {
+  id: string;
+  organizationId: string;
+  period: string;
+  basePriceKobo: number;
+  overageKobo: number;
+  totalKobo: number;
+  currency: string;
+  breakdown: InvoiceLineItem[] | null;
+  status: 'due' | 'paid' | 'void';
+  paidAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface InvoiceLineItem {
+  limitCode: string;
+  description: string;
+  quantity: number;
+  unitPriceKobo: number;
+  subtotalKobo: number;
 }
 
 export interface PlanEntitlement {

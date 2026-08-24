@@ -1,5 +1,15 @@
 import 'server-only';
-import type { BillingProvider, CancelSubscriptionInput, CreateCheckoutInput, CreateCheckoutResult, ProviderSubscriptionStatus } from '../billing-provider';
+import type {
+  BillingProvider,
+  CancelSubscriptionInput,
+  ChangePlanInput,
+  ChangePlanResult,
+  CreateCheckoutInput,
+  CreateCheckoutResult,
+  GeneratedInvoice,
+  ProviderSubscriptionStatus,
+  RecordUsageInput,
+} from '../billing-provider';
 import {
   disableSubscription,
   fetchSubscription,
@@ -8,6 +18,7 @@ import {
   verifyTransaction,
   verifyWebhookSignature,
 } from '../../paystack.server';
+import { generateInvoice as generateInvoiceLocal } from '../../entitlements/overage.server';
 
 export const paystackProvider: BillingProvider = {
   name: 'paystack',
@@ -37,4 +48,36 @@ export const paystackProvider: BillingProvider = {
   },
 
   verifyWebhookSignature,
+
+  async changePlan(input: ChangePlanInput): Promise<{ ok: true; data: ChangePlanResult } | { ok: false; error: string }> {
+    // No in-place plan-change API on Paystack — cancel whatever's active
+    // (if anything) and hand back to the caller to start a fresh checkout.
+    if (input.subscriptionCode) {
+      const cancelResult = await this.cancelSubscription({ subscriptionCode: input.subscriptionCode, emailToken: input.emailToken });
+      if (!cancelResult.ok) return cancelResult;
+    }
+    return { ok: true, data: { requiresNewCheckout: true } };
+  },
+
+  async recordUsage(_input: RecordUsageInput): Promise<{ ok: true } | { ok: false; error: string }> {
+    // Intentional no-op — see the interface doc on BillingProvider.recordUsage.
+    return { ok: true };
+  },
+
+  async generateInvoice(organizationId: string, period?: string): Promise<{ ok: true; data: GeneratedInvoice } | { ok: false; error: string }> {
+    const invoice = await generateInvoiceLocal(organizationId, period);
+    if (!invoice) return { ok: false, error: 'Could not generate invoice — no active plan for this organization.' };
+    return {
+      ok: true,
+      data: {
+        organizationId: invoice.organizationId,
+        period: invoice.period,
+        basePriceKobo: invoice.basePriceKobo,
+        overageKobo: invoice.overageKobo,
+        totalKobo: invoice.totalKobo,
+        currency: invoice.currency,
+        lineItems: invoice.breakdown ?? [],
+      },
+    };
+  },
 };

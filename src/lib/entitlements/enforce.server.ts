@@ -22,6 +22,15 @@ export async function assertCanCreate(organizationId: string, resource: Resource
     return null;
   }
 
+  // Over the hard limit — let it through if the plan allows overage. The
+  // excess is billed via generateInvoice() at period-close, not blocked
+  // here at the point of use.
+  const ctx = await getActiveSubscription(organizationId);
+  if (ctx?.plan?.allowOverage) {
+    void checkUsageThresholds(organizationId, result.feature, result.currentUsage + 1, result.limit);
+    return null;
+  }
+
   return jsonResponse(
     {
       success: false,
@@ -52,6 +61,13 @@ export async function assertStorageQuota(organizationId: string, additionalBytes
   const usageBytes = await getStorageUsageBytes(organizationId);
 
   if (usageBytes + additionalBytes <= limitBytes) {
+    const projectedUsageGB = (usageBytes + additionalBytes) / 1024 ** 3;
+    void checkUsageThresholds(organizationId, LimitCode.STORAGE_GB, projectedUsageGB, limitGB);
+    return null;
+  }
+
+  const ctx = await getActiveSubscription(organizationId);
+  if (ctx?.plan?.allowOverage) {
     const projectedUsageGB = (usageBytes + additionalBytes) / 1024 ** 3;
     void checkUsageThresholds(organizationId, LimitCode.STORAGE_GB, projectedUsageGB, limitGB);
     return null;
