@@ -68,3 +68,41 @@ export async function verifyFacebookAccessToken(accessToken: string): Promise<Ve
     return null;
   }
 }
+
+interface FacebookCodeExchangeResponse {
+  access_token?: string;
+  error?: { message?: string };
+}
+
+/**
+ * Exchanges an authorization code (portal's browser-redirect OAuth flow,
+ * response_type=code) for a user access token. `redirectUri` must exactly
+ * match both what was sent to Facebook's dialog and what's registered as a
+ * valid OAuth redirect URI for this app.
+ */
+export async function exchangeFacebookAuthCode(code: string, redirectUri: string): Promise<string | null> {
+  if (!isFacebookSignInConfigured()) {
+    logger.warn('[facebook-auth] FACEBOOK_APP_ID/FACEBOOK_APP_SECRET not configured — rejecting Facebook web sign-in attempt');
+    return null;
+  }
+
+  try {
+    const url =
+      `https://graph.facebook.com/v19.0/oauth/access_token` +
+      `?client_id=${encodeURIComponent(APP_ID)}` +
+      `&redirect_uri=${encodeURIComponent(redirectUri)}` +
+      `&client_secret=${encodeURIComponent(APP_SECRET)}` +
+      `&code=${encodeURIComponent(code)}`;
+    const res = await fetch(url);
+    const json = (await res.json()) as FacebookCodeExchangeResponse;
+
+    if (!res.ok || !json.access_token) {
+      logger.warn('[facebook-auth] Authorization code exchange failed', { status: res.status, error: json.error?.message });
+      return null;
+    }
+    return json.access_token;
+  } catch (err) {
+    logger.warn('[facebook-auth] Authorization code exchange request failed', { error: err instanceof Error ? err.message : String(err) });
+    return null;
+  }
+}

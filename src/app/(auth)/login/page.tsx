@@ -1,8 +1,8 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 import Image from 'next/image';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -12,6 +12,18 @@ import { usePortalStore } from '@/lib/store';
 import { toast } from 'sonner';
 import { Eye, EyeOff, Store, ShieldCheck, BarChart3, Package } from 'lucide-react';
 import { loadBranding, BRANDING_EVENT, type BrandingConfig } from '@/lib/branding';
+import { extractSubdomain, ROOT_DOMAIN } from '@/lib/tenant';
+import { getGoogleStartUrl, getFacebookStartUrl } from '@/lib/social-auth-urls';
+
+const OAUTH_ERROR_MESSAGES: Record<string, string> = {
+	google_not_configured: 'Google sign-in isn’t set up yet. Contact your administrator.',
+	facebook_not_configured: 'Facebook sign-in isn’t set up yet. Contact your administrator.',
+	google_signin_failed: 'Google sign-in failed. Please try again.',
+	facebook_signin_failed: 'Facebook sign-in failed. Please try again.',
+	google_state_mismatch: 'That sign-in link expired. Please try again.',
+	facebook_state_mismatch: 'That sign-in link expired. Please try again.',
+	google_email_not_verified: 'Your Google account email is not verified.',
+};
 
 const FEATURES = [
 	{ icon: Store, label: 'Shop Management', desc: 'Manage all your shop locations in one place' },
@@ -21,7 +33,16 @@ const FEATURES = [
 ];
 
 export default function PortalLoginPage() {
+	return (
+		<Suspense fallback={null}>
+			<PortalLoginPageInner />
+		</Suspense>
+	);
+}
+
+function PortalLoginPageInner() {
 	const router = useRouter();
+	const searchParams = useSearchParams();
 	const { setAuth, mounted } = useHydratedAuth();
 	const { setCurrentShop, setCurrentPortalUser } = usePortalStore();
 	const [loading, setLoading] = useState(false);
@@ -39,6 +60,13 @@ export default function PortalLoginPage() {
 		window.addEventListener(BRANDING_EVENT, handler);
 		return () => window.removeEventListener(BRANDING_EVENT, handler);
 	}, []);
+
+	useEffect(() => {
+		const error = searchParams.get('error');
+		if (error) toast.error(OAUTH_ERROR_MESSAGES[error] || 'Sign-in failed. Please try again.');
+	}, [searchParams]);
+
+	const currentTenantSlug = mounted ? extractSubdomain(window.location.host, ROOT_DOMAIN) : null;
 
 	const handleSubmit = async (e: React.FormEvent) => {
 		e.preventDefault();
@@ -222,6 +250,40 @@ export default function PortalLoginPage() {
 							)}
 						</Button>
 					</form>
+
+					{/* Social sign-in */}
+					<div className="mt-6">
+						<div className="relative text-center">
+							<div className="absolute inset-0 flex items-center">
+								<span className="w-full border-t border-gray-200 dark:border-gray-800" />
+							</div>
+							<span className="relative bg-white dark:bg-gray-950 px-3 text-xs text-gray-400 dark:text-gray-500">Or continue with</span>
+						</div>
+						<div className="mt-4 flex justify-center gap-3">
+							<a
+								href={getGoogleStartUrl(currentTenantSlug)}
+								aria-label="Sign in with Google"
+								className="flex h-11 w-11 items-center justify-center rounded-full border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 transition hover:brightness-95"
+							>
+								<svg viewBox="0 0 24 24" className="h-5 w-5" aria-hidden="true">
+									<path fill="#4285F4" d="M23.49 12.27c0-.79-.07-1.54-.2-2.27H12v4.51h6.47a5.53 5.53 0 0 1-2.4 3.63v3h3.88c2.27-2.09 3.54-5.17 3.54-8.87z" />
+									<path fill="#34A853" d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3c-1.08.72-2.45 1.16-4.05 1.16-3.11 0-5.75-2.1-6.69-4.92H1.3v3.09A11.99 11.99 0 0 0 12 24z" />
+									<path fill="#FBBC05" d="M5.31 14.33A7.2 7.2 0 0 1 4.93 12c0-.81.14-1.6.38-2.33V6.58H1.3A11.99 11.99 0 0 0 0 12c0 1.94.46 3.77 1.3 5.42l4.01-3.09z" />
+									<path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.44-3.44C17.94 1.19 15.24 0 12 0 7.31 0 3.26 2.69 1.3 6.58l4.01 3.09C6.25 6.85 8.89 4.75 12 4.75z" />
+								</svg>
+							</a>
+							<a
+								href={getFacebookStartUrl(currentTenantSlug)}
+								aria-label="Sign in with Facebook"
+								className="flex h-11 w-11 items-center justify-center rounded-full transition hover:brightness-95"
+								style={{ backgroundColor: '#1877F2' }}
+							>
+								<svg viewBox="0 0 24 24" className="h-5 w-5 fill-white" aria-hidden="true">
+									<path d="M22 12.06C22 6.5 17.52 2 12 2S2 6.5 2 12.06c0 5 3.66 9.15 8.44 9.94v-7.03H7.9v-2.91h2.54V9.85c0-2.51 1.49-3.9 3.77-3.9 1.09 0 2.24.2 2.24.2v2.46h-1.26c-1.24 0-1.63.77-1.63 1.56v1.89h2.78l-.44 2.91h-2.34V22c4.78-.79 8.44-4.94 8.44-9.94z" />
+								</svg>
+							</a>
+						</div>
+					</div>
 
 					{/* Register link */}
 					<p className="mt-6 text-center text-sm text-gray-500 dark:text-gray-400">
