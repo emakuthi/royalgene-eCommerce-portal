@@ -8,6 +8,17 @@ export function isFacebookSignInConfigured(): boolean {
   return Boolean(APP_ID && APP_SECRET);
 }
 
+/**
+ * The mobile app's browser-redirect OAuth flow uses this fixed custom-scheme
+ * URI as its redirect_uri (Facebook's documented convention for native apps
+ * without the SDK: fb<APP_ID>://authorize). The code-exchange call must pass
+ * back the exact same value, so both sides derive it from the same APP_ID
+ * rather than the client sending it (nothing to spoof).
+ */
+export function getFacebookNativeRedirectUri(): string {
+  return `fb${APP_ID}://authorize`;
+}
+
 export interface VerifiedFacebookUser {
   email: string;
   name: string | null;

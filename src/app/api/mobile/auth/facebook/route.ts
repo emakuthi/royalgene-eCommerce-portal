@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server';
 import { jsonResponse, optionsResponse } from '@/lib/apiResponse';
-import { verifyFacebookAccessToken } from '@/lib/facebook-auth.server';
+import { verifyFacebookAccessToken, exchangeFacebookAuthCode, getFacebookNativeRedirectUri } from '@/lib/facebook-auth.server';
 import { findOrProvisionUserForSocialIdentity } from '@/lib/social-auth-provision.server';
 import { buildMobileAuthResponse } from '@/lib/mobile-auth-response.server';
 import { trackActivity, extractClientIp, detectDeviceType } from '@/lib/activity-tracker';
@@ -8,9 +8,13 @@ import logger from '@/lib/logger';
 
 /**
  * POST /api/mobile/auth/facebook
- * Body: { accessToken: string } — a Facebook access token obtained
- * client-side via the browser-redirect OAuth flow (no native Facebook SDK
- * dependency on the mobile side).
+ * Body: { code: string } — an authorization code obtained client-side via
+ * the browser-redirect OAuth flow (response_type=code, no native Facebook
+ * SDK dependency on the mobile side). Deliberately NOT a raw access token:
+ * that would sit in the redirect URI's fragment where any other app
+ * registering the same fb<APP_ID>:// custom scheme could potentially
+ * observe it. A code is single-use and short-lived, and only this server
+ * (holding FACEBOOK_APP_SECRET) can redeem it.
  *
  * Same shape and provisioning logic as POST /api/mobile/auth/google —
  * see that route and social-auth-provision.server.ts for the shared
@@ -19,9 +23,17 @@ import logger from '@/lib/logger';
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const accessToken = typeof body?.accessToken === 'string' ? body.accessToken : undefined;
+    const code = typeof body?.code === 'string' ? body.code : undefined;
+    if (!code) {
+      return jsonResponse({ success: false, error: 'code is required', code: 'VALIDATION_ERROR' }, 400);
+    }
+
+    const accessToken = await exchangeFacebookAuthCode(code, getFacebookNativeRedirectUri());
     if (!accessToken) {
-      return jsonResponse({ success: false, error: 'accessToken is required', code: 'VALIDATION_ERROR' }, 400);
+      return jsonResponse(
+        { success: false, error: 'Facebook sign-in is not available right now, or the code could not be exchanged', code: 'FACEBOOK_SIGNIN_FAILED' },
+        401,
+      );
     }
 
     const identity = await verifyFacebookAccessToken(accessToken);
