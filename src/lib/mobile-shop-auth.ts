@@ -27,6 +27,7 @@ export interface MobileShopAuth {
 async function resolveAdminPortalUserId(
   userId: string,
   shopId: string,
+  organizationId: string,
 ): Promise<string> {
   const { data: existing } = await supabaseAdmin
     .from('PortalUser')
@@ -44,6 +45,7 @@ async function resolveAdminPortalUserId(
       id: newId,
       userId,
       shopId,
+      organizationId,
       position: 'admin',
       isActive: true,
       createdAt: now,
@@ -113,24 +115,35 @@ export async function verifyMobileShopAccess(
   // Admins / super-admins bypass the PortalUser membership check, but an org
   // "admin" is still tenant-scoped — they only bypass it for shops in their
   // OWN organization. Only true super_admin (no organizationId) bypasses
-  // unconditionally.
+  // unconditionally. Either way we need the shop's organizationId: it's
+  // required to lazily provision a PortalUser row below.
   if (isAdmin) {
-    if (payload.organizationId) {
-      const { data: shopCheck } = await supabaseAdmin
-        .from('Shop')
-        .select('id')
-        .eq('id', shopId)
-        .eq('organizationId', payload.organizationId)
-        .maybeSingle();
-      if (!shopCheck) {
-        return jsonResponse(
-          { success: false, error: 'Forbidden', code: 'FORBIDDEN' },
-          403,
-        );
-      }
+    const { data: shopRow } = await supabaseAdmin
+      .from('Shop')
+      .select('id, organizationId')
+      .eq('id', shopId)
+      .maybeSingle();
+
+    if (!shopRow) {
+      return jsonResponse(
+        { success: false, error: 'Shop not found', code: 'NOT_FOUND' },
+        404,
+      );
     }
+
+    if (payload.organizationId && shopRow.organizationId !== payload.organizationId) {
+      return jsonResponse(
+        { success: false, error: 'Forbidden', code: 'FORBIDDEN' },
+        403,
+      );
+    }
+
     try {
-      const portalUserId = await resolveAdminPortalUserId(payload.userId, shopId);
+      const portalUserId = await resolveAdminPortalUserId(
+        payload.userId,
+        shopId,
+        shopRow.organizationId,
+      );
       return { payload, isAdmin: true, portalUserId };
     } catch {
       return jsonResponse(
