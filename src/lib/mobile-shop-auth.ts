@@ -1,8 +1,10 @@
 import { NextRequest } from 'next/server';
+import { v4 as uuidv4 } from 'uuid';
 import { verifyToken, type VerifiedPayload } from '@/lib/auth.server';
 import { supabaseAdmin } from '@/lib/supabase-client';
 import { jsonResponse } from '@/lib/apiResponse';
 import { assertTenantMatch } from '@/lib/tenant-guard';
+import logger from '@/lib/logger';
 
 /**
  * Result of a successful mobile auth + shop access check.
@@ -11,11 +13,64 @@ export interface MobileShopAuth {
   payload: VerifiedPayload;
   /** True when the user is admin / super_admin */
   isAdmin: boolean;
-  /**
-   * The portal-user ID linked to this shop.
-   * For admins without a PortalUser row it is a synthetic id like `admin-<userId>`.
-   */
+  /** A real PortalUser.id — always safe to use as a FK value. */
   portalUserId: string;
+}
+
+/**
+ * Admins/super_admins bypass the PortalUser membership check, but writes
+ * (SalesEntry, StockTransaction, ...) have an FK to PortalUser.id, so we
+ * still need a real row to point at. PortalUser.userId is UNIQUE (one row
+ * per user, not per shop), so reuse the admin's existing row if any, and
+ * otherwise lazily provision one scoped to the shop they're acting on.
+ */
+async function resolveAdminPortalUserId(
+  userId: string,
+  shopId: string,
+): Promise<string> {
+  const { data: existing } = await supabaseAdmin
+    .from('PortalUser')
+    .select('id')
+    .eq('userId', userId)
+    .maybeSingle();
+
+  if (existing) return existing.id;
+
+  const now = new Date().toISOString();
+  const newId = uuidv4();
+  const { data: created, error } = await supabaseAdmin
+    .from('PortalUser')
+    .insert([{
+      id: newId,
+      userId,
+      shopId,
+      position: 'admin',
+      isActive: true,
+      createdAt: now,
+      updatedAt: now,
+    }])
+    .select('id')
+    .single();
+
+  if (error || !created) {
+    // Extremely unlikely race (another request just created the row) —
+    // re-read rather than fail the caller's request.
+    const { data: raced } = await supabaseAdmin
+      .from('PortalUser')
+      .select('id')
+      .eq('userId', userId)
+      .maybeSingle();
+    if (raced) return raced.id;
+
+    logger.error('Failed to lazily provision PortalUser for admin', {
+      userId,
+      shopId,
+      error,
+    });
+    throw new Error('Failed to resolve admin portal-user id');
+  }
+
+  return created.id;
 }
 
 /**
@@ -74,11 +129,15 @@ export async function verifyMobileShopAccess(
         );
       }
     }
-    return {
-      payload,
-      isAdmin: true,
-      portalUserId: `admin-${payload.userId}`,
-    };
+    try {
+      const portalUserId = await resolveAdminPortalUserId(payload.userId, shopId);
+      return { payload, isAdmin: true, portalUserId };
+    } catch {
+      return jsonResponse(
+        { success: false, error: 'Internal server error', code: 'INTERNAL_ERROR' },
+        500,
+      );
+    }
   }
 
   // Regular portal users must have a PortalUser row for this shop

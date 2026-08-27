@@ -127,9 +127,7 @@ export async function POST(
 
     const resolvedProductId = srcStock.productId as string;
     const now = new Date().toISOString();
-    const portalUserId = auth.isAdmin
-      ? `admin-${auth.payload.userId}`
-      : auth.portalUserId;
+    const portalUserId = auth.portalUserId;
 
     // Decrement source
     const newSrcQty = (srcStock.quantity as number) - transferQty;
