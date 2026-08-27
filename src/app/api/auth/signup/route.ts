@@ -9,6 +9,7 @@ import { createOrganization, isSlugAvailable, isValidSlug, slugify } from '@/lib
 import { RESERVED_SUBDOMAINS } from '@/lib/tenant';
 import { sendVerificationEmail } from '@/lib/email/verification-email';
 import { getSelfSignupEnabled } from '@/lib/platform-settings.server';
+import { isShopNameAvailable } from '@/lib/shops.server';
 
 const VERIFICATION_TOKEN_TTL_MS = 24 * 60 * 60 * 1000;
 
@@ -47,6 +48,12 @@ export async function POST(request: NextRequest) {
     }
     if (!(await isSlugAvailable(slug))) {
       return jsonResponse({ success: false, error: 'That workspace URL is already taken' }, 409);
+    }
+    // The default shop created below is named after orgName — shop names
+    // must be globally unique (not just within one organization), so catch
+    // a collision here before creating anything, rather than mid-signup.
+    if (!(await isShopNameAvailable(orgName))) {
+      return jsonResponse({ success: false, error: 'A shop with that name already exists — please choose a different business name' }, 409);
     }
 
     const normalizedEmail = email.toLowerCase();
@@ -94,6 +101,10 @@ export async function POST(request: NextRequest) {
     if (shopError) {
       await supabaseAdmin.from('User').delete().eq('id', userId);
       await supabaseAdmin.from('Organization').delete().eq('id', organization.id);
+      if (shopError.code === '23505') {
+        logger.warn('Signup: default shop name collided (race)', { orgName });
+        return jsonResponse({ success: false, error: 'A shop with that name already exists — please choose a different business name' }, 409);
+      }
       logger.error('Signup: default shop creation failed', { error: shopError.message });
       return jsonResponse({ success: false, error: 'Failed to set up workspace' }, 500);
     }

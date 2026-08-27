@@ -4,6 +4,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { supabaseAdmin } from './supabase-client';
 import { hashPassword } from './auth.server';
 import { createOrganization, isSlugAvailable, isValidSlug, slugify } from './organizations.server';
+import { uniqueShopNameFor } from './shops.server';
 import { RESERVED_SUBDOMAINS } from './tenant';
 import logger from './logger';
 
@@ -77,9 +78,14 @@ export async function findOrProvisionUserForSocialIdentity(
   }
 
   const shopId = uuidv4();
+  // Shop names must be globally unique. orgName here is auto-generated
+  // ("Jane's Workspace"), not something the user typed and could retry with
+  // a different value on collision, so disambiguate automatically instead
+  // of failing the sign-in — mirrors uniqueSlugFor above.
+  const shopName = await uniqueShopNameFor(orgName);
   const { error: shopError } = await supabaseAdmin.from('Shop').insert([{
     id: shopId,
-    name: orgName,
+    name: shopName,
     location: 'Main',
     isActive: true,
     organizationId: organization.id,

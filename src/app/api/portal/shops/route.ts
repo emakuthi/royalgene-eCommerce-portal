@@ -5,6 +5,7 @@ import logger from '@/lib/logger';
 import { v4 as uuidv4 } from 'uuid';
 import { jsonResponse, optionsResponse } from '@/lib/apiResponse';
 import { assertCanCreate } from '@/lib/entitlements/enforce.server';
+import { isShopNameAvailable } from '@/lib/shops.server';
 
 export async function GET(request: NextRequest) {
   try {
@@ -60,16 +61,8 @@ export async function POST(request: NextRequest) {
       return jsonResponse({ success: false, error: 'Shop name and location are required' }, 400);
     }
 
-    // Prevent duplicate shop names within the same organization (not globally).
-    const { data: existing } = await supabaseAdmin
-      .from('Shop')
-      .select('id')
-      .eq('organizationId', organizationId)
-      .ilike('name', name)
-      .limit(1)
-      .single();
-
-    if (existing) {
+    // Shop names must be globally unique, not just within this organization.
+    if (!(await isShopNameAvailable(name))) {
       logger.warn('Portal create shop failed: duplicate name', { userId: auth.userId, name, endpoint: '/api/portal/shops' });
       return jsonResponse({ success: false, error: 'A shop with that name already exists' }, 409);
     }
@@ -112,6 +105,10 @@ export async function POST(request: NextRequest) {
       .single();
 
     if (error) {
+      if (error.code === '23505') {
+        logger.warn('Portal create shop failed: duplicate name (race)', { userId: auth.userId, name, endpoint: '/api/portal/shops' });
+        return jsonResponse({ success: false, error: 'A shop with that name already exists' }, 409);
+      }
       logger.error('Portal create shop failed (supabase)', { error: error.message, userId: auth.userId, endpoint: '/api/portal/shops' });
       return jsonResponse({ success: false, error: 'Failed to create shop' }, 500);
     }
