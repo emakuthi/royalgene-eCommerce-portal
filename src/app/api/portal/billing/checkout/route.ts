@@ -4,7 +4,7 @@ import { jsonResponse, optionsResponse } from '@/lib/apiResponse';
 import { getPlanById } from '@/lib/billing-plans.server';
 import { getOrganizationById } from '@/lib/organizations.server';
 import { initializeTransaction, isPaystackConfigured } from '@/lib/paystack.server';
-import { getOrgUrl } from '@/lib/urls';
+import { getOrgUrlFor } from '@/lib/urls';
 
 // POST /api/portal/billing/checkout — { planId, interval } -> Paystack checkout URL. Org admin only.
 export async function POST(request: NextRequest) {
@@ -45,7 +45,7 @@ export async function POST(request: NextRequest) {
     amountKobo,
     currency: plan.currency,
     planCode,
-    callbackUrl: getOrgUrl(organization.slug, '/settings?tab=billing'),
+    callbackUrl: getOrgUrlFor(organization, '/settings?tab=billing'),
     metadata: { organizationId: organization.id, planId: plan.id, interval },
   });
 

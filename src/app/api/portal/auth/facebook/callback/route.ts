@@ -4,7 +4,7 @@ import { findOrProvisionUserForSocialIdentity } from '@/lib/social-auth-provisio
 import { buildPortalAuthResponse } from '@/lib/portal-auth-response.server';
 import { consumeOAuthState, clearOAuthState } from '@/lib/oauth-state.server';
 import { trackActivity, extractClientIp, detectDeviceType } from '@/lib/activity-tracker';
-import { getOrgUrl } from '@/lib/urls';
+import { getOrgUrlFor } from '@/lib/urls';
 import logger from '@/lib/logger';
 
 /**
@@ -67,7 +67,7 @@ export async function GET(request: NextRequest) {
   });
 
   const params = new URLSearchParams({ token: result.data.token, name: result.data.user.name || '' });
-  const res = NextResponse.redirect(getOrgUrl(result.data.organization.slug, `/session-bridge?${params.toString()}`));
+  const res = NextResponse.redirect(getOrgUrlFor(result.data.organization, `/session-bridge?${params.toString()}`));
   clearOAuthState(res);
   return res;
 }
