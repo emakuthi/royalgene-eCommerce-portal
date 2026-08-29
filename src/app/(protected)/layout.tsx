@@ -37,23 +37,14 @@ import {
 } from 'lucide-react';
 import { usePortalStore } from '@/lib/store';
 import type { Shop } from '@/lib/types';
-import { loadBranding, BRANDING_EVENT, type BrandingConfig } from '@/lib/branding';
+import { useBranding } from '@/lib/branding-context';
 
-// ── Portal Logo (reads from branding localStorage) ────────────────────────────
+// ── Portal Logo (reads the tenant's server-side branding) ─────────────────────
 function PortalLogo({ size = 'md' }: { size?: 'sm' | 'md' }) {
-  const [branding, setBranding] = useState<BrandingConfig>(() =>
-    typeof window !== 'undefined' ? loadBranding() : { logoSrc: null, companyName: 'Royal Gene', tagline: 'Management Portal' }
-  );
+  const { branding } = useBranding();
 
-  useEffect(() => {
-    setBranding(loadBranding());
-    const handler = (e: Event) => setBranding((e as CustomEvent).detail as BrandingConfig);
-    window.addEventListener(BRANDING_EVENT, handler);
-    return () => window.removeEventListener(BRANDING_EVENT, handler);
-  }, []);
-
-  const usingCustomLogo = Boolean(branding.logoSrc);
-  const imgSrc = branding.logoSrc ?? '/favicon.png';
+  const usingCustomLogo = Boolean(branding.logoUrl);
+  const imgSrc = branding.logoUrl ?? '/favicon.png';
   const px = size === 'sm' ? 28 : 36;
 
   if (!usingCustomLogo) {

@@ -1,41 +1,27 @@
-export interface BrandingConfig {
-  logoSrc: string | null;   // base64 data URL or null (use default /favicon.png)
+// Shared branding types + defaults (safe to import from client or server).
+// Persistence lives in branding.server.ts (Organization columns); the client
+// reads/writes it through /api/portal/branding via BrandingProvider.
+
+export interface TenantBranding {
+  /** Organization.name */
   companyName: string;
+  /** Organization.tagline, or the default */
   tagline: string;
+  /** Organization.logoUrl — small resized data URI, or null for the default mark */
+  logoUrl: string | null;
+  /** Organization.faviconUrl — small resized data URI, or null for the default set */
+  faviconUrl: string | null;
 }
 
-export const BRANDING_DEFAULTS: BrandingConfig = {
-  logoSrc: null,
+export const BRANDING_DEFAULTS: TenantBranding = {
   companyName: 'Royal Gene',
   tagline: 'Management Portal',
+  logoUrl: null,
+  faviconUrl: null,
 };
 
-const KEY = 'portal-branding';
-const EVENT = 'portal-branding-change';
+/** <link rel="icon"> hrefs shipped by default, restored when a tenant clears its custom favicon. */
+export const DEFAULT_FAVICON_LINKS = ['/favicon.ico', '/favicon-32.png', '/favicon-192.png'];
 
-export function loadBranding(): BrandingConfig {
-  if (typeof window === 'undefined') return BRANDING_DEFAULTS;
-  try {
-    const raw = localStorage.getItem(KEY);
-    if (!raw) return BRANDING_DEFAULTS;
-    return { ...BRANDING_DEFAULTS, ...JSON.parse(raw) };
-  } catch {
-    return BRANDING_DEFAULTS;
-  }
-}
-
-export function saveBranding(config: Partial<BrandingConfig>) {
-  const current = loadBranding();
-  const next = { ...current, ...config };
-  localStorage.setItem(KEY, JSON.stringify(next));
-  window.dispatchEvent(new CustomEvent(EVENT, { detail: next }));
-  return next;
-}
-
-export function resetBranding() {
-  localStorage.removeItem(KEY);
-  window.dispatchEvent(new CustomEvent(EVENT, { detail: BRANDING_DEFAULTS }));
-}
-
-export { EVENT as BRANDING_EVENT };
-
+/** Max bytes for a stored logo/favicon data URI (they're resized client-side well below this). */
+export const MAX_BRANDING_DATA_URI_BYTES = 256 * 1024;

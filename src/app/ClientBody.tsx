@@ -6,10 +6,19 @@ import CssBaseline from '@mui/material/CssBaseline';
 import { lightTheme, darkTheme } from '@/lib/mui-theme';
 import createEmotionCache from '@/lib/emotion-cache';
 import { CacheProvider } from '@emotion/react';
+import { BrandingProvider } from '@/lib/branding-context';
+import { BRANDING_DEFAULTS, type TenantBranding } from '@/lib/branding';
+import DynamicFavicon from '@/components/DynamicFavicon';
 
 const clientCache = createEmotionCache();
 
-export default function ClientBody({ children }: { children: React.ReactNode }) {
+export default function ClientBody({
+  children,
+  initialBranding = BRANDING_DEFAULTS,
+}: {
+  children: React.ReactNode;
+  initialBranding?: TenantBranding;
+}) {
   const [hydrated, setHydrated] = useState(false);
 
   useEffect(() => {
@@ -19,11 +28,14 @@ export default function ClientBody({ children }: { children: React.ReactNode }) 
 
   return (
     <AppThemeProvider>
-      {hydrated ? (
-        <InnerMuiProvider>{children}</InnerMuiProvider>
-      ) : (
-        <div className="antialiased">{children}</div>
-      )}
+      <BrandingProvider initial={initialBranding}>
+        <DynamicFavicon />
+        {hydrated ? (
+          <InnerMuiProvider>{children}</InnerMuiProvider>
+        ) : (
+          <div className="antialiased">{children}</div>
+        )}
+      </BrandingProvider>
     </AppThemeProvider>
   );
 }
@@ -40,4 +52,3 @@ function InnerMuiProvider({ children }: { children: React.ReactNode }) {
     </CacheProvider>
   );
 }
-
