@@ -11,7 +11,7 @@ import { useHydratedAuth } from '@/lib/hooks';
 import { usePortalStore } from '@/lib/store';
 import { toast } from 'sonner';
 import { Eye, EyeOff, Store, ShieldCheck, BarChart3, Package } from 'lucide-react';
-import { loadBranding, BRANDING_EVENT, BRANDING_DEFAULTS, type BrandingConfig } from '@/lib/branding';
+import { useBranding } from '@/lib/branding-context';
 import { extractSubdomain, ROOT_DOMAIN } from '@/lib/tenant';
 import { getGoogleStartUrl, getFacebookStartUrl } from '@/lib/social-auth-urls';
 
@@ -48,14 +48,7 @@ function PortalLoginPageInner() {
 	const [loading, setLoading] = useState(false);
 	const [showPassword, setShowPassword] = useState(false);
 	const [formData, setFormData] = useState({ email: '', password: '' });
-	const [branding, setBranding] = useState<BrandingConfig>(BRANDING_DEFAULTS);
-
-	useEffect(() => {
-		setBranding(loadBranding());
-		const handler = (e: Event) => setBranding((e as CustomEvent).detail as BrandingConfig);
-		window.addEventListener(BRANDING_EVENT, handler);
-		return () => window.removeEventListener(BRANDING_EVENT, handler);
-	}, []);
+	const { branding } = useBranding();
 
 	useEffect(() => {
 		const error = searchParams.get('error');
@@ -92,8 +85,8 @@ function PortalLoginPageInner() {
 
 	if (!mounted) return null;
 
-	const logoSrc = branding.logoSrc ?? '/logo.png';
-	const usingCustomLogo = Boolean(branding.logoSrc);
+	const logoSrc = branding.logoUrl ?? '/logo.png';
+	const usingCustomLogo = Boolean(branding.logoUrl);
 
 	return (
 		<div className="min-h-screen flex">

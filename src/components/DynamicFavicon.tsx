@@ -1,37 +1,32 @@
 'use client';
 
 import { useEffect } from 'react';
-import { BRANDING_EVENT, DEFAULT_FAVICON_LINKS, loadBranding, type BrandingConfig } from '@/lib/branding';
+import { DEFAULT_FAVICON_LINKS } from '@/lib/branding';
+import { useBranding } from '@/lib/branding-context';
 
 /**
- * Applies a custom favicon (Settings → Appearance → Branding) by rewriting the
- * <link rel="icon"> tags at runtime. Like the logo, the value lives in this
- * browser's localStorage — no server round-trip, no effect on other viewers.
+ * Keeps the <link rel="icon"> tags in sync with the tenant's branding.
+ * generateMetadata() already renders the right icon server-side; this handles
+ * client-side branding changes (Settings → Branding) without a full reload.
  * Renders nothing.
  */
 export default function DynamicFavicon() {
+  const { branding } = useBranding();
+  const favicon = branding.faviconUrl;
+
   useEffect(() => {
-    const apply = (b: BrandingConfig) => {
-      const head = document.head;
-      // Drop any icon links we (or Next's metadata) previously set.
-      head.querySelectorAll('link[rel~="icon"], link[data-dynamic-favicon]').forEach((el) => el.remove());
+    const head = document.head;
+    head.querySelectorAll('link[rel~="icon"], link[data-dynamic-favicon]').forEach((el) => el.remove());
 
-      const hrefs = b.faviconSrc ? [b.faviconSrc] : DEFAULT_FAVICON_LINKS;
-      for (const href of hrefs) {
-        const link = document.createElement('link');
-        link.rel = 'icon';
-        link.href = href;
-        link.dataset.dynamicFavicon = 'true';
-        head.appendChild(link);
-      }
-    };
-
-    apply(loadBranding());
-
-    const onChange = (e: Event) => apply((e as CustomEvent<BrandingConfig>).detail ?? loadBranding());
-    window.addEventListener(BRANDING_EVENT, onChange);
-    return () => window.removeEventListener(BRANDING_EVENT, onChange);
-  }, []);
+    const hrefs = favicon ? [favicon] : DEFAULT_FAVICON_LINKS;
+    for (const href of hrefs) {
+      const link = document.createElement('link');
+      link.rel = 'icon';
+      link.href = href;
+      link.dataset.dynamicFavicon = 'true';
+      head.appendChild(link);
+    }
+  }, [favicon]);
 
   return null;
 }

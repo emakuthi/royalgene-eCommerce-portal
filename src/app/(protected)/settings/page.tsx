@@ -36,7 +36,8 @@ import {
   Plug,
 } from 'lucide-react';
 import { useSignOut } from '@/components/portal/SignOutProvider';
-import { loadBranding, saveBranding, resetBranding, BRANDING_DEFAULTS, type BrandingConfig } from '@/lib/branding';
+import { BRANDING_DEFAULTS, type TenantBranding } from '@/lib/branding';
+import { useBranding } from '@/lib/branding-context';
 import { getCurrentOrganization } from '@/lib/organizations';
 import {
   startBillingCheckout,
@@ -186,7 +187,10 @@ export default function PortalSettingsPage() {
   const avatarInputRef = useRef<HTMLInputElement>(null);
   const logoInputRef = useRef<HTMLInputElement>(null);
   const faviconInputRef = useRef<HTMLInputElement>(null);
-  const [branding, setBranding] = useState<BrandingConfig>(BRANDING_DEFAULTS);
+  const { branding: serverBranding, set: setServerBranding } = useBranding();
+  // Local editing buffer for the name/tagline inputs; images save immediately.
+  const [branding, setBranding] = useState<TenantBranding>(serverBranding);
+  const [brandingBusy, setBrandingBusy] = useState(false);
 
   const [profileForm, setProfileForm] = useState({ name: '', phone: '' });
   const [pwForm, setPwForm] = useState({ current: '', next: '', confirm: '' });
@@ -448,8 +452,10 @@ export default function PortalSettingsPage() {
       setAccentHsl(savedAccent);
       document.documentElement.style.setProperty('--primary', savedAccent);
     }
-    setBranding(loadBranding());
   }, [user]);
+
+  // Keep the editing buffer in sync when the tenant's stored branding changes.
+  useEffect(() => { setBranding(serverBranding); }, [serverBranding]);
 
   const applyAccent = (hsl: string) => {
     setAccentHsl(hsl);
@@ -501,73 +507,67 @@ export default function PortalSettingsPage() {
     toast.success('Profile photo removed');
   };
 
-  const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  // Persist a branding change for the whole tenant via the API.
+  const putBranding = async (patch: Partial<TenantBranding>, successMsg: string) => {
+    setBrandingBusy(true);
+    try {
+      const res = await fetch('/api/portal/branding', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        body: JSON.stringify(patch),
+      });
+      const json = await res.json();
+      if (json?.success && json.data) {
+        setServerBranding(json.data as TenantBranding);
+        setBranding(json.data as TenantBranding);
+        toast.success(successMsg);
+      } else {
+        toast.error(json?.error || 'Failed to save branding');
+      }
+    } catch {
+      toast.error('Failed to save branding');
+    } finally {
+      setBrandingBusy(false);
+    }
+  };
+
+  const resizeToDataUrl = (file: File, size: number, done: (dataUrl: string) => void) => {
     if (!file.type.startsWith('image/')) { toast.error('Please select an image file'); return; }
     if (file.size > 2 * 1024 * 1024) { toast.error('Image must be smaller than 2 MB'); return; }
     const reader = new FileReader();
     reader.onload = (ev) => {
-      const dataUrl = ev.target?.result as string;
       const img = new window.Image();
       img.onload = () => {
-        const size = 128;
         const canvas = document.createElement('canvas');
         canvas.width = size; canvas.height = size;
         const ctx = canvas.getContext('2d')!;
         const scale = Math.min(size / img.width, size / img.height);
         const w = img.width * scale; const h = img.height * scale;
         ctx.drawImage(img, (size - w) / 2, (size - h) / 2, w, h);
-        const resized = canvas.toDataURL('image/png');
-        const next = saveBranding({ logoSrc: resized });
-        setBranding(next);
-        toast.success('Logo updated');
+        done(canvas.toDataURL('image/png'));
       };
-      img.src = dataUrl;
+      img.src = ev.target?.result as string;
     };
     reader.readAsDataURL(file);
+  };
+
+  const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) resizeToDataUrl(file, 128, (logoUrl) => void putBranding({ logoUrl }, 'Logo updated'));
     e.target.value = '';
   };
 
   const handleFaviconUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file) return;
-    if (!file.type.startsWith('image/')) { toast.error('Please select an image file'); return; }
-    if (file.size > 2 * 1024 * 1024) { toast.error('Image must be smaller than 2 MB'); return; }
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      const dataUrl = ev.target?.result as string;
-      const img = new window.Image();
-      img.onload = () => {
-        const size = 64;
-        const canvas = document.createElement('canvas');
-        canvas.width = size; canvas.height = size;
-        const ctx = canvas.getContext('2d')!;
-        const scale = Math.min(size / img.width, size / img.height);
-        const w = img.width * scale; const h = img.height * scale;
-        ctx.drawImage(img, (size - w) / 2, (size - h) / 2, w, h);
-        const resized = canvas.toDataURL('image/png');
-        const next = saveBranding({ faviconSrc: resized });
-        setBranding(next);
-        toast.success('Favicon updated');
-      };
-      img.src = dataUrl;
-    };
-    reader.readAsDataURL(file);
+    if (file) resizeToDataUrl(file, 64, (faviconUrl) => void putBranding({ faviconUrl }, 'Favicon updated'));
     e.target.value = '';
   };
 
-  const handleBrandingTextSave = () => {
-    const next = saveBranding({ companyName: branding.companyName, tagline: branding.tagline });
-    setBranding(next);
-    toast.success('Branding saved');
-  };
+  const handleBrandingTextSave = () =>
+    void putBranding({ companyName: branding.companyName, tagline: branding.tagline }, 'Branding saved');
 
-  const handleResetBranding = () => {
-    resetBranding();
-    setBranding(loadBranding());
-    toast.success('Branding reset to defaults');
-  };
+  const handleResetBranding = () =>
+    void putBranding({ tagline: '', logoUrl: null, faviconUrl: null }, 'Branding reset to defaults');
 
   const handleThemeSelect = (mode: 'light' | 'dark' | 'system') => {
     setThemeMode(mode);
@@ -931,7 +931,13 @@ export default function PortalSettingsPage() {
             </Section>
 
             {/* ── Branding ── */}
-            <Section title="Branding" description="Customise the logo, favicon, name, and tagline shown in the portal. Stored in this browser.">
+            <Section title="Branding" description="The logo, favicon, name, and tagline shown across this workspace — for everyone.">
+              {!isBillingAdmin && (
+                <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+                  Only a workspace admin can change branding.
+                </p>
+              )}
+              <fieldset disabled={!isBillingAdmin || brandingBusy} className="disabled:opacity-60">
               <input ref={logoInputRef} type="file" accept="image/*" className="hidden" onChange={handleLogoUpload} />
               <input ref={faviconInputRef} type="file" accept="image/*" className="hidden" onChange={handleFaviconUpload} />
 
@@ -943,8 +949,8 @@ export default function PortalSettingsPage() {
                   onClick={() => logoInputRef.current?.click()}
                   className="relative w-16 h-16 rounded-2xl overflow-hidden border-2 border-dashed border-[hsl(var(--border))] hover:border-[hsl(var(--primary))] flex items-center justify-center bg-gray-50 dark:bg-gray-800 transition-all group flex-shrink-0"
                 >
-                  {branding.logoSrc ? (
-                    <Image src={branding.logoSrc} alt="Logo" width={64} height={64} className="w-full h-full object-contain p-1" unoptimized />
+                  {branding.logoUrl ? (
+                    <Image src={branding.logoUrl} alt="Logo" width={64} height={64} className="w-full h-full object-contain p-1" unoptimized />
                   ) : (
                     <Image src="/favicon.png" alt="Default logo" width={40} height={40} className="object-contain opacity-50" />
                   )}
@@ -956,13 +962,13 @@ export default function PortalSettingsPage() {
                   <div className="flex gap-2">
                     <Button type="button" variant="outline" onClick={() => logoInputRef.current?.click()}>
                       <ImageIcon className="h-4 w-4 mr-2" />
-                      {branding.logoSrc ? 'Change Logo' : 'Upload Logo'}
+                      {branding.logoUrl ? 'Change Logo' : 'Upload Logo'}
                     </Button>
-                    {branding.logoSrc && (
+                    {branding.logoUrl && (
                       <Button
                         type="button"
                         variant="ghost"
-                        onClick={() => { const n = saveBranding({ logoSrc: null }); setBranding(n); toast.success('Logo removed'); }}
+                        onClick={() => void putBranding({ logoUrl: null }, 'Logo removed')}
                         className="text-red-500 hover:text-red-600"
                       >
                         Remove
@@ -981,11 +987,11 @@ export default function PortalSettingsPage() {
                   className="relative w-16 h-16 rounded-2xl overflow-hidden border-2 border-dashed border-[hsl(var(--border))] hover:border-[hsl(var(--primary))] flex items-center justify-center bg-gray-50 dark:bg-gray-800 transition-all group flex-shrink-0"
                 >
                   <Image
-                    src={branding.faviconSrc ?? '/favicon-32.png'}
+                    src={branding.faviconUrl ?? '/favicon-32.png'}
                     alt="Favicon"
                     width={32}
                     height={32}
-                    className={branding.faviconSrc ? 'w-8 h-8 object-contain' : 'w-8 h-8 object-contain opacity-50'}
+                    className={branding.faviconUrl ? 'w-8 h-8 object-contain' : 'w-8 h-8 object-contain opacity-50'}
                     unoptimized
                   />
                   <div className="absolute inset-0 rounded-2xl bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
@@ -996,13 +1002,13 @@ export default function PortalSettingsPage() {
                   <div className="flex gap-2">
                     <Button type="button" variant="outline" onClick={() => faviconInputRef.current?.click()}>
                       <ImageIcon className="h-4 w-4 mr-2" />
-                      {branding.faviconSrc ? 'Change Favicon' : 'Upload Favicon'}
+                      {branding.faviconUrl ? 'Change Favicon' : 'Upload Favicon'}
                     </Button>
-                    {branding.faviconSrc && (
+                    {branding.faviconUrl && (
                       <Button
                         type="button"
                         variant="ghost"
-                        onClick={() => { const n = saveBranding({ faviconSrc: null }); setBranding(n); toast.success('Favicon reset to default'); }}
+                        onClick={() => void putBranding({ faviconUrl: null }, 'Favicon reset to default')}
                         className="text-red-500 hover:text-red-600"
                       >
                         Remove
@@ -1039,8 +1045,8 @@ export default function PortalSettingsPage() {
                   <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-widest px-3 pt-2.5 pb-1.5">Preview</p>
                   <div className="flex items-center gap-2 px-3 pb-3">
                     <div className="w-9 h-9 rounded-lg overflow-hidden flex items-center justify-center bg-gray-50 dark:bg-gray-800 border border-[hsl(var(--border))] flex-shrink-0">
-                      {branding.logoSrc
-                        ? <Image src={branding.logoSrc} alt="Logo preview" width={36} height={36} className="w-full h-full object-contain p-0.5" unoptimized />
+                      {branding.logoUrl
+                        ? <Image src={branding.logoUrl} alt="Logo preview" width={36} height={36} className="w-full h-full object-contain p-0.5" unoptimized />
                         : <Image src="/favicon.png" alt="Default" width={28} height={28} className="object-contain" />
                       }
                     </div>
@@ -1052,13 +1058,14 @@ export default function PortalSettingsPage() {
                 </div>
 
                 <div className="flex items-center gap-3 pt-1">
-                  <Button type="button" onClick={handleBrandingTextSave}>Save Branding</Button>
-                  <Button type="button" variant="ghost" onClick={handleResetBranding} className="text-gray-500">
+                  <Button type="button" onClick={handleBrandingTextSave} disabled={brandingBusy}>Save Branding</Button>
+                  <Button type="button" variant="ghost" onClick={handleResetBranding} className="text-gray-500" disabled={brandingBusy}>
                     <RotateCcw className="h-3.5 w-3.5 mr-1.5" />
                     Reset to Default
                   </Button>
                 </div>
               </div>
+              </fieldset>
             </Section>
           </>
         )}
