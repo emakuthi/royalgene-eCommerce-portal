@@ -37,6 +37,8 @@ export interface Organization {
   createdBy?: string | null;
   createdAt: string;
   updatedAt: string;
+  /** Soft-delete marker (platform admin). NULL = live. */
+  deletedAt?: string | null;
 }
 
 export interface PlatformPlan {
