@@ -1,11 +1,13 @@
 export interface BrandingConfig {
-  logoSrc: string | null;   // base64 data URL or null (use default /favicon.png)
+  logoSrc: string | null;    // base64 data URL or null (use default /favicon.png)
+  faviconSrc: string | null; // base64 data URL or null (use the default /favicon.* set)
   companyName: string;
   tagline: string;
 }
 
 export const BRANDING_DEFAULTS: BrandingConfig = {
   logoSrc: null,
+  faviconSrc: null,
   companyName: 'Royal Gene',
   tagline: 'Management Portal',
 };
@@ -39,3 +41,5 @@ export function resetBranding() {
 
 export { EVENT as BRANDING_EVENT };
 
+/** The <link rel="icon"> hrefs the app ships by default, restored when a custom favicon is cleared. */
+export const DEFAULT_FAVICON_LINKS = ['/favicon.ico', '/favicon-32.png', '/favicon-192.png'];

@@ -11,7 +11,7 @@ import { useHydratedAuth } from '@/lib/hooks';
 import { usePortalStore } from '@/lib/store';
 import { toast } from 'sonner';
 import { Eye, EyeOff, Store, ShieldCheck, BarChart3, Package } from 'lucide-react';
-import { loadBranding, BRANDING_EVENT, type BrandingConfig } from '@/lib/branding';
+import { loadBranding, BRANDING_EVENT, BRANDING_DEFAULTS, type BrandingConfig } from '@/lib/branding';
 import { extractSubdomain, ROOT_DOMAIN } from '@/lib/tenant';
 import { getGoogleStartUrl, getFacebookStartUrl } from '@/lib/social-auth-urls';
 
@@ -48,11 +48,7 @@ function PortalLoginPageInner() {
 	const [loading, setLoading] = useState(false);
 	const [showPassword, setShowPassword] = useState(false);
 	const [formData, setFormData] = useState({ email: '', password: '' });
-	const [branding, setBranding] = useState<BrandingConfig>({
-		logoSrc: null,
-		companyName: 'Royal Gene',
-		tagline: 'Management Portal',
-	});
+	const [branding, setBranding] = useState<BrandingConfig>(BRANDING_DEFAULTS);
 
 	useEffect(() => {
 		setBranding(loadBranding());

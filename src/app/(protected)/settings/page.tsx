@@ -36,7 +36,7 @@ import {
   Plug,
 } from 'lucide-react';
 import { useSignOut } from '@/components/portal/SignOutProvider';
-import { loadBranding, saveBranding, resetBranding, type BrandingConfig } from '@/lib/branding';
+import { loadBranding, saveBranding, resetBranding, BRANDING_DEFAULTS, type BrandingConfig } from '@/lib/branding';
 import { getCurrentOrganization } from '@/lib/organizations';
 import {
   startBillingCheckout,
@@ -185,7 +185,8 @@ export default function PortalSettingsPage() {
   const [avatarUploading, setAvatarUploading] = useState(false);
   const avatarInputRef = useRef<HTMLInputElement>(null);
   const logoInputRef = useRef<HTMLInputElement>(null);
-  const [branding, setBranding] = useState<BrandingConfig>({ logoSrc: null, companyName: 'Royal Gene', tagline: 'Management Portal' });
+  const faviconInputRef = useRef<HTMLInputElement>(null);
+  const [branding, setBranding] = useState<BrandingConfig>(BRANDING_DEFAULTS);
 
   const [profileForm, setProfileForm] = useState({ name: '', phone: '' });
   const [pwForm, setPwForm] = useState({ current: '', next: '', confirm: '' });
@@ -521,6 +522,34 @@ export default function PortalSettingsPage() {
         const next = saveBranding({ logoSrc: resized });
         setBranding(next);
         toast.success('Logo updated');
+      };
+      img.src = dataUrl;
+    };
+    reader.readAsDataURL(file);
+    e.target.value = '';
+  };
+
+  const handleFaviconUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith('image/')) { toast.error('Please select an image file'); return; }
+    if (file.size > 2 * 1024 * 1024) { toast.error('Image must be smaller than 2 MB'); return; }
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const dataUrl = ev.target?.result as string;
+      const img = new window.Image();
+      img.onload = () => {
+        const size = 64;
+        const canvas = document.createElement('canvas');
+        canvas.width = size; canvas.height = size;
+        const ctx = canvas.getContext('2d')!;
+        const scale = Math.min(size / img.width, size / img.height);
+        const w = img.width * scale; const h = img.height * scale;
+        ctx.drawImage(img, (size - w) / 2, (size - h) / 2, w, h);
+        const resized = canvas.toDataURL('image/png');
+        const next = saveBranding({ faviconSrc: resized });
+        setBranding(next);
+        toast.success('Favicon updated');
       };
       img.src = dataUrl;
     };
@@ -902,8 +931,9 @@ export default function PortalSettingsPage() {
             </Section>
 
             {/* ── Branding ── */}
-            <Section title="Branding" description="Customise the logo, name, and tagline shown in the portal header. Stored in this browser.">
+            <Section title="Branding" description="Customise the logo, favicon, name, and tagline shown in the portal. Stored in this browser.">
               <input ref={logoInputRef} type="file" accept="image/*" className="hidden" onChange={handleLogoUpload} />
+              <input ref={faviconInputRef} type="file" accept="image/*" className="hidden" onChange={handleFaviconUpload} />
 
               {/* Logo upload */}
               <div className="flex items-center gap-5 pb-5 border-b border-[hsl(var(--border))]">
@@ -939,7 +969,47 @@ export default function PortalSettingsPage() {
                       </Button>
                     )}
                   </div>
-                  <p className="text-xs text-gray-400 dark:text-gray-500">PNG, SVG, JPG · Max 2 MB · Displayed at 36×36 px</p>
+                  <p className="text-xs text-gray-400 dark:text-gray-500">Logo · PNG, SVG, JPG · Max 2 MB · Displayed at 36×36 px</p>
+                </div>
+              </div>
+
+              {/* Favicon upload */}
+              <div className="flex items-center gap-5 py-5 border-b border-[hsl(var(--border))]">
+                <button
+                  type="button"
+                  onClick={() => faviconInputRef.current?.click()}
+                  className="relative w-16 h-16 rounded-2xl overflow-hidden border-2 border-dashed border-[hsl(var(--border))] hover:border-[hsl(var(--primary))] flex items-center justify-center bg-gray-50 dark:bg-gray-800 transition-all group flex-shrink-0"
+                >
+                  <Image
+                    src={branding.faviconSrc ?? '/favicon-32.png'}
+                    alt="Favicon"
+                    width={32}
+                    height={32}
+                    className={branding.faviconSrc ? 'w-8 h-8 object-contain' : 'w-8 h-8 object-contain opacity-50'}
+                    unoptimized
+                  />
+                  <div className="absolute inset-0 rounded-2xl bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                    <Camera className="h-5 w-5 text-white" />
+                  </div>
+                </button>
+                <div className="flex flex-col gap-2">
+                  <div className="flex gap-2">
+                    <Button type="button" variant="outline" onClick={() => faviconInputRef.current?.click()}>
+                      <ImageIcon className="h-4 w-4 mr-2" />
+                      {branding.faviconSrc ? 'Change Favicon' : 'Upload Favicon'}
+                    </Button>
+                    {branding.faviconSrc && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        onClick={() => { const n = saveBranding({ faviconSrc: null }); setBranding(n); toast.success('Favicon reset to default'); }}
+                        className="text-red-500 hover:text-red-600"
+                      >
+                        Remove
+                      </Button>
+                    )}
+                  </div>
+                  <p className="text-xs text-gray-400 dark:text-gray-500">Favicon · square PNG · Max 2 MB · Shown in the browser tab</p>
                 </div>
               </div>
 

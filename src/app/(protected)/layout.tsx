@@ -37,12 +37,12 @@ import {
 } from 'lucide-react';
 import { usePortalStore } from '@/lib/store';
 import type { Shop } from '@/lib/types';
-import { loadBranding, BRANDING_EVENT, type BrandingConfig } from '@/lib/branding';
+import { loadBranding, BRANDING_EVENT, BRANDING_DEFAULTS, type BrandingConfig } from '@/lib/branding';
 
 // ── Portal Logo (reads from branding localStorage) ────────────────────────────
 function PortalLogo({ size = 'md' }: { size?: 'sm' | 'md' }) {
   const [branding, setBranding] = useState<BrandingConfig>(() =>
-    typeof window !== 'undefined' ? loadBranding() : { logoSrc: null, companyName: 'Royal Gene', tagline: 'Management Portal' }
+    typeof window !== 'undefined' ? loadBranding() : BRANDING_DEFAULTS
   );
 
   useEffect(() => {

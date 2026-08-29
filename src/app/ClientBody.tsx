@@ -6,6 +6,7 @@ import CssBaseline from '@mui/material/CssBaseline';
 import { lightTheme, darkTheme } from '@/lib/mui-theme';
 import createEmotionCache from '@/lib/emotion-cache';
 import { CacheProvider } from '@emotion/react';
+import DynamicFavicon from '@/components/DynamicFavicon';
 
 const clientCache = createEmotionCache();
 
@@ -19,6 +20,7 @@ export default function ClientBody({ children }: { children: React.ReactNode }) 
 
   return (
     <AppThemeProvider>
+      <DynamicFavicon />
       {hydrated ? (
         <InnerMuiProvider>{children}</InnerMuiProvider>
       ) : (
