@@ -1,5 +1,6 @@
 // Lightweight client helpers for the platform (super_admin) console — mirrors src/lib/shops.ts's pattern.
 import type { Organization, PlatformPlan } from './types';
+import type { DomainState } from './domains';
 
 export interface ApiResult<T = unknown> {
   ok: boolean;
@@ -63,18 +64,55 @@ export function getPlatformCapacity(token?: string | null) {
   return request<PlatformCapacity>('/api/platform/capacity', token);
 }
 
-export function listPlatformOrganizations(token?: string | null) {
-  return request<OrganizationWithCounts[]>('/api/platform/organizations', token);
+export function listPlatformOrganizations(token?: string | null, opts: { includeDeleted?: boolean } = {}) {
+  const qs = opts.includeDeleted ? '?includeDeleted=true' : '';
+  return request<OrganizationWithCounts[]>(`/api/platform/organizations${qs}`, token);
 }
 
 export function updatePlatformOrganization(
   token: string | null | undefined,
   id: string,
-  payload: { status?: Organization['status']; planTier?: Organization['planTier'] },
+  payload: { name?: string; status?: Organization['status']; planTier?: Organization['planTier'] },
 ) {
   return request<Organization>(`/api/platform/organizations/${encodeURIComponent(id)}`, token, {
     method: 'PATCH',
     body: JSON.stringify(payload),
+  });
+}
+
+/** Soft delete by default; { purge: true, confirm: "<slug>" } permanently removes all tenant data. */
+export function deletePlatformOrganization(
+  token: string | null | undefined,
+  id: string,
+  opts: { purge?: boolean; confirm?: string } = {},
+) {
+  const qs = opts.purge ? '?purge=true' : '';
+  return request<Organization | null>(`/api/platform/organizations/${encodeURIComponent(id)}${qs}`, token, {
+    method: 'DELETE',
+    ...(opts.purge ? { body: JSON.stringify({ confirm: opts.confirm ?? '' }) } : {}),
+  });
+}
+
+export function restorePlatformOrganization(token: string | null | undefined, id: string) {
+  return request<Organization>(`/api/platform/organizations/${encodeURIComponent(id)}/restore`, token, {
+    method: 'POST',
+  });
+}
+
+export function getPlatformOrgDomain(token: string | null | undefined, id: string) {
+  return request<DomainState>(`/api/platform/organizations/${encodeURIComponent(id)}/domain`, token);
+}
+
+export function setPlatformOrgDomain(token: string | null | undefined, id: string, domain: string) {
+  return request<DomainState>(`/api/platform/organizations/${encodeURIComponent(id)}/domain`, token, {
+    method: 'POST',
+    body: JSON.stringify({ domain }),
+  });
+}
+
+export function removePlatformOrgDomain(token: string | null | undefined, id: string) {
+  return request<null>(`/api/platform/organizations/${encodeURIComponent(id)}/domain`, token, {
+    method: 'DELETE',
   });
 }
 

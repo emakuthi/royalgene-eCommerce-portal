@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { toast } from 'sonner';
-import { AlertTriangle, Building2, CheckCircle2, Clock, Database, Package, PauseCircle, Plus, Receipt, ShieldCheck, Users, XCircle } from 'lucide-react';
+import { AlertTriangle, Building2, CheckCircle2, Clock, Database, Globe, Package, PauseCircle, Plus, Receipt, RotateCcw, Settings2, ShieldCheck, Trash2, Users, XCircle } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -15,13 +15,18 @@ import { PortalProtected } from '@/components/portal-protected';
 import { useHydratedAuth } from '@/lib/hooks';
 import {
   createPlatformPlan,
+  deletePlatformOrganization,
   getPlanEntitlements,
   getPlatformCapacity,
+  getPlatformOrgDomain,
   getPlatformOverview,
   getPlatformSelfSignupEnabled,
   listPlatformOrganizations,
   listPlatformPlans,
   manageOrganizationSubscription,
+  removePlatformOrgDomain,
+  restorePlatformOrganization,
+  setPlatformOrgDomain,
   setPlatformSelfSignupEnabled,
   updatePlanEntitlements,
   updatePlatformOrganization,
@@ -31,7 +36,12 @@ import {
   type PlatformOverview,
   type PlanEntitlementRow,
 } from '@/lib/platform';
+import { DomainManager } from '@/components/domain/DomainManager';
+import type { DomainState } from '@/lib/domains';
 import type { Organization, PlatformPlan } from '@/lib/types';
+
+/** Fixed id of the grandfathered default tenant — never deletable. */
+const DEFAULT_ORGANIZATION_ID = '00000000-0000-0000-0000-000000000001';
 import { FeatureCode, LimitCode, WIRED_FEATURE_CODES, WIRED_LIMIT_CODES } from '@/lib/entitlements/feature-codes';
 import { FEATURE_LABELS } from '@/components/entitlements/feature-labels';
 
@@ -128,6 +138,23 @@ function PlatformAdminConsole() {
   const [subAssignPlanId, setSubAssignPlanId] = useState('');
   const [subExtraDays, setSubExtraDays] = useState('14');
   const [subBusy, setSubBusy] = useState(false);
+
+  // Manage-tenant dialog (name + custom domain + delete)
+  const [manageOrg, setManageOrg] = useState<OrganizationWithCounts | null>(null);
+  const [manageName, setManageName] = useState('');
+  const [manageBusy, setManageBusy] = useState(false);
+  const [manageDomain, setManageDomain] = useState<DomainState | null>(null);
+  const [manageDomainLoading, setManageDomainLoading] = useState(false);
+
+  // Soft-deleted tenants
+  const [showDeleted, setShowDeleted] = useState(false);
+  const [deletedOrgs, setDeletedOrgs] = useState<OrganizationWithCounts[]>([]);
+  const [deletedLoading, setDeletedLoading] = useState(false);
+
+  // Permanent-delete confirmation
+  const [purgeTarget, setPurgeTarget] = useState<OrganizationWithCounts | null>(null);
+  const [purgeConfirm, setPurgeConfirm] = useState('');
+  const [purgeBusy, setPurgeBusy] = useState(false);
 
   const loadAll = useCallback(async () => {
     if (!token) return;
@@ -285,6 +312,135 @@ function PlatformAdminConsole() {
     setSubBusy(false);
   };
 
+  // ── Manage-tenant dialog ────────────────────────────────────────────────
+  const openManage = (org: OrganizationWithCounts) => {
+    setManageOrg(org);
+    setManageName(org.name);
+    setManageDomain(null);
+    setManageDomainLoading(true);
+    getPlatformOrgDomain(token, org.id).then((res) => {
+      if (res.success && res.data) setManageDomain(res.data);
+      setManageDomainLoading(false);
+    });
+  };
+
+  const applyOrgUpdate = (updated: Organization) => {
+    setOrganizations((prev) => prev.map((o) => (o.id === updated.id ? { ...o, ...updated } : o)));
+    setManageOrg((prev) => (prev && prev.id === updated.id ? { ...prev, ...updated } : prev));
+  };
+
+  const saveManageName = async () => {
+    if (!manageOrg || manageName.trim() === manageOrg.name) return;
+    setManageBusy(true);
+    const res = await updatePlatformOrganization(token, manageOrg.id, { name: manageName.trim() });
+    if (res.success && res.data) {
+      applyOrgUpdate(res.data);
+      toast.success('Name updated');
+    } else {
+      toast.error(res.error || 'Failed to update name');
+    }
+    setManageBusy(false);
+  };
+
+  const refreshManageDomain = async () => {
+    if (!manageOrg) return;
+    setManageBusy(true);
+    const res = await getPlatformOrgDomain(token, manageOrg.id);
+    if (res.success && res.data) {
+      setManageDomain(res.data);
+      applyOrgUpdate({ ...manageOrg, customDomain: res.data.domain, customDomainStatus: res.data.status } as Organization);
+    } else {
+      toast.error(res.error || 'Failed to check domain');
+    }
+    setManageBusy(false);
+  };
+
+  const addManageDomain = async (domain: string) => {
+    if (!manageOrg) return;
+    setManageBusy(true);
+    const res = await setPlatformOrgDomain(token, manageOrg.id, domain);
+    if (res.success && res.data) {
+      setManageDomain(res.data);
+      applyOrgUpdate({ ...manageOrg, customDomain: res.data.domain, customDomainStatus: res.data.status } as Organization);
+      toast.success('Domain added — share the DNS records below with the tenant');
+    } else {
+      toast.error(res.error || 'Failed to add domain');
+    }
+    setManageBusy(false);
+  };
+
+  const removeManageDomain = async () => {
+    if (!manageOrg) return;
+    setManageBusy(true);
+    const res = await removePlatformOrgDomain(token, manageOrg.id);
+    if (res.success) {
+      setManageDomain({ domain: null, status: null, instructions: null });
+      applyOrgUpdate({ ...manageOrg, customDomain: null, customDomainStatus: null } as Organization);
+      toast.success('Domain removed');
+    } else {
+      toast.error(res.error || 'Failed to remove domain');
+    }
+    setManageBusy(false);
+  };
+
+  // ── Soft-delete / restore / purge ──────────────────────────────────────
+  const loadDeleted = useCallback(async () => {
+    if (!token) return;
+    setDeletedLoading(true);
+    const res = await listPlatformOrganizations(token, { includeDeleted: true });
+    if (res.success && res.data) setDeletedOrgs(res.data.filter((o) => o.deletedAt));
+    setDeletedLoading(false);
+  }, [token]);
+
+  useEffect(() => {
+    if (showDeleted) void loadDeleted();
+  }, [showDeleted, loadDeleted]);
+
+  const softDeleteOrg = async (org: OrganizationWithCounts) => {
+    setOrgBusyId(org.id);
+    const res = await deletePlatformOrganization(token, org.id);
+    if (res.success) {
+      setOrganizations((prev) => prev.filter((o) => o.id !== org.id));
+      setManageOrg((prev) => (prev?.id === org.id ? null : prev));
+      toast.success(`${org.name} deleted — recoverable from "Show deleted"`);
+      void loadAll();
+      if (showDeleted) void loadDeleted();
+    } else {
+      toast.error(res.error || 'Failed to delete tenant');
+    }
+    setOrgBusyId(null);
+  };
+
+  const restoreOrg = async (org: OrganizationWithCounts) => {
+    setOrgBusyId(org.id);
+    const res = await restorePlatformOrganization(token, org.id);
+    if (res.success) {
+      toast.success(`${org.name} restored`);
+      void loadAll();
+      void loadDeleted();
+    } else {
+      toast.error(res.error || 'Failed to restore tenant');
+    }
+    setOrgBusyId(null);
+  };
+
+  const confirmPurge = async () => {
+    if (!purgeTarget) return;
+    setPurgeBusy(true);
+    const res = await deletePlatformOrganization(token, purgeTarget.id, { purge: true, confirm: purgeConfirm.trim() });
+    if (res.success) {
+      toast.success(`${purgeTarget.name} permanently deleted`);
+      setDeletedOrgs((prev) => prev.filter((o) => o.id !== purgeTarget.id));
+      setPurgeTarget(null);
+      setPurgeConfirm('');
+    } else {
+      toast.error(res.error || 'Purge failed');
+    }
+    setPurgeBusy(false);
+  };
+
+  const rootDomain = process.env.NEXT_PUBLIC_ROOT_DOMAIN || 'localhost:3001';
+
   return (
     <div className="w-full">
       <PortalHeader
@@ -374,7 +530,13 @@ function PlatformAdminConsole() {
         {/* Organizations */}
         <Card>
           <CardHeader>
-            <CardTitle>Organizations</CardTitle>
+            <div className="flex items-center justify-between">
+              <CardTitle>Organizations</CardTitle>
+              <label className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400 cursor-pointer">
+                Show deleted
+                <Toggle checked={showDeleted} onChange={setShowDeleted} />
+              </label>
+            </div>
           </CardHeader>
           <CardContent>
             <div className="overflow-x-auto">
@@ -395,7 +557,20 @@ function PlatformAdminConsole() {
                     <tr key={org.id} className="border-b border-[hsl(var(--border))]">
                       <td className="py-4">
                         <div className="font-medium text-gray-900 dark:text-white">{org.name}</div>
-                        <div className="text-xs text-gray-500 dark:text-gray-400">{org.slug}.{process.env.NEXT_PUBLIC_ROOT_DOMAIN || 'localhost:3001'}</div>
+                        <div className="text-xs text-gray-500 dark:text-gray-400">{org.slug}.{rootDomain}</div>
+                        {org.customDomain && (
+                          <div className="text-xs mt-0.5 flex items-center gap-1 text-gray-500 dark:text-gray-400">
+                            <Globe className="h-3 w-3" />
+                            {org.customDomain}
+                            <span className={
+                              org.customDomainStatus === 'verified' ? 'text-emerald-600'
+                                : org.customDomainStatus === 'misconfigured' ? 'text-amber-600'
+                                : 'text-gray-400'
+                            }>
+                              ({org.customDomainStatus ?? 'pending'})
+                            </span>
+                          </div>
+                        )}
                       </td>
                       <td className="py-4">
                         <Badge className={`text-xs px-2 py-0.5 ${STATUS_STYLES[org.status]}`}>
@@ -448,6 +623,9 @@ function PlatformAdminConsole() {
                           >
                             Subscription
                           </Button>
+                          <Button size="sm" variant="outline" onClick={() => openManage(org)}>
+                            <Settings2 className="h-4 w-4 mr-1" /> Manage
+                          </Button>
                         </div>
                       </td>
                     </tr>
@@ -462,6 +640,44 @@ function PlatformAdminConsole() {
                 </tbody>
               </table>
             </div>
+
+            {showDeleted && (
+              <div className="mt-6 border-t border-[hsl(var(--border))] pt-4">
+                <h3 className="text-sm font-medium text-gray-900 dark:text-white mb-3">Deleted tenants</h3>
+                {deletedLoading ? (
+                  <p className="text-sm text-gray-500 dark:text-gray-400">Loading…</p>
+                ) : deletedOrgs.length === 0 ? (
+                  <p className="text-sm text-gray-500 dark:text-gray-400">No deleted tenants.</p>
+                ) : (
+                  <div className="space-y-2">
+                    {deletedOrgs.map((org) => (
+                      <div key={org.id} className="flex items-center justify-between gap-3 text-sm px-3 py-2 rounded-lg bg-gray-50 dark:bg-gray-800">
+                        <div>
+                          <span className="font-medium text-gray-900 dark:text-white">{org.name}</span>
+                          <span className="text-gray-500 dark:text-gray-400 ml-2">{org.slug}</span>
+                          {org.deletedAt && (
+                            <span className="text-gray-400 ml-2">deleted {new Date(org.deletedAt).toLocaleDateString()}</span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <Button size="sm" variant="outline" disabled={orgBusyId === org.id} onClick={() => restoreOrg(org)}>
+                            <RotateCcw className="h-4 w-4 mr-1" /> Restore
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="text-red-600 hover:text-red-700"
+                            onClick={() => { setPurgeTarget(org); setPurgeConfirm(''); }}
+                          >
+                            <Trash2 className="h-4 w-4 mr-1" /> Delete permanently
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </CardContent>
         </Card>
 
@@ -723,6 +939,115 @@ function PlatformAdminConsole() {
               <Button variant="outline" className="flex-1" disabled={subBusy} onClick={() => runSubscriptionAction('reactivate')}>
                 Reactivate
               </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Manage Tenant Dialog */}
+      <Dialog open={Boolean(manageOrg)} onOpenChange={(open) => !open && setManageOrg(null)}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Manage tenant — {manageOrg?.name}</DialogTitle>
+            <DialogDescription>
+              {manageOrg?.slug}.{rootDomain}
+            </DialogDescription>
+          </DialogHeader>
+
+          {manageOrg && (
+            <div className="space-y-6 mt-1">
+              {/* Display name */}
+              <div>
+                <Label htmlFor="manage-name">Display name</Label>
+                <div className="flex gap-2 mt-1">
+                  <Input
+                    id="manage-name"
+                    value={manageName}
+                    onChange={(e) => setManageName(e.target.value)}
+                    disabled={manageBusy}
+                    className="flex-1"
+                  />
+                  <Button
+                    size="sm"
+                    disabled={manageBusy || manageName.trim() === manageOrg.name || manageName.trim().length < 2}
+                    onClick={saveManageName}
+                  >
+                    Save
+                  </Button>
+                </div>
+              </div>
+
+              {/* Custom domain */}
+              <div>
+                <Label>Custom domain</Label>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 mb-2">
+                  Serve this tenant on their own domain (e.g. <code>abcd.theirdomain.com</code>) instead of the
+                  default subdomain. Only routes once DNS is verified.
+                </p>
+                <DomainManager
+                  state={manageDomain}
+                  loading={manageDomainLoading}
+                  busy={manageBusy}
+                  placeholder="abcd.theirdomain.com"
+                  onAdd={addManageDomain}
+                  onRefresh={refreshManageDomain}
+                  onRemove={removeManageDomain}
+                />
+              </div>
+
+              {/* Danger zone */}
+              {manageOrg.id !== DEFAULT_ORGANIZATION_ID && (
+                <div className="rounded-lg border border-red-200 dark:border-red-900/50 p-4">
+                  <p className="text-sm font-medium text-red-700 dark:text-red-400">Delete tenant</p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 mb-3">
+                    Marks the workspace deleted, blocks all logins and releases its domain. Recoverable from
+                    &ldquo;Show deleted&rdquo;. Permanent deletion is a separate step.
+                  </p>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="text-red-600 hover:text-red-700"
+                    disabled={orgBusyId === manageOrg.id}
+                    onClick={() => softDeleteOrg(manageOrg)}
+                  >
+                    <Trash2 className="h-4 w-4 mr-1" /> Delete tenant
+                  </Button>
+                </div>
+              )}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Permanent-delete confirmation */}
+      <Dialog open={Boolean(purgeTarget)} onOpenChange={(open) => !open && setPurgeTarget(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Permanently delete {purgeTarget?.name}?</DialogTitle>
+            <DialogDescription>
+              This erases every shop, product, sale, user and record for this tenant. It cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 mt-1">
+            <Label htmlFor="purge-confirm">
+              Type <span className="font-mono font-semibold">{purgeTarget?.slug}</span> to confirm
+            </Label>
+            <Input
+              id="purge-confirm"
+              value={purgeConfirm}
+              onChange={(e) => setPurgeConfirm(e.target.value)}
+              disabled={purgeBusy}
+              autoComplete="off"
+            />
+            <div className="flex gap-3 pt-1">
+              <Button
+                className="flex-1 bg-red-600 hover:bg-red-700 text-white"
+                disabled={purgeBusy || purgeConfirm.trim() !== purgeTarget?.slug}
+                onClick={confirmPurge}
+              >
+                {purgeBusy ? 'Deleting…' : 'Permanently delete'}
+              </Button>
+              <Button variant="outline" type="button" onClick={() => setPurgeTarget(null)}>Cancel</Button>
             </div>
           </div>
         </DialogContent>
