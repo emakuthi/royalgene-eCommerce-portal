@@ -1,6 +1,7 @@
 import 'server-only';
 import { supabaseAdmin } from './supabase-client';
-import { ROOT_DOMAIN } from './tenant';
+import { DEV_TENANT_SLUG, ROOT_DOMAIN } from './tenant';
+import { removeCustomDomain } from './domains.server';
 import { addDomainToProject, isVercelConfigured } from './vercel.server';
 import type { Organization } from './types';
 import logger from './logger';
