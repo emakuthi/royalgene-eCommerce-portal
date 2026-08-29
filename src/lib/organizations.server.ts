@@ -5,6 +5,17 @@ import { addDomainToProject, isVercelConfigured } from './vercel.server';
 import type { Organization } from './types';
 import logger from './logger';
 
+/**
+ * The grandfathered "tenant #1" row every pre-existing RoyalGene record was
+ * backfilled onto (see 20260818_02). It's also whatever the bare apex resolves
+ * to (DEV_TENANT_SLUG). It must never be soft-deleted or purged.
+ */
+export const DEFAULT_ORGANIZATION_ID = '00000000-0000-0000-0000-000000000001';
+
+export function isDefaultOrganization(org: Pick<Organization, 'id' | 'slug'>): boolean {
+  return org.id === DEFAULT_ORGANIZATION_ID || org.slug === DEV_TENANT_SLUG;
+}
+
 export async function getOrganizationBySlug(slug: string): Promise<Organization | null> {
   const { data, error } = await supabaseAdmin
     .from('Organization')
@@ -138,11 +149,15 @@ export interface OrganizationWithCounts extends Organization {
 }
 
 /** Platform-admin view: every organization, with per-org user/shop counts. */
-export async function listOrganizations(): Promise<OrganizationWithCounts[]> {
-  const { data: orgs, error } = await supabaseAdmin
+export async function listOrganizations(opts: { includeDeleted?: boolean } = {}): Promise<OrganizationWithCounts[]> {
+  let query = supabaseAdmin
     .from('Organization')
     .select('*')
     .order('createdAt', { ascending: false });
+
+  if (!opts.includeDeleted) query = query.is('deletedAt', null);
+
+  const { data: orgs, error } = await query;
 
   if (error || !orgs) return [];
 
@@ -185,6 +200,115 @@ export async function updateOrganizationPlan(
     .maybeSingle();
   if (error) throw new Error(error.message);
   return data as Organization | null;
+}
+
+/** Platform admin: edit a tenant's mutable profile fields (currently just the display name). */
+export async function updateOrganizationDetails(
+  organizationId: string,
+  patch: { name?: string },
+): Promise<Organization | null> {
+  const update: Record<string, unknown> = { updatedAt: new Date().toISOString() };
+  if (patch.name !== undefined) {
+    const name = patch.name.trim();
+    if (name.length < 2 || name.length > 100) throw new Error('Name must be 2–100 characters');
+    update.name = name;
+  }
+  const { data, error } = await supabaseAdmin
+    .from('Organization')
+    .update(update)
+    .eq('id', organizationId)
+    .select('*')
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  return data as Organization | null;
+}
+
+/**
+ * Soft-delete: mark cancelled + deletedAt, and release the tenant's custom
+ * domain (frees it on Vercel and clears customDomain so the slug/host can be
+ * reused). Reversible via restoreOrganization. The default tenant is protected.
+ */
+export async function softDeleteOrganization(organizationId: string): Promise<Organization | null> {
+  const { data: existing } = await supabaseAdmin
+    .from('Organization')
+    .select('id, slug')
+    .eq('id', organizationId)
+    .maybeSingle();
+  if (!existing) return null;
+  if (isDefaultOrganization(existing as Organization)) {
+    throw new Error('The default workspace cannot be deleted');
+  }
+
+  // Best-effort: detach the custom domain from Vercel + the org row.
+  try {
+    await removeCustomDomain(organizationId);
+  } catch (err) {
+    logger.warn('[organizations] softDelete: removeCustomDomain failed (continuing)', {
+      organizationId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+
+  const { data, error } = await supabaseAdmin
+    .from('Organization')
+    .update({ status: 'cancelled', deletedAt: new Date().toISOString(), updatedAt: new Date().toISOString() })
+    .eq('id', organizationId)
+    .select('*')
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  return data as Organization | null;
+}
+
+/** Undo a soft-delete: clear deletedAt and set the org back to active. */
+export async function restoreOrganization(organizationId: string): Promise<Organization | null> {
+  const { data, error } = await supabaseAdmin
+    .from('Organization')
+    .update({ status: 'active', deletedAt: null, updatedAt: new Date().toISOString() })
+    .eq('id', organizationId)
+    .not('deletedAt', 'is', null)
+    .select('*')
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  return data as Organization | null;
+}
+
+/**
+ * Hard purge: permanently deletes the org row. Every tenant-scoped table
+ * cascades from the Organization FK (see 20260829_01) so this one DELETE
+ * removes all of the tenant's data. Only permitted on an already
+ * soft-deleted org, and never the default tenant. Irreversible.
+ */
+export async function purgeOrganization(
+  organizationId: string,
+  confirmSlug: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const { data: existing } = await supabaseAdmin
+    .from('Organization')
+    .select('id, slug, deletedAt')
+    .eq('id', organizationId)
+    .maybeSingle();
+  if (!existing) return { ok: false, error: 'Organization not found' };
+  if (isDefaultOrganization(existing as Organization)) {
+    return { ok: false, error: 'The default workspace cannot be deleted' };
+  }
+  if (!(existing as Organization).deletedAt) {
+    return { ok: false, error: 'Soft-delete the tenant before purging it' };
+  }
+  if (confirmSlug !== (existing as Organization).slug) {
+    return { ok: false, error: 'Confirmation does not match the workspace slug' };
+  }
+
+  const { error } = await supabaseAdmin.from('Organization').delete().eq('id', organizationId);
+  if (error) {
+    // Most likely an ON DELETE RESTRICT FK still in place — the 20260829_01
+    // migration hasn't been run against this database yet.
+    logger.error('[organizations] purge failed', { organizationId, error: error.message });
+    return {
+      ok: false,
+      error: `Purge failed: ${error.message}. Ensure migration 20260829_01 has been run.`,
+    };
+  }
+  return { ok: true };
 }
 
 export interface PlatformOverview {

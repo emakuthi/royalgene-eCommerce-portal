@@ -11,6 +11,7 @@ import { ArrowLeft, Check, X } from 'lucide-react';
 import { useTheme } from '@/lib/theme-context';
 import { checkSlugAvailable } from '@/lib/organizations';
 import { getOrgUrl } from '@/lib/urls';
+import { ROOT_DOMAIN } from '@/lib/tenant';
 
 type SlugStatus = 'idle' | 'checking' | 'available' | 'unavailable';
 
@@ -171,7 +172,7 @@ export default function SignupPage() {
                   {slugStatus === 'unavailable' && <X className="h-4 w-4 shrink-0 text-destructive" />}
                 </div>
                 <p className="text-xs text-gray-500 mt-1">
-                  {formData.slug ? `${formData.slug}.royalgene.app` : 'Choose a subdomain for your team'}
+                  {formData.slug ? `${formData.slug}.${ROOT_DOMAIN}` : 'Choose a subdomain for your team'}
                 </p>
               </div>
 

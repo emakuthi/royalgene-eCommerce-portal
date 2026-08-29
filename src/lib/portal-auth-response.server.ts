@@ -7,7 +7,13 @@ export interface PortalAuthPayload {
   user: { id: string; email: string; name: string; role: string };
   portalUser: Record<string, unknown> | null;
   shop: Record<string, unknown> | null;
-  organization: { id: string; name: string; slug: string } | null;
+  organization: {
+    id: string;
+    name: string;
+    slug: string;
+    customDomain?: string | null;
+    customDomainStatus?: 'pending' | 'verified' | 'misconfigured' | null;
+  } | null;
 }
 
 /**
@@ -56,7 +62,7 @@ export async function buildPortalAuthResponse(userId: string): Promise<{ ok: tru
 
   let organization: PortalAuthPayload['organization'] = null;
   if (user.organizationId) {
-    const { data: orgRow } = await supabaseAdmin.from('Organization').select('id, name, slug').eq('id', user.organizationId).maybeSingle();
+    const { data: orgRow } = await supabaseAdmin.from('Organization').select('id, name, slug, customDomain, customDomainStatus').eq('id', user.organizationId).maybeSingle();
     organization = (orgRow as typeof organization) ?? null;
   }
 
