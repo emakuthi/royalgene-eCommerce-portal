@@ -1,7 +1,8 @@
 import 'server-only';
 import { supabaseAdmin } from './supabase-client';
-import { DEV_TENANT_SLUG } from './tenant';
+import { DEV_TENANT_SLUG, ROOT_DOMAIN } from './tenant';
 import { removeCustomDomain } from './domains.server';
+import { addDomainToProject, isVercelConfigured, removeDomainFromProject } from './vercel.server';
 import type { Organization } from './types';
 import logger from './logger';
 
@@ -76,8 +77,35 @@ export async function createOrganization(input: CreateOrganizationInput): Promis
   }
 
   await createTrialSubscription(data.id, trialEndsAt);
+  await registerTenantSubdomain(input.slug);
 
   return data as Organization;
+}
+
+/**
+ * Attach <slug>.<ROOT_DOMAIN> to the Vercel project so the tenant's subdomain
+ * serves over HTTPS immediately after signup. Vercel issues a per-host cert
+ * automatically (HTTP-01) — this does NOT depend on a *.<ROOT_DOMAIN> wildcard
+ * cert existing. Fire-and-forget: a failure (Vercel not configured, API
+ * hiccup, domain already attached) must never block signup — the middleware
+ * still resolves the tenant by slug regardless, only TLS would be delayed.
+ */
+async function registerTenantSubdomain(slug: string): Promise<void> {
+  if (ROOT_DOMAIN.startsWith('localhost')) return;
+  if (!isVercelConfigured()) return;
+
+  const host = `${slug}.${ROOT_DOMAIN.split(':')[0]}`;
+  try {
+    const result = await addDomainToProject(host);
+    if (!result.ok) {
+      logger.warn('[organizations] registerTenantSubdomain: Vercel add failed', { host, error: result.error });
+    }
+  } catch (err) {
+    logger.warn('[organizations] registerTenantSubdomain threw', {
+      host,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
 }
 
 /**
@@ -281,6 +309,20 @@ export async function purgeOrganization(
       error: `Purge failed: ${error.message}. Ensure migration 20260829_01 has been run.`,
     };
   }
+
+  // Best-effort: detach the tenant's platform subdomain from Vercel too.
+  if (!ROOT_DOMAIN.startsWith('localhost') && isVercelConfigured()) {
+    const host = `${(existing as Organization).slug}.${ROOT_DOMAIN.split(':')[0]}`;
+    try {
+      await removeDomainFromProject(host);
+    } catch (err) {
+      logger.warn('[organizations] purge: subdomain cleanup failed', {
+        host,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
   return { ok: true };
 }
 
