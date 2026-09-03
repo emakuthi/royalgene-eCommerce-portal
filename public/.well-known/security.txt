@@ -1,0 +1,7 @@
+# RoyalTrack — security contact (RFC 9116)
+# Verify the latest version at https://royaltrack.royalgenegroup.co.ke/.well-known/security.txt
+
+Contact: mailto:security@royalgenegroup.co.ke
+Expires: 2027-09-01T00:00:00.000Z
+Preferred-Languages: en
+Canonical: https://royaltrack.royalgenegroup.co.ke/.well-known/security.txt
