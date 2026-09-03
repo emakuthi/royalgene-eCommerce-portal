@@ -167,6 +167,8 @@ export async function middleware(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/((?!_next/static|_next/image|favicon.ico).*)'],
+  // Skip Next internals and always-public static assets (favicons, robots,
+  // sitemap, /.well-known/*) so tenant resolution never rewrites them.
+  matcher: ['/((?!_next/static|_next/image|favicon\\.ico|favicon\\.png|favicon-\\d+\\.png|apple-touch-icon\\.png|logo\\.png|robots\\.txt|sitemap\\.xml|\\.well-known/).*)'],
 };
 
