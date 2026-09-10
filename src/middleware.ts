@@ -115,7 +115,12 @@ export async function middleware(req: NextRequest) {
   } else if (org.status === 'suspended' || org.status === 'cancelled') {
     if (!isTenantOptional(pathname)) {
       if (isApiRoute) {
-        return new NextResponse(JSON.stringify({ success: false, error: 'Organization suspended' }), {
+        const cancelled = org.status === 'cancelled';
+        return new NextResponse(JSON.stringify({
+          success: false,
+          error: cancelled ? 'This workspace has been closed' : 'This workspace is suspended',
+          code: cancelled ? 'ORG_CLOSED' : 'ORG_SUSPENDED',
+        }), {
           status: 403,
           headers: { 'Content-Type': 'application/json' },
         });
