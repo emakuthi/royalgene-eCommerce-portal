@@ -1,4 +1,4 @@
-import { supabaseAdmin, supabaseClient } from './supabase-client';
+import { supabaseAdmin } from './supabase-client';
 import { v4 as uuidv4 } from 'uuid';
 import type { User, Product, Order, Invoice, Receipt, PaymentDetails, BankTransferDetails, MpesaDetails, CardDetails } from './types';
 import { deleteUploadedFiles } from './storage-usage.server';
@@ -175,7 +175,7 @@ export async function getProducts(limit?: number) {
   try {
     console.log('[Supabase] Fetching products');
 
-    let query = supabaseClient.from('Product').select('*');
+    let query = supabaseAdmin.from('Product').select('*');
 
     if (limit) query = query.limit(limit);
 
@@ -195,7 +195,7 @@ export async function getProducts(limit?: number) {
 
 export async function getProductById(productId: string) {
   try {
-    const { data, error } = await supabaseClient
+    const { data, error } = await supabaseAdmin
       .from('Product')
       .select('*')
       .eq('id', productId)
@@ -304,7 +304,7 @@ export async function updateOrderPaymentStatus(orderId: string, paymentStatus: '
 
 export async function getOrders(userId?: string) {
   try {
-    let query = supabaseClient.from('Order').select('*');
+    let query = supabaseAdmin.from('Order').select('*');
     if (userId) query = query.eq('userId', userId);
     const { data, error } = await query.order('createdAt', { ascending: false });
     if (error) throw error;
@@ -317,7 +317,7 @@ export async function getOrders(userId?: string) {
 
 export async function getOrderById(orderId: string) {
   try {
-    const { data, error } = await supabaseClient.from('Order').select('*').eq('id', orderId).single();
+    const { data, error } = await supabaseAdmin.from('Order').select('*').eq('id', orderId).single();
     if (error) throw error;
     return data || null;
   } catch (err) {
@@ -340,7 +340,7 @@ export async function createInvoice(invoiceData: Record<string, unknown>) {
 
 export async function getInvoices(userId?: string) {
   try {
-    let query = supabaseClient.from('Invoice').select('*');
+    let query = supabaseAdmin.from('Invoice').select('*');
     if (userId) query = query.eq('user_id', userId);
     const { data, error } = await query.order('created_at', { ascending: false });
     if (error) throw error;
@@ -365,7 +365,7 @@ export async function createReceipt(receiptData: Record<string, unknown>) {
 
 export async function getReceipts(userId?: string) {
   try {
-    let query = supabaseClient.from('Receipt').select('*');
+    let query = supabaseAdmin.from('Receipt').select('*');
     if (userId) query = query.eq('user_id', userId);
     const { data, error } = await query.order('payment_date', { ascending: false });
     if (error) throw error;
@@ -554,7 +554,7 @@ export async function getPaymentDetails(): Promise<PaymentDetails[]> {
 
     // Prefer the normalized snake_case table; fallback to legacy CamelCase table if necessary
     try {
-      const { data, error } = await supabaseClient
+      const { data, error } = await supabaseAdmin
         .from('payment_details')
         .select('*')
         .order('display_order', { ascending: true });
@@ -591,7 +591,7 @@ export async function getPaymentDetails(): Promise<PaymentDetails[]> {
      }
 
     // Fallback to legacy table
-    const { data, error } = await supabaseClient
+    const { data, error } = await supabaseAdmin
       .from('PaymentDetails')
       .select('*')
       .order('displayOrder', { ascending: true });
@@ -612,7 +612,7 @@ export async function getActivePaymentDetails(): Promise<PaymentDetails[]> {
     }
 
     try {
-      const { data, error } = await supabaseClient
+      const { data, error } = await supabaseAdmin
         .from('payment_details')
         .select('*')
         .eq('is_active', true)
@@ -647,7 +647,7 @@ export async function getActivePaymentDetails(): Promise<PaymentDetails[]> {
        console.warn('[Supabase] getActivePaymentDetails: reading payment_details failed, falling back to legacy:', errorToMessage(err));
      }
 
-    const { data, error } = await supabaseClient
+    const { data, error } = await supabaseAdmin
       .from('PaymentDetails')
       .select('*')
       .eq('isActive', true)
@@ -755,7 +755,7 @@ export async function getBankTransferDetails() {
       throw new Error('Supabase credentials not configured');
     }
 
-    const { data, error } = await supabaseClient
+    const { data, error } = await supabaseAdmin
       .from('BankTransferDetails')
       .select('*');
 
@@ -836,7 +836,7 @@ export async function getMpesaDetails() {
       throw new Error('Supabase credentials not configured');
     }
 
-    const { data, error } = await supabaseClient
+    const { data, error } = await supabaseAdmin
       .from('MpesaDetails')
       .select('*');
 
@@ -958,7 +958,7 @@ export async function getCardDetails() {
     }
 
     try {
-      const { data, error } = await supabaseClient.from('card_details').select('*');
+      const { data, error } = await supabaseAdmin.from('card_details').select('*');
       if (!error) {
         return (data || []).map((r: Record<string, unknown>) => ({
           ...r,
@@ -975,7 +975,7 @@ export async function getCardDetails() {
       console.warn('[Supabase] getCardDetails: reading card_details failed, falling back to legacy:', errorToMessage(err));
     }
 
-    const { data, error } = await supabaseClient.from('CardDetails').select('*');
+    const { data, error } = await supabaseAdmin.from('CardDetails').select('*');
     if (error) throw error;
     return data || [];
   } catch (err) {
