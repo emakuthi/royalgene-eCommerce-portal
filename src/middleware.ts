@@ -14,6 +14,7 @@ import {
 // email verification, and the tenant-status pages themselves).
 const TENANT_OPTIONAL_PATHS = [
   '/api/auth/signup',
+  '/api/mobile/auth/signup',
   '/api/auth/signup-status',
   '/api/auth/check-slug',
   '/api/auth/verify-email',
