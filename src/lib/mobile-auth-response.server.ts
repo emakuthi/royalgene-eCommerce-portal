@@ -42,6 +42,13 @@ export async function buildMobileAuthResponse(userId: string): Promise<{ ok: tru
   const { data: user, error: userError } = await supabaseAdmin.from('User').select('*').eq('id', userId).maybeSingle();
   if (userError || !user) return { ok: false, error: 'User not found' };
 
+  // The app is a tenant operations tool. A platform account (super_admin,
+  // no organizationId) has no shop, no inventory and no tenant to act on —
+  // platform staff work from the web console.
+  if (user.role === 'super_admin' || !user.organizationId) {
+    return { ok: false, error: 'Platform accounts sign in on the web console, not the app.' };
+  }
+
   const isAdmin = user.role === 'admin' || user.role === 'super_admin';
 
   const { data: portalUsers } = await supabaseAdmin.from('PortalUser').select('*, Shop(*)').eq('userId', user.id);
