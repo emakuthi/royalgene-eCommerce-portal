@@ -72,6 +72,17 @@ export async function provisionWorkspace(input: ProvisionWorkspaceInput): Promis
   const normalizedEmail = email.toLowerCase().trim();
   const now = new Date().toISOString();
 
+  // One email = one workspace. Enforced here for every new signup even before
+  // the global-unique DB constraint lands (migration 20260910_02).
+  const { data: emailTaken } = await supabaseAdmin
+    .from('User')
+    .select('id')
+    .eq('email', normalizedEmail)
+    .limit(1);
+  if (emailTaken && emailTaken.length > 0) {
+    throw new SignupError(409, 'An account with that email already exists — sign in instead.');
+  }
+
   const organization = await createOrganization({ name: orgName.trim(), slug }).catch((err) => {
     logger.error('provisionWorkspace: organization creation failed', { error: err instanceof Error ? err.message : String(err) });
     throw new SignupError(500, 'Failed to create organization');

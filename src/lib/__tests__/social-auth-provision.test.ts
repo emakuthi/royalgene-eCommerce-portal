@@ -76,16 +76,17 @@ describe('findOrProvisionUserForSocialIdentity', () => {
     expect(result.isNewUser).toBe(true);
   });
 
-  it('scopes the existing-user lookup to the host org — a same-email user in another tenant does not match', async () => {
+  it('matches an existing account by email regardless of the request host', async () => {
     mockTables.User = [{ id: 'user-other', email: 'shared@example.com', organizationId: 'org-other', role: 'admin' }];
     const { findOrProvisionUserForSocialIdentity } = await import('../social-auth-provision.server');
     const result = await findOrProvisionUserForSocialIdentity(
       { email: 'shared@example.com', name: 'Someone', provider: 'google' },
-      ORG_ID, // host org differs from org-other
+      ORG_ID, // host differs from the account's org — no longer relevant
     );
 
-    // Not found in this host's scope -> provisions a new tenant instead of
-    // silently attaching to a different tenant's user.
-    expect(result.isNewUser).toBe(true);
+    // Email is globally unique now: a verified identity is the same person
+    // whatever host they came in on. Attach, don't provision a second tenant.
+    expect(result).toEqual({ userId: 'user-other', isNewUser: false });
+    expect(mockTables.Organization).toHaveLength(1);
   });
 });

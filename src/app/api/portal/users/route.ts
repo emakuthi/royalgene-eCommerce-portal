@@ -82,21 +82,22 @@ export async function POST(request: NextRequest) {
   const limitResponse = await assertCanCreate(organizationId, 'USER');
   if (limitResponse) return limitResponse;
 
-  // Check email uniqueness within the organization
-  const { data: existing } = await supabaseAdmin
+  // One email = one account, across every workspace.
+  const { data: emailRows } = await supabaseAdmin
     .from('User')
     .select('id')
-    .eq('email', email)
-    .eq('organizationId', organizationId)
-    .maybeSingle();
-  if (existing) return jsonResponse({ success: false, error: 'Email already in use' }, 409);
+    .eq('email', String(email).trim().toLowerCase())
+    .limit(1);
+  if (emailRows && emailRows.length > 0) {
+    return jsonResponse({ success: false, error: 'That email already belongs to an account' }, 409);
+  }
 
   const now = new Date().toISOString();
   const userId = uuidv4();
   const hashed = await hashPassword(password);
 
   const { error: userError } = await supabaseAdmin.from('User').insert([{
-    id: userId, email, password: hashed, name,
+    id: userId, email: String(email).trim().toLowerCase(), password: hashed, name,
     role: 'portal_user', twoFactorEnabled: false, organizationId,
     createdAt: now, updatedAt: now,
   }]);

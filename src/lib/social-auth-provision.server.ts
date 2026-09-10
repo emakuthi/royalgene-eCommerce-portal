@@ -35,16 +35,21 @@ async function uniqueSlugFor(baseName: string): Promise<string> {
  * a brand-new tenant (Organization + admin User + default Shop + PortalUser)
  * for it — mirroring /api/auth/signup's orchestration exactly, minus the
  * email-verification-token step (the provider already verified the email).
- * Scoped the same way mobile login is: to the host's resolved org, or
- * platform-level users when there is none.
+ *
+ * Email is globally unique across workspaces, so the match is by email alone
+ * regardless of the request host. `hostOrgId` is accepted for backward
+ * compatibility but no longer scopes the lookup.
  */
 export async function findOrProvisionUserForSocialIdentity(
   identity: SocialIdentity,
-  hostOrgId: string | null,
+  _hostOrgId?: string | null,
 ): Promise<{ userId: string; isNewUser: boolean }> {
-  let userQuery = supabaseAdmin.from('User').select('id').eq('email', identity.email);
-  userQuery = hostOrgId ? userQuery.or(`organizationId.eq.${hostOrgId},organizationId.is.null`) : userQuery.is('organizationId', null);
-  const { data: existing } = await userQuery.maybeSingle();
+  const { data: existingRows } = await supabaseAdmin
+    .from('User')
+    .select('id')
+    .eq('email', identity.email.trim().toLowerCase())
+    .limit(1);
+  const existing = existingRows?.[0];
   if (existing) return { userId: existing.id, isNewUser: false };
 
   const fallbackName = identity.email.split('@')[0];

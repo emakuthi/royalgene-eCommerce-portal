@@ -44,13 +44,11 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const hostOrgId = request.headers.get('x-org-id');
     let userId: string;
     let isNewUser: boolean;
     try {
       const provisioned = await findOrProvisionUserForSocialIdentity(
         { email: identity.email, name: identity.name, provider: 'facebook' },
-        hostOrgId,
       );
       userId = provisioned.userId;
       isNewUser = provisioned.isNewUser;

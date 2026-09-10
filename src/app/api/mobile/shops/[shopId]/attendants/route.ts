@@ -82,13 +82,22 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ shopId
   if (limitResponse) return limitResponse;
 
   const normalizedEmail = email.toLowerCase().trim();
-  const { data: existing } = await supabaseAdmin
+  // One email = one account, across every workspace.
+  const { data: existingRows } = await supabaseAdmin
     .from('User')
-    .select('id')
+    .select('id, organizationId')
     .eq('email', normalizedEmail)
-    .eq('organizationId', organizationId)
-    .maybeSingle();
-  if (existing) return jsonResponse({ success: false, error: 'Someone with that email is already on this workspace', code: 'DUPLICATE_EMAIL' }, 409);
+    .limit(1);
+  if (existingRows && existingRows.length > 0) {
+    const sameOrg = existingRows[0].organizationId === organizationId;
+    return jsonResponse({
+      success: false,
+      error: sameOrg
+        ? 'Someone with that email is already on this workspace'
+        : 'That email already belongs to another account. Use a different email for this attendant.',
+      code: 'DUPLICATE_EMAIL',
+    }, 409);
+  }
 
   const now = new Date().toISOString();
   const userId = uuidv4();

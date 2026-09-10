@@ -1,250 +1,113 @@
 import { NextRequest } from 'next/server';
-import { signAuthToken } from '@/lib/auth.server';
 import { supabaseAdmin } from '@/lib/supabase-client';
 import logger from '@/lib/logger';
 import bcrypt from 'bcryptjs';
 import { jsonResponse } from '@/lib/apiResponse';
-import type { PortalUser as PortalUserType } from '@/lib/types';
+import { buildMobileAuthResponse } from '@/lib/mobile-auth-response.server';
 import { trackActivity, extractClientIp, detectDeviceType } from '@/lib/activity-tracker';
 
 /**
  * POST /api/mobile/auth/login
- * Authenticate shopkeeper and return JWT token
+ *
+ * Email + password -> JWT plus the workspace the account belongs to. Email is
+ * globally unique across workspaces, so the request host is irrelevant: the
+ * app posts here on the shared root host and the response tells it which
+ * workspace to point itself at.
  */
 export async function POST(request: NextRequest) {
   const startTime = Date.now();
-  
+
   try {
     const { email, password } = await request.json();
 
     if (!email || !password) {
-      logger.warn('Mobile login failed: missing credentials', { 
-        endpoint: '/api/mobile/auth/login',
-        hasEmail: !!email,
-        hasPassword: !!password
+      logger.warn('Mobile login failed: missing credentials', {
+        endpoint: '/api/mobile/auth/login', hasEmail: !!email, hasPassword: !!password,
       });
-      return jsonResponse({ 
-        success: false, 
-        error: 'Email and password are required',
-        code: 'VALIDATION_ERROR'
-      }, 400);
+      return jsonResponse({ success: false, error: 'Email and password are required', code: 'VALIDATION_ERROR' }, 400);
     }
 
-    // User.email is unique per-organization, so lookup is scoped to the
-    // tenant resolved by middleware from the request subdomain (x-org-id),
-    // plus platform-level users (organizationId IS NULL).
-    const hostOrgId = request.headers.get('x-org-id');
-    let userQuery = supabaseAdmin.from('User').select('*').eq('email', email.toLowerCase());
-    userQuery = hostOrgId
-      ? userQuery.or(`organizationId.eq.${hostOrgId},organizationId.is.null`)
-      : userQuery.is('organizationId', null);
-    const { data: user, error: userError } = await userQuery.maybeSingle();
+    const normalizedEmail = String(email).trim().toLowerCase();
+    const { data: candidates, error: userError } = await supabaseAdmin
+      .from('User')
+      .select('*')
+      .eq('email', normalizedEmail);
 
-    if (userError || !user) {
-      logger.warn('Mobile login failed: user not found', { 
-        email,
-        endpoint: '/api/mobile/auth/login'
-      });
-      return jsonResponse({ 
-        success: false, 
-        error: 'Invalid credentials',
-        code: 'INVALID_CREDENTIALS'
-      }, 401);
+    if (userError) {
+      logger.error('Mobile login: user lookup failed', { error: userError.message, endpoint: '/api/mobile/auth/login' });
+      return jsonResponse({ success: false, error: 'Internal server error', code: 'INTERNAL_ERROR' }, 500);
     }
 
-    // Verify password
-    const passwordValid = await bcrypt.compare(password, user.password);
-    if (!passwordValid) {
-      logger.warn('Mobile login failed: invalid password', { 
-        email,
-        endpoint: '/api/mobile/auth/login'
-      });
+    // Verify the password against every account on this email (normally one;
+    // >1 only for legacy accounts predating the unique-email constraint).
+    const matched: Array<Record<string, unknown>> = [];
+    for (const candidate of (candidates ?? []) as Array<Record<string, unknown>>) {
+      const hash = typeof candidate.password === 'string' ? candidate.password : '';
+      if (hash && (await bcrypt.compare(password, hash))) matched.push(candidate);
+    }
+
+    if (matched.length === 0) {
+      logger.warn('Mobile login failed: no account / bad password', { email: normalizedEmail, endpoint: '/api/mobile/auth/login' });
+      return jsonResponse({ success: false, error: 'Invalid credentials', code: 'INVALID_CREDENTIALS' }, 401);
+    }
+
+    if (matched.length > 1) {
+      const orgIds = [...new Set(matched.map((u) => u.organizationId).filter((v): v is string => typeof v === 'string'))];
+      const { data: orgs } = await supabaseAdmin.from('Organization').select('id, name, slug').in('id', orgIds);
+      logger.warn('Mobile login: email maps to multiple workspaces', { email: normalizedEmail, count: matched.length });
+      return jsonResponse({
+        success: false,
+        code: 'MULTIPLE_WORKSPACES',
+        error: 'This email is registered to more than one workspace. Contact support so we can merge them.',
+        data: { workspaces: (orgs ?? []).map((o) => ({ organizationId: o.id, name: o.name, slug: o.slug })) },
+      }, 409);
+    }
+
+    const user = matched[0] as { id: string; email: string; role: string };
+
+    const result = await buildMobileAuthResponse(user.id);
+    if (!result.ok) {
       void trackActivity({
-        userId: user.id, userEmail: email, userRole: user.role,
+        userId: user.id, userEmail: user.email, userRole: user.role,
         action: 'auth.login_failed', category: 'auth', source: 'mobile',
         endpoint: '/api/mobile/auth/login', httpMethod: 'POST',
         ipAddress: extractClientIp(request), userAgent: request.headers.get('user-agent'),
         deviceType: detectDeviceType(request.headers.get('user-agent')),
-        status: 'failure', errorMessage: 'Invalid password',
+        status: 'failure', errorMessage: result.error,
       });
-      return jsonResponse({
-        success: false, 
-        error: 'Invalid credentials',
-        code: 'INVALID_CREDENTIALS'
-      }, 401);
-    }
-
-    const isAdmin = user.role === 'admin' || user.role === 'super_admin';
-
-    // Look up portal user record (shopkeeper link) – optional for admins
-    const { data: portalUsers, error: portalError } = await supabaseAdmin
-      .from('PortalUser')
-      .select('*, Shop(*)')
-      .eq('userId', user.id);
-
-    const portalUser = portalUsers && portalUsers.length > 0 ? portalUsers[0] : null;
-
-    // Non-admin users MUST have a PortalUser record
-    if (!isAdmin && (portalError || !portalUser)) {
-      logger.warn('Mobile login failed: not a portal user', { 
-        userId: user.id,
-        email,
-        endpoint: '/api/mobile/auth/login'
-      });
-      return jsonResponse({ 
-        success: false, 
-        error: 'This account is not authorized for mobile app access',
-        code: 'FORBIDDEN'
-      }, 403);
-    }
-
-    // For portal users, check the mobileAccess flag
-    if (!isAdmin && portalUser) {
-      const mobileAccess = (portalUser as Record<string, unknown>).mobileAccess;
-      if (mobileAccess === false) {
-        logger.warn('Mobile login denied: mobileAccess is disabled', {
-          userId: user.id,
-          email,
-          portalUserId: portalUser.id,
-          endpoint: '/api/mobile/auth/login'
-        });
-        return jsonResponse({
-          success: false,
-          error: 'Mobile access has been disabled for this account. Contact your administrator.',
-          code: 'MOBILE_ACCESS_DISABLED'
-        }, 403);
-      }
-    }
-
-    // Determine shopId – portal users have one, admins may not
-    const shopId = portalUser?.shopId ?? null;
-
-    // Create JWT token
-    const token = signAuthToken({
-      userId: user.id,
-      organizationId: user.organizationId ?? null,
-      email: user.email,
-      role: user.role,
-      shopId
-    });
-
-    // Organization identity — the mobile app has no way to check/display which
-    // tenant a session belongs to today; this closes that gap. Also worth
-    // knowing: the user lookup above is already scoped to the org resolved
-    // from the request's host (x-org-id) OR platform-level users, so a mobile
-    // client hardcoded to one host can only ever authenticate users of that
-    // one tenant — this doesn't change that, it just makes it checkable.
-    let organization: { id: string; name: string; slug: string } | null = null;
-    if (user.organizationId) {
-      const { data: orgRow } = await supabaseAdmin
-        .from('Organization')
-        .select('id, name, slug')
-        .eq('id', user.organizationId)
-        .maybeSingle();
-      organization = (orgRow as typeof organization) ?? null;
-    }
-
-    // Get shop details (if user has a linked shop)
-    let shop: Record<string, unknown> | null = null;
-    if (shopId) {
-      const { data: shopRow } = await supabaseAdmin
-        .from('Shop')
-        .select('id, name, location, phone, address')
-        .eq('id', shopId)
-        .single();
-      shop = shopRow as Record<string, unknown> | null;
-    }
-
-    // For admin users without a specific shop, fetch all shops they can manage
-    // (scoped to their own org — a true super_admin has no organizationId and
-    // retains cross-tenant visibility, matching /api/portal/shops).
-    let allShops: Array<Record<string, unknown>> | null = null;
-    if (isAdmin && !shopId) {
-      let shopsQuery = supabaseAdmin
-        .from('Shop')
-        .select('id, name, location, phone, address')
-        .eq('isActive', true)
-        .order('name', { ascending: true });
-      if (user.organizationId) {
-        shopsQuery = shopsQuery.eq('organizationId', user.organizationId);
-      }
-      const { data: shops } = await shopsQuery;
-      allShops = (shops as Array<Record<string, unknown>>) ?? [];
+      const code = result.error.toLowerCase().includes('disabled') ? 'MOBILE_ACCESS_DISABLED' : 'FORBIDDEN';
+      return jsonResponse({ success: false, error: result.error, code }, 403);
     }
 
     const duration = Date.now() - startTime;
-    logger.info('Mobile login successful', { 
-      userId: user.id,
-      email,
-      role: user.role,
-      shopId,
-      isAdmin,
-      duration,
-      endpoint: '/api/mobile/auth/login'
-    });
-
-    // Track successful mobile login
     void trackActivity({
-      userId: user.id, userEmail: user.email, userRole: user.role,
+      userId: user.id, userEmail: result.data.user.email, userRole: result.data.user.role,
       action: 'auth.login', category: 'auth', source: 'mobile',
       endpoint: '/api/mobile/auth/login', httpMethod: 'POST',
-      shopId: shopId ?? undefined,
+      shopId: result.data.shop?.id ?? undefined,
       ipAddress: extractClientIp(request), userAgent: request.headers.get('user-agent'),
       deviceType: detectDeviceType(request.headers.get('user-agent')),
       status: 'success', durationMs: duration,
-      details: { isAdmin, shopCount: allShops?.length ?? (shopId ? 1 : 0) },
+      details: { shopCount: result.data.shops?.length ?? (result.data.shop ? 1 : 0) },
     });
 
-    const formatShop = (s: Record<string, unknown>) => {
-      const phoneVal = s['phone'];
-      const fallbackPhoneVal = s['phoneNumber'];
-      const phoneNumber = typeof phoneVal === 'string' ? phoneVal : (typeof fallbackPhoneVal === 'string' ? fallbackPhoneVal : null);
-      return {
-        id: typeof s['id'] === 'string' ? s['id'] : (typeof s['id'] === 'number' ? String(s['id']) : undefined),
-        name: typeof s['name'] === 'string' ? s['name'] : undefined,
-        location: typeof s['location'] === 'string' ? s['location'] : undefined,
-        phoneNumber,
-        address: typeof s['address'] === 'string' ? s['address'] : undefined
-      };
-    };
+    logger.info('Mobile login successful', {
+      userId: user.id, email: normalizedEmail, role: result.data.user.role, duration, endpoint: '/api/mobile/auth/login',
+    });
 
-    return jsonResponse({
-      success: true,
-      data: {
-        token,
-        user: {
-          id: user.id,
-          email: user.email,
-          name: user.name,
-          phone: user.phone,
-          role: user.role,
-          organizationId: user.organizationId ?? null
-        },
-        organization,
-        shop: shop ? formatShop(shop) : null,
-        // Only present for admins without a specific shop – lets them pick one
-        shops: allShops ? allShops.map(formatShop) : undefined
-      },
-      message: 'Login successful'
-    }, 200);
-
+    return jsonResponse({ success: true, data: result.data, message: 'Login successful' }, 200);
   } catch (error) {
-    logger.error('Mobile login error', { 
-      error: error instanceof Error ? error.message : String(error),
-      endpoint: '/api/mobile/auth/login'
+    logger.error('Mobile login error', {
+      error: error instanceof Error ? error.message : String(error), endpoint: '/api/mobile/auth/login',
     });
-    return jsonResponse({ 
-      success: false, 
-      error: 'Internal server error',
-      code: 'INTERNAL_ERROR'
-    }, 500);
+    return jsonResponse({ success: false, error: 'Internal server error', code: 'INTERNAL_ERROR' }, 500);
   }
 }
 
 /**
  * OPTIONS handler for CORS
  */
-export async function OPTIONS(request: NextRequest) {
+export async function OPTIONS() {
   return new Response(null, {
     status: 200,
     headers: {
@@ -254,4 +117,3 @@ export async function OPTIONS(request: NextRequest) {
     },
   });
 }
-

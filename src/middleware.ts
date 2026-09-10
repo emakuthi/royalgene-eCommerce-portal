@@ -15,6 +15,12 @@ import {
 const TENANT_OPTIONAL_PATHS = [
   '/api/auth/signup',
   '/api/mobile/auth/signup',
+  // Mobile auth is keyed on the (globally unique) email, not the request
+  // host — the app calls these on the shared root host and the response
+  // says which workspace to use.
+  '/api/mobile/auth/login',
+  '/api/mobile/auth/google',
+  '/api/mobile/auth/facebook',
   '/api/auth/signup-status',
   '/api/auth/check-slug',
   '/api/auth/verify-email',
