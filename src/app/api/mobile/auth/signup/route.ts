@@ -54,6 +54,8 @@ export async function POST(request: NextRequest) {
       duration: Date.now() - startTime,
     });
 
+    const shop = { id: result.shopId, name: orgName, location: 'Main', phoneNumber: null, address: null };
+
     return jsonResponse({
       success: true,
       data: {
@@ -67,8 +69,10 @@ export async function POST(request: NextRequest) {
           organizationId: result.organization.id,
         },
         organization: result.organization,
-        shop: { id: result.shopId, name: orgName, location: 'Main', phoneNumber: null, address: null },
-        shops: [],
+        shop,
+        // Return the one shop that provisioning just created (not []), so a
+        // client can show it immediately without waiting on GET /api/mobile/shops.
+        shops: [shop],
       },
     }, 201);
   } catch (error) {
