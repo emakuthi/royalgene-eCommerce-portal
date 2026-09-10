@@ -1,9 +1,12 @@
 import { NextRequest } from 'next/server';
+import { v4 as uuidv4 } from 'uuid';
 import { verifyToken } from '@/lib/auth.server';
 import { supabaseAdmin } from '@/lib/supabase-client';
 import { isSupabaseAdminConfigured } from '@/lib/supabase-client';
 import logger from '@/lib/logger';
 import { jsonResponse } from '@/lib/apiResponse';
+import { assertCanCreate } from '@/lib/entitlements/enforce.server';
+import { isShopNameAvailable } from '@/lib/shops.server';
 
 /**
  * GET /api/mobile/shops
@@ -166,6 +169,80 @@ export async function GET(request: NextRequest) {
 }
 
 /**
+ * POST /api/mobile/shops
+ * Create a shop. Admin / super_admin only. Body: { name, location, phone?, address? }
+ */
+export async function POST(request: NextRequest) {
+  try {
+    const token = request.headers.get('Authorization')?.replace('Bearer ', '');
+    if (!token) return jsonResponse({ success: false, error: 'Unauthorized', code: 'UNAUTHORIZED' }, 401);
+    const payload = verifyToken(token);
+    if (!payload) return jsonResponse({ success: false, error: 'Invalid token', code: 'UNAUTHORIZED' }, 401);
+
+    if (payload.role !== 'admin' && payload.role !== 'super_admin') {
+      return jsonResponse({ success: false, error: 'Only workspace admins can create shops', code: 'FORBIDDEN' }, 403);
+    }
+    if (!payload.organizationId) {
+      return jsonResponse({ success: false, error: 'An organization context is required to create a shop', code: 'NO_ORGANIZATION' }, 400);
+    }
+    const organizationId = payload.organizationId;
+
+    const limitResponse = await assertCanCreate(organizationId, 'BRANCH');
+    if (limitResponse) return limitResponse;
+
+    const body = await request.json().catch(() => ({}));
+    const { name, location, phone, address } = body as { name?: string; location?: string; phone?: string; address?: string };
+
+    if (!name?.trim() || !location?.trim()) {
+      return jsonResponse({ success: false, error: 'Shop name and location are required', code: 'VALIDATION_ERROR' }, 400);
+    }
+    if (!(await isShopNameAvailable(name.trim()))) {
+      return jsonResponse({ success: false, error: 'A shop with that name already exists', code: 'DUPLICATE_NAME' }, 409);
+    }
+
+    const now = new Date().toISOString();
+    const { data: shop, error } = await supabaseAdmin
+      .from('Shop')
+      .insert([{
+        id: uuidv4(),
+        organizationId,
+        name: name.trim(),
+        location: location.trim(),
+        phone: phone?.trim() || null,
+        address: address?.trim() || null,
+        isActive: true,
+        createdAt: now,
+        updatedAt: now,
+      }])
+      .select('id, name, location, phone, address')
+      .single();
+
+    if (error) {
+      if (error.code === '23505') {
+        return jsonResponse({ success: false, error: 'A shop with that name already exists', code: 'DUPLICATE_NAME' }, 409);
+      }
+      logger.error('Mobile create shop failed', { error: error.message, userId: payload.userId });
+      return jsonResponse({ success: false, error: 'Failed to create shop', code: 'INTERNAL_ERROR' }, 500);
+    }
+
+    logger.info('Mobile shop created', { shopId: shop?.id, userId: payload.userId });
+    return jsonResponse({
+      success: true,
+      data: {
+        id: shop.id,
+        name: shop.name,
+        location: shop.location,
+        phoneNumber: shop.phone ?? null,
+        address: shop.address ?? null,
+      },
+    }, 201);
+  } catch (error) {
+    logger.error('Mobile create shop error', { error: error instanceof Error ? error.message : String(error) });
+    return jsonResponse({ success: false, error: 'Internal server error', code: 'INTERNAL_ERROR' }, 500);
+  }
+}
+
+/**
  * OPTIONS handler for CORS
  */
 export async function OPTIONS(request: NextRequest) {
@@ -173,7 +250,7 @@ export async function OPTIONS(request: NextRequest) {
     status: 200,
     headers: {
       'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, OPTIONS',
+      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
       'Access-Control-Allow-Headers': 'Content-Type, Authorization',
     },
   });
