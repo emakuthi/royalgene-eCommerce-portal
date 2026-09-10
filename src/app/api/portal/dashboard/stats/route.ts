@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { requireAuth } from '@/lib/authorize';
+import { requireTenantUser } from '@/lib/authorize';
 import { supabaseAdmin } from '@/lib/supabase-client';
 import logger from '@/lib/logger';
 import { jsonResponse, optionsResponse } from '@/lib/apiResponse';
@@ -35,7 +35,7 @@ export async function GET(request: NextRequest) {
   const startTime = Date.now();
 
   try {
-    const auth = requireAuth(request);
+    const auth = requireTenantUser(request);
     if (auth instanceof NextResponse) return auth;
     const payload = auth;
 

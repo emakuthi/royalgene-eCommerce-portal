@@ -3,7 +3,7 @@
 // using the existing createProduct helper (with Supabase/fallback behavior), then creates a ShopStock row and returns it.
 
 import { NextRequest, NextResponse } from 'next/server';
-import { requireAuth } from '@/lib/authorize';
+import { requireTenantUser } from '@/lib/authorize';
 import { supabaseAdmin } from '@/lib/supabase-client';
 import logger from '@/lib/logger';
 import { createProductForShop } from '@/lib/portal-products';
@@ -17,7 +17,7 @@ type IncomingStock = { quantity?: number; lowStockThreshold?: number };
 
 export async function POST(request: NextRequest) {
   try {
-    const auth = requireAuth(request);
+    const auth = requireTenantUser(request);
     if (auth instanceof NextResponse) return auth;
     const payload = auth;
 
@@ -164,7 +164,7 @@ export async function OPTIONS(request: NextRequest) {
 // New: allow portal users (shop owners) to delete the product from their shop (remove ShopStock row).
 export async function DELETE(request: NextRequest) {
   try {
-    const auth = requireAuth(request);
+    const auth = requireTenantUser(request);
     if (auth instanceof NextResponse) return auth;
     const payload = auth;
 
@@ -327,7 +327,7 @@ export async function DELETE(request: NextRequest) {
 // Admins can update any product. Returns the updated product.
 export async function PUT(request: NextRequest) {
   try {
-    const auth = requireAuth(request);
+    const auth = requireTenantUser(request);
     if (auth instanceof NextResponse) return auth;
     const payload = auth;
 

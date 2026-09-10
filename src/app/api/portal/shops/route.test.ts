@@ -2,9 +2,13 @@ import { describe, it, expect, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 
 // Mock auth so the route sees an authenticated org admin for organization "org-1".
-vi.mock('@/lib/authorize', () => ({
-  requireAuth: vi.fn(() => ({ userId: 'user-1', role: 'admin', organizationId: 'org-1' })),
-}));
+vi.mock('@/lib/authorize', () => {
+  const payload = { userId: 'user-1', role: 'admin', organizationId: 'org-1' };
+  return {
+    requireAuth: vi.fn(() => payload),
+    requireTenantUser: vi.fn(() => payload),
+  };
+});
 
 // The enforcement check itself is unit-tested in src/lib/entitlements/__tests__/enforce.test.ts —
 // here we only need to confirm the shops route actually calls it and respects the result.

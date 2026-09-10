@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { requireAuth } from '@/lib/authorize';
+import { requireTenantUser } from '@/lib/authorize';
 import { jsonResponse, optionsResponse } from '@/lib/apiResponse';
 import { supabaseAdmin } from '@/lib/supabase-client';
 import { getTaxInvoiceForSale } from '@/lib/etims/tax-invoice.server';
 
 // GET /api/portal/sales/[id]/tax-invoice — the generated (not KRA-submitted) invoice for one sale.
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const auth = requireAuth(request);
+  const auth = requireTenantUser(request);
   if (auth instanceof NextResponse) return auth;
 
   const { id } = await params;

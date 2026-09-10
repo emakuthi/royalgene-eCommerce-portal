@@ -32,6 +32,26 @@ export function requireAuth(request: NextRequest): VerifiedPayload | NextRespons
   return payload;
 }
 
+/**
+ * Like requireAuth, but also rejects platform accounts (super_admin, whose
+ * token has no organizationId). Use this on every route that reads or writes
+ * a tenant's own business data — inventory, stock, sales, products,
+ * analytics. Platform support works through /api/platform/* and the platform
+ * console, and must not be able to see or touch a tenant's operational data.
+ */
+export function requireTenantUser(request: NextRequest): VerifiedPayload | NextResponse {
+  const auth = requireAuth(request);
+  if (auth instanceof NextResponse) return auth;
+  if (!auth.organizationId) {
+    return jsonResponse({
+      success: false,
+      error: 'Platform accounts cannot access tenant business data. Use the platform console.',
+      code: 'PLATFORM_NO_TENANT_DATA',
+    }, 403) as unknown as NextResponse;
+  }
+  return auth;
+}
+
 export function requireRole(request: NextRequest, allowed: string[] = ['admin']): VerifiedPayload | NextResponse {
   const auth = requireAuth(request);
   if (auth instanceof NextResponse) return auth;
@@ -51,7 +71,18 @@ export async function requirePortalRole(request: NextRequest, shopId: string, al
 
   const payload = auth as VerifiedPayload;
 
-  // super_admin bypass
+  // A platform super_admin (no organizationId) has no business operating a
+  // tenant's shop — support goes through the platform console, not here.
+  if (payload.role === 'super_admin' && !payload.organizationId) {
+    return jsonResponse({
+      success: false,
+      error: 'Platform accounts cannot access tenant business data. Use the platform console.',
+      code: 'PLATFORM_NO_TENANT_DATA',
+    }, 403) as unknown as NextResponse;
+  }
+
+  // An org-scoped super_admin (has an organizationId — a tenant-level power
+  // user, not platform staff) keeps the shop-manager bypass.
   if (payload.role === 'super_admin') {
     const superAdminPortalUser: PortalUser = {
       id: `admin-${payload.userId}`,
@@ -100,7 +131,15 @@ export async function requirePermission(request: NextRequest, permissionName: st
   if (auth instanceof NextResponse) return auth;
 
   const payload = auth as VerifiedPayload;
-  // super_admin bypass
+  // Platform super_admins have no tenant permissions; tenant-scoped
+  // super_admins keep the bypass.
+  if (payload.role === 'super_admin' && !payload.organizationId) {
+    return jsonResponse({
+      success: false,
+      error: 'Platform accounts cannot access tenant business data. Use the platform console.',
+      code: 'PLATFORM_NO_TENANT_DATA',
+    }, 403) as unknown as NextResponse;
+  }
   if (payload.role === 'super_admin') return payload;
 
   try {

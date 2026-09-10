@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase-client';
-import { requireAuth } from '@/lib/authorize';
+import { requireTenantUser } from '@/lib/authorize';
 import logger from '@/lib/logger';
 import { jsonResponse, optionsResponse } from '@/lib/apiResponse';
 
@@ -14,7 +14,7 @@ export async function GET(
 ) {
   try {
     const { shopId } = await params;
-    const auth = requireAuth(request);
+    const auth = requireTenantUser(request);
     if (auth instanceof NextResponse) return auth;
 
     let query = supabaseAdmin.from('Shop').select('*').eq('id', shopId);
@@ -44,7 +44,7 @@ export async function PATCH(
 ) {
   try {
     const { shopId } = await params;
-    const auth = requireAuth(request);
+    const auth = requireTenantUser(request);
     if (auth instanceof NextResponse) return auth;
 
     const body = await request.json() as Record<string, unknown>;

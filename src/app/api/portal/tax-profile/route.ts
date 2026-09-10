@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { requireAuth, requireRole } from '@/lib/authorize';
+import { requireTenantUser, requireRole } from '@/lib/authorize';
 import { jsonResponse, optionsResponse } from '@/lib/apiResponse';
 import { supabaseAdmin } from '@/lib/supabase-client';
 import { assertFeatureEnabled } from '@/lib/entitlements/enforce.server';
@@ -7,7 +7,7 @@ import { FeatureCode } from '@/lib/entitlements/feature-codes';
 
 // GET /api/portal/tax-profile — the caller's own org's KRA PIN, any authenticated org member.
 export async function GET(request: NextRequest) {
-  const auth = requireAuth(request);
+  const auth = requireTenantUser(request);
   if (auth instanceof NextResponse) return auth;
 
   if (!auth.organizationId) {

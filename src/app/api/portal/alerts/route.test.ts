@@ -4,9 +4,13 @@ import { NextRequest } from 'next/server';
 const mockData = { id: 'test-id', title: 'Test', message: 'Hello', level: 'info', read: false };
 
 // Mock auth so the route sees an authenticated admin for organization "org-1".
-vi.mock('@/lib/authorize', () => ({
-  requireAuth: vi.fn(() => ({ userId: 'user-1', role: 'admin', organizationId: 'org-1' })),
-}));
+vi.mock('@/lib/authorize', () => {
+  const payload = { userId: 'user-1', role: 'admin', organizationId: 'org-1' };
+  return {
+    requireAuth: vi.fn(() => payload),
+    requireTenantUser: vi.fn(() => payload),
+  };
+});
 
 // Mock the supabase client module before importing the route so the route picks up the mock.
 // Different tables need different chain shapes: Shop lookup (maybeSingle) vs Alert insert (single).
