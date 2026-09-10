@@ -52,17 +52,20 @@ export async function GET(request: NextRequest) {
     // users without a specific shop, fetch all shops they can manage" logic
     // already used at mobile login. Non-admin shopkeepers stay scoped to
     // whichever shop(s) their PortalUser record(s) link them to.
+    // A platform super_admin has no tenant — no shops here (use the console).
+    if (payload.role === 'super_admin' && !payload.organizationId) {
+      return jsonResponse({ success: true, data: { shops: [] } }, 200);
+    }
+
     let shops: Array<Record<string, unknown>> | null = null;
     try {
       if (isAdmin) {
-        let shopsQuery = supabaseAdmin
+        const shopsQuery = supabaseAdmin
           .from('Shop')
           .select('id, name, location, phone, address')
           .eq('isActive', true)
+          .eq('organizationId', payload.organizationId)
           .order('name', { ascending: true });
-        if (payload.organizationId) {
-          shopsQuery = shopsQuery.eq('organizationId', payload.organizationId);
-        }
         const { data, error } = await shopsQuery;
         if (error) throw error;
         shops = data || [];

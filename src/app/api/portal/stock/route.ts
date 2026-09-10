@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase-client';
-import { requireAuth } from '@/lib/authorize';
+import { requireTenantUser } from '@/lib/authorize';
 import logger from '@/lib/logger';
 import { v4 as uuidv4 } from 'uuid';
 import { updateShopStock, recordStockTransaction } from '@/lib/db';
@@ -14,7 +14,7 @@ export async function GET(request: NextRequest) {
   const startTime = Date.now();
 
   try {
-    const auth = requireAuth(request);
+    const auth = requireTenantUser(request);
     if (auth instanceof NextResponse) return auth;
     const payload = auth;
 
@@ -173,7 +173,7 @@ export async function PUT(request: NextRequest) {
   const startTime = Date.now();
 
   try {
-    const auth = requireAuth(request);
+    const auth = requireTenantUser(request);
     if (auth instanceof NextResponse) return auth;
     const payload = auth;
 

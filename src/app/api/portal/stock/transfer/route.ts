@@ -21,7 +21,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { requireAuth } from '@/lib/authorize';
+import { requireTenantUser } from '@/lib/authorize';
 import { supabaseAdmin } from '@/lib/supabase-client';
 import logger from '@/lib/logger';
 import { v4 as uuidv4 } from 'uuid';
@@ -36,7 +36,7 @@ import { FeatureCode } from '@/lib/entitlements/feature-codes';
 export async function POST(request: NextRequest) {
   try {
     // ── Auth ────────────────────────────────────────────────────────────────
-    const auth = requireAuth(request);
+    const auth = requireTenantUser(request);
     if (auth instanceof NextResponse) return auth;
     const payload = auth;
 

@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase-client';
-import { requireAuth } from '@/lib/authorize';
+import { requireTenantUser } from '@/lib/authorize';
 import { v4 as uuidv4 } from 'uuid';
 import { jsonResponse, optionsResponse } from '@/lib/apiResponse';
 
 export async function GET(req: NextRequest) {
   try {
-    const auth = requireAuth(req);
+    const auth = requireTenantUser(req);
     if (auth instanceof NextResponse) return auth;
 
     const url = new URL(req.url);
@@ -34,7 +34,7 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
-    const auth = requireAuth(req);
+    const auth = requireTenantUser(req);
     if (auth instanceof NextResponse) return auth;
     if (!auth.organizationId) {
       return jsonResponse({ success: false, message: 'An organization context is required' }, 400);

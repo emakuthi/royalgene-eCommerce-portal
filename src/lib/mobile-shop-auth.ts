@@ -112,11 +112,19 @@ export async function verifyMobileShopAccess(
   const isAdmin =
     payload.role === 'admin' || payload.role === 'super_admin';
 
-  // Admins / super-admins bypass the PortalUser membership check, but an org
-  // "admin" is still tenant-scoped — they only bypass it for shops in their
-  // OWN organization. Only true super_admin (no organizationId) bypasses
-  // unconditionally. Either way we need the shop's organizationId: it's
-  // required to lazily provision a PortalUser row below.
+  // A platform super_admin (no organizationId) has no tenant to be scoped to
+  // and no business operating a shop — support goes through the platform
+  // console, not the app.
+  if (payload.role === 'super_admin' && !payload.organizationId) {
+    return jsonResponse(
+      { success: false, error: 'Platform accounts cannot access tenant business data.', code: 'PLATFORM_NO_TENANT_DATA' },
+      403,
+    );
+  }
+
+  // Org admins bypass the PortalUser membership check, but only for shops in
+  // their OWN organization (checked below). We need the shop's organizationId
+  // regardless — it's required to lazily provision a PortalUser row.
   if (isAdmin) {
     const { data: shopRow } = await supabaseAdmin
       .from('Shop')

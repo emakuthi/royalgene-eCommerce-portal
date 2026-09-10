@@ -1,6 +1,6 @@
 'use client';
 
-import { useRouter } from 'next/navigation';
+import { useRouter, usePathname } from 'next/navigation';
 import React, { useEffect, useState } from 'react';
 import { useHydratedAuth } from '@/lib/hooks';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -28,6 +28,7 @@ export function PortalProtected({
   pageName = 'This page'
 }: PortalProtectedProps) {
   const router = useRouter();
+  const pathname = usePathname();
   const { user, mounted, logout } = useHydratedAuth();
   const [authorized, setAuthorized] = useState(false);
   const [authError, setAuthError] = useState<{
@@ -51,9 +52,20 @@ export function PortalProtected({
       return;
     }
 
-    // Super admin has access to everything
+    // Platform super_admin belongs in the platform console, not in a
+    // tenant's operational pages (stock, sales, users…). Pages that
+    // explicitly require the super_admin role, and anything under /platform,
+    // are theirs; everything else redirects them to the console.
     if (user.role === 'super_admin') {
-      setAuthorized(true);
+      const allowed =
+        requiredRole === 'super_admin' ||
+        pathname?.startsWith('/platform') ||
+        pathname === '/settings'; // own password / profile
+      if (allowed) {
+        setAuthorized(true);
+      } else {
+        router.replace('/platform');
+      }
       return;
     }
 
@@ -88,7 +100,7 @@ export function PortalProtected({
     }
 
     setAuthorized(true);
-  }, [user, mounted, requiredRole, pageName]);
+  }, [user, mounted, requiredRole, pageName, pathname, router]);
 
   if (!mounted) {
     return (

@@ -443,20 +443,24 @@ export default function ProtectedLayout({ children }: { children: React.ReactNod
     return () => { document.removeEventListener('keydown', onKey); clearTimeout(timer); };
   }, [drawerOpen]);
 
-  const navItems: NavItem[] = [
-    { label: 'Dashboard',       href: '/dashboard',  icon: <Home className="h-5 w-5" /> },
-    { label: 'Inventory',       href: '/stock',       icon: <Package className="h-5 w-5" /> },
-    { label: 'Sales',           href: '/sales',       icon: <ShoppingCart className="h-5 w-5" /> },
-    { label: 'Analytics',       href: '/analytics',   icon: <BarChart3 className="h-5 w-5" /> },
-    { label: 'Shops',           href: '/shops',       icon: <MapPin className="h-5 w-5" /> },
-    { label: 'User Management', href: '/users',       icon: <Users className="h-5 w-5" /> },
-    { label: 'Alerts',          href: '/alerts',      icon: <Bell className="h-5 w-5" />, badge: alertsCount },
-    { label: 'Activity',        href: '/activity',    icon: <Activity className="h-5 w-5" /> },
-    { label: 'Settings',        href: '/settings',    icon: <Settings className="h-5 w-5" /> },
-    ...(user?.role === 'super_admin'
-      ? [{ label: 'Platform', href: '/platform', icon: <ShieldCheck className="h-5 w-5" /> }]
-      : []),
-  ];
+  // Platform super_admins only ever see the console + their own settings —
+  // tenant operational pages aren't theirs (and are blocked server-side).
+  const navItems: NavItem[] = user?.role === 'super_admin'
+    ? [
+        { label: 'Platform', href: '/platform', icon: <ShieldCheck className="h-5 w-5" /> },
+        { label: 'Settings', href: '/settings', icon: <Settings className="h-5 w-5" /> },
+      ]
+    : [
+        { label: 'Dashboard',       href: '/dashboard',  icon: <Home className="h-5 w-5" /> },
+        { label: 'Inventory',       href: '/stock',       icon: <Package className="h-5 w-5" /> },
+        { label: 'Sales',           href: '/sales',       icon: <ShoppingCart className="h-5 w-5" /> },
+        { label: 'Analytics',       href: '/analytics',   icon: <BarChart3 className="h-5 w-5" /> },
+        { label: 'Shops',           href: '/shops',       icon: <MapPin className="h-5 w-5" /> },
+        { label: 'User Management', href: '/users',       icon: <Users className="h-5 w-5" /> },
+        { label: 'Alerts',          href: '/alerts',      icon: <Bell className="h-5 w-5" />, badge: alertsCount },
+        { label: 'Activity',        href: '/activity',    icon: <Activity className="h-5 w-5" /> },
+        { label: 'Settings',        href: '/settings',    icon: <Settings className="h-5 w-5" /> },
+      ];
 
   const isActive = (href: string) => {
     if (!pathname) return false;

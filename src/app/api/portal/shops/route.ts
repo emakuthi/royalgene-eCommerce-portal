@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase-client';
-import { requireAuth } from '@/lib/authorize';
+import { requireTenantUser } from '@/lib/authorize';
 import logger from '@/lib/logger';
 import { v4 as uuidv4 } from 'uuid';
 import { jsonResponse, optionsResponse } from '@/lib/apiResponse';
@@ -9,7 +9,7 @@ import { isShopNameAvailable } from '@/lib/shops.server';
 
 export async function GET(request: NextRequest) {
   try {
-    const auth = requireAuth(request);
+    const auth = requireTenantUser(request);
     if (auth instanceof NextResponse) return auth;
 
     let query = supabaseAdmin.from('Shop').select('*').eq('isActive', true).order('name', { ascending: true });
@@ -38,7 +38,7 @@ export async function POST(request: NextRequest) {
   const startTime = Date.now();
 
   try {
-    const auth = requireAuth(request);
+    const auth = requireTenantUser(request);
     if (auth instanceof NextResponse) return auth;
 
     if (!auth.organizationId) {

@@ -1,13 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase-client';
-import { requireAuth } from '@/lib/authorize';
+import { requireTenantUser } from '@/lib/authorize';
 import { jsonResponse, optionsResponse } from '@/lib/apiResponse';
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   // Acknowledge (mark read)
   const { id } = await params;
   try {
-    const auth = requireAuth(req);
+    const auth = requireTenantUser(req);
     if (auth instanceof NextResponse) return auth;
 
     let query = supabaseAdmin.from('Alert').update({ read: true, updatedAt: new Date().toISOString() }).eq('id', id);
@@ -25,7 +25,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   try {
-    const auth = requireAuth(req);
+    const auth = requireTenantUser(req);
     if (auth instanceof NextResponse) return auth;
 
     let query = supabaseAdmin.from('Alert').delete().eq('id', id);
