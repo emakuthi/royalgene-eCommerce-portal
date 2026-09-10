@@ -37,6 +37,7 @@ import {
   type PlanEntitlementRow,
 } from '@/lib/platform';
 import { DomainManager } from '@/components/domain/DomainManager';
+import { TenantUsersPanel } from './tenant-users-panel';
 import type { DomainState } from '@/lib/domains';
 import type { Organization, PlatformPlan } from '@/lib/types';
 
@@ -946,7 +947,7 @@ function PlatformAdminConsole() {
 
       {/* Manage Tenant Dialog */}
       <Dialog open={Boolean(manageOrg)} onOpenChange={(open) => !open && setManageOrg(null)}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-w-2xl max-h-[88vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Manage tenant — {manageOrg?.name}</DialogTitle>
             <DialogDescription>
@@ -993,6 +994,16 @@ function PlatformAdminConsole() {
                   onRefresh={refreshManageDomain}
                   onRemove={removeManageDomain}
                 />
+              </div>
+
+              {/* People & logins */}
+              <div>
+                <Label>People &amp; logins</Label>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 mb-2">
+                  Every account in this workspace. Fix a mistyped email, confirm an address, issue a
+                  temporary password, or cut off access — for customer support.
+                </p>
+                <TenantUsersPanel token={token} orgId={manageOrg.id} orgName={manageOrg.name} />
               </div>
 
               {/* Danger zone */}

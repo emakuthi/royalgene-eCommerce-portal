@@ -202,3 +202,60 @@ export function manageOrganizationSubscription(token: string | null | undefined,
     body: JSON.stringify(body),
   });
 }
+
+// ── Tenant people / logins (customer support) ──────────────────────────────
+
+export interface PlatformOrgMembership {
+  portalUserId: string;
+  shopId: string | null;
+  shopName: string | null;
+  position: string | null;
+  isActive: boolean;
+  mobileAccess: boolean;
+  lastLogin: string | null;
+}
+
+export interface PlatformOrgUser {
+  id: string;
+  name: string;
+  email: string;
+  role: string;
+  phone: string | null;
+  createdAt: string;
+  emailVerified: boolean;
+  memberships: PlatformOrgMembership[];
+}
+
+export interface PlatformOrgUserPatch {
+  email?: string;
+  name?: string;
+  phone?: string | null;
+  emailVerified?: boolean;
+  password?: string;
+  mobileAccess?: boolean;
+  isActive?: boolean;
+}
+
+export function listOrganizationUsers(token: string | null | undefined, organizationId: string) {
+  return request<PlatformOrgUser[]>(`/api/platform/organizations/${encodeURIComponent(organizationId)}/users`, token);
+}
+
+export function updateOrganizationUser(
+  token: string | null | undefined,
+  organizationId: string,
+  userId: string,
+  patch: PlatformOrgUserPatch,
+) {
+  return request<PlatformOrgUser>(`/api/platform/organizations/${encodeURIComponent(organizationId)}/users`, token, {
+    method: 'PATCH',
+    body: JSON.stringify({ userId, ...patch }),
+  });
+}
+
+export function removeOrganizationUser(token: string | null | undefined, organizationId: string, userId: string) {
+  return request<null>(
+    `/api/platform/organizations/${encodeURIComponent(organizationId)}/users?userId=${encodeURIComponent(userId)}`,
+    token,
+    { method: 'DELETE' },
+  );
+}
