@@ -6,6 +6,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { updateShopStock, recordStockTransaction } from '@/lib/db';
 import type { StockTransaction, PortalUser, ShopStock } from '@/lib/types';
 import { syncProductStockFromShopStocks } from '@/lib/supabase-db';
+import { hasVariantStock } from '@/lib/variant-stock.server';
 import { jsonResponse, optionsResponse } from '@/lib/apiResponse';
 import { trackFromRequest } from '@/lib/activity-tracker';
 
@@ -191,6 +192,14 @@ export async function PUT(request: NextRequest) {
 
     if (stockError || !oldStock) {
       return jsonResponse({ success: false, error: 'Stock not found' }, 404);
+    }
+
+    if (await hasVariantStock(stockId)) {
+      return jsonResponse({
+        success: false,
+        error: 'This product is tracked by size/colour. Update the breakdown instead.',
+        code: 'VARIANT_STOCK',
+      }, 409);
     }
 
     const oldStockTyped = oldStock as ShopStock;

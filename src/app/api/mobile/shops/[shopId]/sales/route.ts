@@ -5,6 +5,8 @@ import { jsonResponse } from '@/lib/apiResponse';
 import { v4 as uuidv4 } from 'uuid';
 import type { ShopStock } from '@/lib/types';
 import { verifyMobileShopAccess } from '@/lib/mobile-shop-auth';
+import { validateVariantRemoval, decrementCell } from '@/lib/variant-stock.server';
+import { syncProductStockFromShopStocks } from '@/lib/supabase-db';
 import { assertCanCreate } from '@/lib/entitlements/enforce.server';
 import { generateTaxInvoiceForSale } from '@/lib/etims/tax-invoice.server';
 import { syncSaleToQuickBooks } from '@/lib/accounting/sync-sale-to-quickbooks.server';
@@ -34,6 +36,8 @@ export async function POST(
       customerName,
       customerPhone,
       notes,
+      size,
+      color,
     } = body as {
       productId: string;
       quantity: number;
@@ -43,6 +47,8 @@ export async function POST(
       customerName?: string;
       customerPhone?: string;
       notes?: string;
+      size?: string;
+      color?: string;
     };
 
     if (!productId || typeof quantity !== 'number' || typeof unitPrice !== 'number') {
@@ -163,10 +169,10 @@ export async function POST(
       shopStock = ss;
     }
 
-    // Validate stock availability
+    // Validate stock availability (flat total — still a valid ceiling even with variants)
     if (!shopStock || shopStock.quantity < quantity) {
       const available = shopStock?.quantity || 0;
-      logger.warn('Mobile sale insufficient stock', { 
+      logger.warn('Mobile sale insufficient stock', {
         userId: auth.payload.userId,
         shopId,
         productId,
@@ -174,10 +180,21 @@ export async function POST(
         requested: quantity,
         endpoint: `/api/mobile/shops/${shopId}/sales`
       });
-      return jsonResponse({ 
-        success: false, 
+      return jsonResponse({
+        success: false,
         error: `Insufficient stock: only ${available} available`,
         code: 'INSUFFICIENT_STOCK'
+      }, 409);
+    }
+
+    // Size × colour matrix: when this product has a breakdown at the shop,
+    // the sale is against a specific cell and must name size/colour.
+    const variantCheck = await validateVariantRemoval(shopStock.id, size, color, quantity);
+    if (variantCheck.needsVariant && variantCheck.error) {
+      return jsonResponse({
+        success: false,
+        error: variantCheck.error,
+        code: 'INSUFFICIENT_STOCK',
       }, 409);
     }
 
@@ -206,6 +223,8 @@ export async function POST(
         customerName: customerName || null,
         customerPhone: customerPhone || null,
         notes: notes || null,
+        size: variantCheck.needsVariant ? (size?.trim() || null) : null,
+        color: variantCheck.needsVariant ? (color?.trim() || null) : null,
         createdAt: now,
         updatedAt: now
       }])
@@ -227,26 +246,33 @@ export async function POST(
       }, 500);
     }
 
-    // Update shop stock
-    const { error: updateError } = await supabaseAdmin
-      .from('ShopStock')
-      .update({ 
-        quantity: shopStock.quantity - quantity,
-        updatedAt: now
-      })
-      .eq('id', shopStock.id);
-
-    if (updateError) {
-      logger.error('Mobile sale stock update failed', { 
-        userId: auth.payload.userId,
-        shopId,
-        shopStockId: shopStock?.id,
-        error: updateError.message,
-        endpoint: `/api/mobile/shops/${shopId}/sales`
-      });
-      // Don't fail the response, just log it
-      // The sale is already recorded
+    // Update stock. With a size × colour breakdown, decrement the specific
+    // cell — the DB trigger rolls that down to ShopStock.quantity (and
+    // syncProductStockFromShopStocks to Product.stockQuantity). Otherwise
+    // decrement the flat ShopStock.quantity as before.
+    if (variantCheck.needsVariant) {
+      const dec = await decrementCell(shopStock.id, size || '', color || '', quantity);
+      if (!dec.ok) {
+        logger.error('Mobile sale variant decrement failed', {
+          shopId, productId, size, color, error: dec.error,
+          endpoint: `/api/mobile/shops/${shopId}/sales`,
+        });
+      }
+    } else {
+      const { error: updateError } = await supabaseAdmin
+        .from('ShopStock')
+        .update({ quantity: shopStock.quantity - quantity, updatedAt: now })
+        .eq('id', shopStock.id);
+      if (updateError) {
+        logger.error('Mobile sale stock update failed', {
+          userId: auth.payload.userId, shopId, shopStockId: shopStock?.id,
+          error: updateError.message, endpoint: `/api/mobile/shops/${shopId}/sales`,
+        });
+      }
     }
+
+    // Roll the shop-level total up to Product.stockQuantity.
+    void syncProductStockFromShopStocks(productId);
 
     const duration = Date.now() - startTime;
     logger.info('Mobile sale recorded successfully', { 

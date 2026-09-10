@@ -3,6 +3,7 @@ import { requireAuth } from '@/lib/authorize';
 import { supabaseAdmin } from '@/lib/supabase-client';
 import { v4 as uuidv4 } from 'uuid';
 import { jsonResponse, optionsResponse } from '@/lib/apiResponse';
+import { hasVariantStock } from '@/lib/variant-stock.server';
 
 export async function PUT(
   request: NextRequest,
@@ -30,6 +31,16 @@ export async function PUT(
 
     if (stockError || !currentStock) {
       return jsonResponse({ success: false, error: 'Stock not found' }, 404);
+    }
+
+    // When this product's stock is broken down by size × colour, the flat
+    // total is derived — edit the breakdown, not this number.
+    if (await hasVariantStock(stockId)) {
+      return jsonResponse({
+        success: false,
+        error: 'This product is tracked by size/colour. Update the breakdown instead.',
+        code: 'VARIANT_STOCK',
+      }, 409);
     }
 
     // Even an "admin" role is org-scoped — verify this stock's own

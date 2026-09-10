@@ -62,6 +62,16 @@ export async function GET(
 
     const shopStockList: ShopStock[] = (shopStocks ?? []) as ShopStock[];
 
+    // Which of these rows have a size × colour breakdown (one query, not N+1).
+    const variantShopStockIds = new Set<string>();
+    if (shopStockList.length > 0) {
+      const { data: variantRows } = await supabaseAdmin
+        .from('ShopStockVariant')
+        .select('shopStockId')
+        .in('shopStockId', shopStockList.map((s) => s.id));
+      for (const r of (variantRows ?? []) as { shopStockId: string }[]) variantShopStockIds.add(r.shopStockId);
+    }
+
     const inventory = shopStockList
       .map((ss: ShopStock) => {
         const quantity = Number(ss.quantity ?? 0);
@@ -94,7 +104,10 @@ export async function GET(
           reorderLevel,
           lastRestocked: ss.updatedAt,
           estimatedDaysToRunOut: daysToRunOut,
-          status
+          status,
+          // When true, `quantity` is the rolled-up total of a size × colour
+          // matrix — edit it via GET/PUT …/stock/{id}/variants.
+          hasVariants: variantShopStockIds.has(ss.id),
         };
       })
       .filter(item => lowStock ? item.status === 'low_stock' || item.status === 'out_of_stock' : true)
