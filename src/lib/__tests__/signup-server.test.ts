@@ -18,6 +18,7 @@ vi.mock('@/lib/auth.server', () => ({
 vi.mock('@/lib/email/verification-email', () => ({ sendVerificationEmail: async () => ({ ok: true }) }));
 
 const inserts: Record<string, unknown[]> = {};
+let existingEmailRows: unknown[] = [];
 vi.mock('@/lib/supabase-client', () => ({
   supabaseAdmin: {
     from(table: string) {
@@ -27,6 +28,13 @@ vi.mock('@/lib/supabase-client', () => ({
           return { error: null };
         },
         delete: () => ({ eq: async () => ({ error: null }) }),
+        // provisionWorkspace's "is this email already taken?" pre-check:
+        //   from('User').select('id').eq('email', ...).limit(1)
+        select: () => ({
+          eq: () => ({
+            limit: async () => ({ data: existingEmailRows, error: null }),
+          }),
+        }),
       };
     },
   },
@@ -36,6 +44,7 @@ import { provisionWorkspace, SignupError } from '@/lib/signup.server';
 
 beforeEach(() => {
   for (const k of Object.keys(inserts)) delete inserts[k];
+  existingEmailRows = [];
   slugAvailable.mockResolvedValue(true);
   shopNameAvailable.mockResolvedValue(true);
 });
@@ -56,6 +65,11 @@ describe('provisionWorkspace validation', () => {
   it('rejects a taken shop name with 409', async () => {
     shopNameAvailable.mockResolvedValue(false);
     await expect(provisionWorkspace(base)).rejects.toBeInstanceOf(SignupError);
+  });
+
+  it('rejects an email already registered anywhere with 409', async () => {
+    existingEmailRows = [{ id: 'existing-user' }];
+    await expect(provisionWorkspace(base)).rejects.toMatchObject({ status: 409 });
   });
 });
 

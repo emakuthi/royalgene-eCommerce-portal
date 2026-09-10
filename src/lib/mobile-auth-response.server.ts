@@ -18,7 +18,14 @@ function formatShop(s: Record<string, unknown>) {
 export interface MobileAuthPayload {
   token: string;
   user: { id: string; email: string; name: string; phone: string | null; role: string; organizationId: string | null };
-  organization: { id: string; name: string; slug: string } | null;
+  organization: {
+    id: string;
+    name: string;
+    slug: string;
+    /** The tenant's own domain, when verified — the app prefers it as its API host. */
+    customDomain: string | null;
+    customDomainStatus: string | null;
+  } | null;
   shop: ReturnType<typeof formatShop> | null;
   shops?: ReturnType<typeof formatShop>[];
 }
@@ -57,10 +64,22 @@ export async function buildMobileAuthResponse(userId: string): Promise<{ ok: tru
     shopId,
   });
 
-  let organization: { id: string; name: string; slug: string } | null = null;
+  let organization: MobileAuthPayload['organization'] = null;
   if (user.organizationId) {
-    const { data: orgRow } = await supabaseAdmin.from('Organization').select('id, name, slug').eq('id', user.organizationId).maybeSingle();
-    organization = (orgRow as typeof organization) ?? null;
+    const { data: orgRow } = await supabaseAdmin
+      .from('Organization')
+      .select('id, name, slug, customDomain, customDomainStatus')
+      .eq('id', user.organizationId)
+      .maybeSingle();
+    if (orgRow) {
+      organization = {
+        id: orgRow.id,
+        name: orgRow.name,
+        slug: orgRow.slug,
+        customDomain: (orgRow.customDomain as string | null) ?? null,
+        customDomainStatus: (orgRow.customDomainStatus as string | null) ?? null,
+      };
+    }
   }
 
   let shop: Record<string, unknown> | null = null;

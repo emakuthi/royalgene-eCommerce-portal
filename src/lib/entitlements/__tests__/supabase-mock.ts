@@ -63,6 +63,15 @@ export function createSupabaseMock(tables: MockTables) {
         rows = rows.filter((r) => r[col] === val);
         return builder;
       }),
+      ilike: vi.fn((col: string, pattern: string) => {
+        // Supports a bare value or SQL LIKE wildcards (% and _), case-insensitive.
+        const rx = new RegExp(
+          '^' + String(pattern).replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/%/g, '.*').replace(/_/g, '.') + '$',
+          'i',
+        );
+        rows = rows.filter((r) => typeof r[col] === 'string' && rx.test(r[col] as string));
+        return builder;
+      }),
       gte: vi.fn((col: string, val: unknown) => {
         rows = rows.filter((r) => (r[col] as string) >= (val as string));
         return builder;

@@ -35,13 +35,11 @@ export async function POST(request: NextRequest) {
       return jsonResponse({ success: false, error: 'Your Google account email is not verified', code: 'EMAIL_NOT_VERIFIED' }, 401);
     }
 
-    const hostOrgId = request.headers.get('x-org-id');
     let userId: string;
     let isNewUser: boolean;
     try {
       const provisioned = await findOrProvisionUserForSocialIdentity(
         { email: identity.email, name: identity.name, provider: 'google' },
-        hostOrgId,
       );
       userId = provisioned.userId;
       isNewUser = provisioned.isNewUser;
