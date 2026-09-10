@@ -207,6 +207,14 @@ function PortalLoginPageInner() {
 									{showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
 								</button>
 							</div>
+							<div className="text-right">
+								<Link
+									href={formData.email ? `/forgot-password?email=${encodeURIComponent(formData.email)}` : '/forgot-password'}
+									className="text-xs font-medium text-[hsl(var(--primary))] hover:opacity-80 transition"
+								>
+									Forgot password?
+								</Link>
+							</div>
 						</div>
 
 						<Button

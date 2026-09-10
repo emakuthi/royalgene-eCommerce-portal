@@ -43,6 +43,7 @@ export async function PUT(request: NextRequest) {
       .from('User')
       .update({
         password: hashedPassword,
+        passwordChangedAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       })
       .eq('id', payload.userId);
