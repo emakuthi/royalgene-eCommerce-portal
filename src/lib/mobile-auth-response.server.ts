@@ -54,6 +54,24 @@ export async function buildMobileAuthResponse(userId: string): Promise<{ ok: tru
     return { ok: false, error: 'Mobile access has been disabled for this account. Contact your administrator.' };
   }
 
+  // A suspended / closed workspace must not hand out a usable session — every
+  // request would 403 at the edge, and the app would loop back to login.
+  // Platform super_admins (no organizationId) are exempt.
+  if (user.organizationId) {
+    const { data: orgStatus } = await supabaseAdmin
+      .from('Organization')
+      .select('status, deletedAt')
+      .eq('id', user.organizationId)
+      .maybeSingle();
+    const status = orgStatus?.status as string | undefined;
+    if (status === 'cancelled' || orgStatus?.deletedAt) {
+      return { ok: false, error: 'This workspace has been closed. Contact support if this is a mistake.' };
+    }
+    if (status === 'suspended') {
+      return { ok: false, error: 'This workspace is suspended. Contact support to reactivate it.' };
+    }
+  }
+
   const shopId = portalUser?.shopId ?? null;
 
   const token = signAuthToken({
