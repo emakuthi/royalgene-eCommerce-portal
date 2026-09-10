@@ -157,7 +157,7 @@ export async function updateOrganizationUser(
 export async function removeOrganizationUser(
   orgId: string,
   userId: string,
-): Promise<{ ok: true } | { ok: false; status: number; error: string }> {
+): Promise<{ ok: true; deactivated?: boolean } | { ok: false; status: number; error: string }> {
   const target = await loadUserInOrg(orgId, userId);
   if (!target) return { ok: false, status: 404, error: 'User not found in this tenant' };
   if (target.role === 'super_admin') return { ok: false, status: 400, error: 'Platform accounts cannot be removed from here' };
@@ -170,10 +170,28 @@ export async function removeOrganizationUser(
     }
   }
 
-  await supabaseAdmin.from('PortalUser').delete().eq('userId', userId);
-  const { error } = await supabaseAdmin.from('User').delete().eq('id', userId);
-  if (error) return { ok: false, status: 500, error: error.message };
+  const now = new Date().toISOString();
 
-  logger.info('[platform] tenant user removed', { orgId, userId });
+  const { error: puError } = await supabaseAdmin.from('PortalUser').delete().eq('userId', userId);
+  if (puError) {
+    if (puError.code === '23503') {
+      // Sales / stock history blocks the delete — disable the login instead.
+      await supabaseAdmin.from('PortalUser')
+        .update({ isActive: false, mobileAccess: false, updatedAt: now })
+        .eq('userId', userId);
+      logger.info('[platform] tenant user deactivated (has history)', { orgId, userId });
+      return { ok: true, deactivated: true };
+    }
+    return { ok: false, status: 500, error: puError.message };
+  }
+
+  // Best-effort: drop the User row too. An FK error here just leaves an
+  // orphan User with no membership — harmless, the login is already dead.
+  const { error: userError } = await supabaseAdmin.from('User').delete().eq('id', userId);
+  if (userError && userError.code !== '23503') {
+    return { ok: false, status: 500, error: userError.message };
+  }
+
+  logger.info('[platform] tenant user removed', { orgId, userId, userRowKept: Boolean(userError) });
   return { ok: true };
 }

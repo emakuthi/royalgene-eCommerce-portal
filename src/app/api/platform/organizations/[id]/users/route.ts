@@ -60,7 +60,13 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
 
   const result = await removeOrganizationUser(id, userId);
   if (!result.ok) return jsonResponse({ success: false, error: result.error }, result.status);
-  return jsonResponse({ success: true });
+  return jsonResponse({
+    success: true,
+    data: { deactivated: Boolean(result.deactivated) },
+    ...(result.deactivated
+      ? { message: 'This person has sales or stock history, so their access was disabled instead of deleted.' }
+      : {}),
+  });
 }
 
 export function OPTIONS() {

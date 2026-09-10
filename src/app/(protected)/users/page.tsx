@@ -302,11 +302,17 @@ function PortalUsersContent() {
     setDeleting(userId);
     try {
       const res = await fetch(`/api/portal/users/${userId}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
-      if (res.ok) {
-        toast.success('Portal user deleted');
-        setPortalUsers(prev => prev.filter(u => u.id !== userId));
+      const json = await res.json().catch(() => ({}));
+      if (res.ok && json.success) {
+        if (json.data?.deactivated) {
+          toast.success(json.message || 'Access disabled — this person has transaction history.');
+          setPortalUsers(prev => prev.map(u => (u.id === userId ? { ...u, isActive: false } : u)));
+        } else {
+          toast.success('Portal user deleted');
+          setPortalUsers(prev => prev.filter(u => u.id !== userId));
+        }
       } else {
-        toast.error('Failed to delete portal user');
+        toast.error(json.error || 'Failed to delete portal user');
       }
     } catch (err) {
       console.error(err);
