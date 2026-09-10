@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/input';
 import { useHydratedAuth } from '@/lib/hooks';
 import { usePortalStore } from '@/lib/store';
 import { toast } from 'sonner';
-import { Search, Eye, ArrowRightLeft, MoreHorizontal, RefreshCw } from 'lucide-react';
+import { Search, Eye, ArrowRightLeft, MoreHorizontal, RefreshCw, Grid3x3 } from 'lucide-react';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -20,6 +20,7 @@ import type { ShopStock, Product } from '@/lib/types';
 import { formatKESMajor } from '@/lib/format';
 import StockViewModal from './stock-view-modal';
 import StockTransferModal from './stock-transfer-modal';
+import VariantMatrixModal from './variant-matrix-modal';
 import * as stockApi from '@/lib/stockApi';
 import PortalHeader from '@/components/portal/PortalHeader';
 import { useTheme } from '@/lib/theme-context';
@@ -74,6 +75,9 @@ function StockManagementContent() {
   // Transfer modal state
   const [isTransferModalOpen, setIsTransferModalOpen] = useState(false);
   const [transferStock, setTransferStock] = useState<ApiShopStock | null>(null);
+  // Size/colour breakdown modal state
+  const [isVariantModalOpen, setIsVariantModalOpen] = useState(false);
+  const [variantStock, setVariantStock] = useState<ApiShopStock | null>(null);
   // Tab state: 'current' = current shop only, 'all' = all shops
   const [activeTab, setActiveTab] = useState<'current' | 'all'>('current');
   const [allStocks, setAllStocks] = useState<ApiShopStock[]>([]);
@@ -469,6 +473,12 @@ function StockManagementContent() {
                           >
                             <ArrowRightLeft className="h-4 w-4" />Transfer Stock
                           </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onClick={() => { setVariantStock(stock); setIsVariantModalOpen(true); }}
+                            className="cursor-pointer gap-2"
+                          >
+                            <Grid3x3 className="h-4 w-4 text-gray-500" />Size / colour breakdown
+                          </DropdownMenuItem>
                           <DropdownMenuSeparator />
                           <DropdownMenuItem
                             onClick={() => { setRestockStockId(stock.id); setIsRestockModalOpen(true); setRestockQuantity(stock.quantity); }}
@@ -570,6 +580,13 @@ function StockManagementContent() {
                               >
                                 <ArrowRightLeft className="h-4 w-4" />
                                 Transfer Stock
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                onClick={() => { setVariantStock(stock); setIsVariantModalOpen(true); }}
+                                className="cursor-pointer gap-2"
+                              >
+                                <Grid3x3 className="h-4 w-4 text-gray-500" />
+                                Size / colour breakdown
                               </DropdownMenuItem>
                               <DropdownMenuSeparator />
                               <DropdownMenuItem
@@ -676,6 +693,20 @@ function StockManagementContent() {
           setStocks(prev => prev.map(s => s.id === stockId ? { ...s, quantity: newQty } : s));
         }}
       />
+
+      {/* Size / colour breakdown modal */}
+      {isVariantModalOpen && variantStock && (
+        <VariantMatrixModal
+          open={isVariantModalOpen}
+          stock={variantStock}
+          token={token}
+          onClose={() => { setIsVariantModalOpen(false); setVariantStock(null); }}
+          onSaved={(stockId, newTotal) => {
+            setStocks(prev => prev.map(s => s.id === stockId ? { ...s, quantity: newTotal } : s));
+            setAllStocks(prev => prev.map(s => s.id === stockId ? { ...s, quantity: newTotal } : s));
+          }}
+        />
+      )}
     </div>
   );
 }
