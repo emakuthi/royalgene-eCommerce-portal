@@ -4,6 +4,7 @@ import { supabaseAdmin } from '@/lib/supabase-client';
 import logger from '@/lib/logger';
 import { jsonResponse } from '@/lib/apiResponse';
 import { v4 as uuidv4 } from 'uuid';
+import { hasVariantStock } from '@/lib/variant-stock.server';
 
 /**
  * PUT /api/mobile/shops/[shopId]/stock/[stockId]
@@ -90,6 +91,16 @@ export async function PUT(
         error: 'Stock item not found',
         code: 'NOT_FOUND',
       }, 404);
+    }
+
+    // When this product is tracked by size × colour, the flat total is
+    // derived — the client must edit the breakdown (…/variants) instead.
+    if (await hasVariantStock(stockId)) {
+      return jsonResponse({
+        success: false,
+        error: 'This product is tracked by size/colour — update the breakdown instead.',
+        code: 'VARIANT_STOCK',
+      }, 409);
     }
 
     // Update stock

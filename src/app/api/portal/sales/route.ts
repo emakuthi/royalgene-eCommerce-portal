@@ -5,6 +5,7 @@ import logger from '@/lib/logger';
 import { v4 as uuidv4 } from 'uuid';
 import type { ShopStock, PortalUser as PortalUserType } from '@/lib/types';
 import { syncProductStockFromShopStocks } from '@/lib/supabase-db';
+import { validateVariantRemoval, decrementCell } from '@/lib/variant-stock.server';
 import { jsonResponse, optionsResponse } from '@/lib/apiResponse';
 import { trackFromRequest } from '@/lib/activity-tracker';
 import { generateTaxInvoiceForSale } from '@/lib/etims/tax-invoice.server';
@@ -29,6 +30,8 @@ export async function POST(request: NextRequest) {
       customerName,
       customerPhone,
       notes,
+      size,
+      color,
     } = await request.json();
 
     logger.info('Sales entry attempt', { shopStockId: shopStockId || null, shopId: payloadShopId, productId: payloadProductId, quantity, userId: payload.userId, endpoint: '/api/portal/sales' });
@@ -203,11 +206,19 @@ export async function POST(request: NextRequest) {
     }
 
     // Server-side stock availability validation to prevent over-selling
+    let salesUsesVariant = false;
     if (shopStock) {
       if (quantity > shopStock.quantity) {
         logger.warn('Attempt to create sale exceeding stock', { shopStockId: shopStock.id, available: shopStock.quantity, requested: quantity });
         return jsonResponse({ success: false, error: `Insufficient stock: only ${shopStock.quantity} available` }, 400);
       }
+
+      // Size × colour matrix: sale is against a specific cell.
+      const variantCheck = await validateVariantRemoval(shopStock.id, size, color, quantity);
+      if (variantCheck.needsVariant && variantCheck.error) {
+        return jsonResponse({ success: false, error: variantCheck.error }, 400);
+      }
+      salesUsesVariant = variantCheck.needsVariant;
     }
 
     const totalAmount = quantity * unitPrice;
@@ -234,6 +245,8 @@ export async function POST(request: NextRequest) {
         customerName: customerName || null,
         customerPhone: customerPhone || null,
         notes: notes || null,
+        size: salesUsesVariant ? (typeof size === 'string' ? size.trim() || null : null) : null,
+        color: salesUsesVariant ? (typeof color === 'string' ? color.trim() || null : null) : null,
         createdAt: now,
         updatedAt: now,
       }])
@@ -261,15 +274,18 @@ export async function POST(request: NextRequest) {
 
     // Update shop stock if exists
     if (shopStock) {
+      if (salesUsesVariant) {
+        // Decrement the size × colour cell — the DB trigger rolls it down to
+        // ShopStock.quantity, then syncProductStockFromShopStocks to Product.
+        const dec = await decrementCell(shopStock.id, typeof size === 'string' ? size : '', typeof color === 'string' ? color : '', quantity);
+        if (!dec.ok) logger.error('Sale variant decrement failed', { shopStockId: shopStock.id, size, color, error: dec.error });
+      } else {
+        await supabaseAdmin
+          .from('ShopStock')
+          .update({ quantity: Math.max(0, shopStock.quantity - quantity), updatedAt: now })
+          .eq('id', shopStock.id);
+      }
       const newQuantity = Math.max(0, shopStock.quantity - quantity);
-
-      await supabaseAdmin
-        .from('ShopStock')
-        .update({
-          quantity: newQuantity,
-          updatedAt: now,
-        })
-        .eq('id', shopStock.id);
 
       // Create stock transaction
       await supabaseAdmin
@@ -283,6 +299,8 @@ export async function POST(request: NextRequest) {
           quantity: -quantity,
           reason: 'Sale',
           reference: saleId,
+          size: salesUsesVariant ? (typeof size === 'string' ? size.trim() || null : null) : null,
+          color: salesUsesVariant ? (typeof color === 'string' ? color.trim() || null : null) : null,
           createdAt: now,
         }]);
 

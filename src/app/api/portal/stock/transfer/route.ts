@@ -27,6 +27,7 @@ import logger from '@/lib/logger';
 import { v4 as uuidv4 } from 'uuid';
 import { jsonResponse, optionsResponse } from '@/lib/apiResponse';
 import { syncProductStockFromShopStocks } from '@/lib/supabase-db';
+import { hasVariantStock } from '@/lib/variant-stock.server';
 import { trackFromRequest } from '@/lib/activity-tracker';
 import type { ShopStock } from '@/lib/types';
 import { assertFeatureEnabled } from '@/lib/entitlements/enforce.server';
@@ -109,6 +110,15 @@ export async function POST(request: NextRequest) {
     // ── Guard: cannot transfer to the same shop ─────────────────────────────
     if (src.shopId === toShopId) {
       return jsonResponse({ success: false, error: 'Source and destination shops must be different' }, 400);
+    }
+
+    // ── Guard: variant-tracked stock isn't transferable via the flat path yet ──
+    if (await hasVariantStock(src.id)) {
+      return jsonResponse({
+        success: false,
+        error: 'This product is tracked by size/colour — adjust the breakdown at each shop instead.',
+        code: 'VARIANT_STOCK',
+      }, 409);
     }
 
     // ── Guard: sufficient stock in source ───────────────────────────────────

@@ -17,6 +17,7 @@ import logger from '@/lib/logger';
 import { jsonResponse } from '@/lib/apiResponse';
 import { verifyMobileShopAccess } from '@/lib/mobile-shop-auth';
 import { syncProductStockFromShopStocks } from '@/lib/supabase-db';
+import { hasVariantStock } from '@/lib/variant-stock.server';
 import { v4 as uuidv4 } from 'uuid';
 import { assertFeatureEnabled } from '@/lib/entitlements/enforce.server';
 import { FeatureCode } from '@/lib/entitlements/feature-codes';
@@ -82,6 +83,14 @@ export async function POST(
     if (!srcStock) {
       logger.warn('Mobile stock transfer: source ShopStock not found', { shopId, productId, userId: auth.payload.userId });
       return jsonResponse({ success: false, error: 'Product not found in source shop', code: 'NOT_FOUND' }, 404);
+    }
+
+    if (await hasVariantStock(srcStock.id as string)) {
+      return jsonResponse({
+        success: false,
+        error: 'This product is tracked by size/colour — adjust the breakdown at each shop instead.',
+        code: 'VARIANT_STOCK',
+      }, 409);
     }
 
     if ((srcStock.quantity as number) < transferQty) {

@@ -326,6 +326,23 @@ export interface ShopStock {
   metadata?: Record<string, unknown> | null;
 }
 
+/**
+ * One cell of a product's size × colour stock matrix at a shop. The product
+ * total rolls up automatically: ShopStock.quantity = SUM(ShopStockVariant.quantity)
+ * (DB trigger), then Product.stockQuantity = SUM(ShopStock.quantity). Products
+ * with no breakdown simply have zero of these rows.
+ */
+export interface ShopStockVariant {
+  id: string;
+  shopStockId: string;
+  organizationId?: string | null;
+  size: string;   // '' means "no size dimension"
+  color: string;  // '' means "no colour dimension"
+  quantity: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface StockTransaction {
   id: string;
   shopStockId: string;
@@ -335,6 +352,9 @@ export interface StockTransaction {
   reason?: string;
   reference?: string;
   notes?: string;
+  /** Set when the movement was against a specific size × colour cell. */
+  size?: string | null;
+  color?: string | null;
   createdAt: string;
 }
 
@@ -350,6 +370,9 @@ export interface SalesEntry {
   customerName?: string;
   customerPhone?: string;
   notes?: string;
+  /** Set when the sold item was a specific size × colour cell. */
+  size?: string | null;
+  color?: string | null;
   entryDate: string;
   createdAt: string;
 }
