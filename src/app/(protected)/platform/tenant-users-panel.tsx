@@ -79,8 +79,13 @@ export function TenantUsersPanel({
     setBusyId(null);
     setRemoveId(null);
     if (res.ok && res.success) {
-      setUsers((prev) => (prev ? prev.filter((u) => u.id !== userId) : prev));
-      toast.success('Account removed');
+      if (res.data?.deactivated) {
+        toast.success('This person has transaction history — access disabled instead of deleted.');
+        await load();
+      } else {
+        setUsers((prev) => (prev ? prev.filter((u) => u.id !== userId) : prev));
+        toast.success('Account removed');
+      }
     } else {
       toast.error(res.error || 'Could not remove');
     }

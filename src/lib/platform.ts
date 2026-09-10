@@ -253,7 +253,7 @@ export function updateOrganizationUser(
 }
 
 export function removeOrganizationUser(token: string | null | undefined, organizationId: string, userId: string) {
-  return request<null>(
+  return request<{ deactivated: boolean }>(
     `/api/platform/organizations/${encodeURIComponent(organizationId)}/users?userId=${encodeURIComponent(userId)}`,
     token,
     { method: 'DELETE' },

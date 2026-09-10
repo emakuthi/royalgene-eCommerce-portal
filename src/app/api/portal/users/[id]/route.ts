@@ -75,27 +75,46 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   return jsonResponse({ success: true, data: updated });
 }
 
-// DELETE /api/portal/users/[id] — delete PortalUser (and optionally the User row)
+// DELETE /api/portal/users/[id] — remove a PortalUser (and its User row when
+// it isn't shared). If the person has sales / stock history their row can't be
+// deleted, so we deactivate the login instead and say so.
 export async function DELETE(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const auth = requireAdmin(request);
   if (auth instanceof NextResponse) return auth;
 
   const { id } = await params;
 
-  // Get userId first, and verify org ownership before deleting anything.
-  const { data: pu } = await supabaseAdmin.from('PortalUser').select('userId, organizationId').eq('id', id).single();
+  const { data: pu } = await supabaseAdmin
+    .from('PortalUser').select('userId, organizationId').eq('id', id).maybeSingle();
   if (!pu) return jsonResponse({ success: false, error: 'Portal user not found' }, 404);
   if (auth.organizationId && pu.organizationId !== auth.organizationId) {
     return jsonResponse({ success: false, error: 'Forbidden' }, 403);
   }
 
   const { error } = await supabaseAdmin.from('PortalUser').delete().eq('id', id);
-  if (error) return jsonResponse({ success: false, error: error.message }, 500);
+  if (error) {
+    if (error.code === '23503') {
+      await supabaseAdmin
+        .from('PortalUser')
+        .update({ isActive: false, mobileAccess: false, updatedAt: new Date().toISOString() })
+        .eq('id', id);
+      return jsonResponse({
+        success: true,
+        data: { deactivated: true },
+        message: 'This person has sales or stock history, so their access was disabled instead of deleted.',
+      });
+    }
+    return jsonResponse({ success: false, error: error.message }, 500);
+  }
 
-  // Also delete the underlying User row (portal_user role only)
-  if (pu?.userId) {
-    const { data: userRow } = await supabaseAdmin.from('User').select('role').eq('id', pu.userId).single();
-    if (userRow?.role === 'portal_user') {
+  // Remove the underlying User row only when it's a plain portal_user with no
+  // other shop membership left; ignore an FK error (leaves a harmless orphan).
+  if (pu.userId) {
+    const [{ data: userRow }, { data: otherMemberships }] = await Promise.all([
+      supabaseAdmin.from('User').select('role').eq('id', pu.userId).maybeSingle(),
+      supabaseAdmin.from('PortalUser').select('id').eq('userId', pu.userId).limit(1),
+    ]);
+    if (userRow?.role === 'portal_user' && (!otherMemberships || otherMemberships.length === 0)) {
       await supabaseAdmin.from('User').delete().eq('id', pu.userId);
     }
   }
