@@ -27,10 +27,28 @@ export async function createProductForShop(
   shopId: string,
   _userId?: string,
   organizationId?: string,
+  /** Client-generated id for an offline-created product — makes a retried create idempotent. */
+  clientProductId?: string,
 ): Promise<ShopStockWithProduct | ShopStock | undefined> {
   if (!organizationId) {
     throw new Error('organizationId is required to create a product');
   }
+
+  // Offline-first replay: this exact product (by client id) was already
+  // created — return it + its ShopStock at this shop instead of creating a
+  // second one under a different id.
+  if (clientProductId) {
+    const { data: existingProduct } = await supabaseAdmin
+      .from('Product').select('*').eq('id', clientProductId).eq('organizationId', organizationId).maybeSingle();
+    if (existingProduct) {
+      const { data: existingStock } = await supabaseAdmin
+        .from('ShopStock').select('*').eq('shopId', shopId).eq('productId', clientProductId).maybeSingle();
+      if (existingStock) {
+        return { ...(existingStock as ShopStock), Product: existingProduct as Product };
+      }
+    }
+  }
+
   // create product then shop stock; try Supabase createProduct, fallback to in-memory DB
   let newProduct: Product | null;
 
@@ -49,6 +67,7 @@ export async function createProductForShop(
 
     newProduct = await createProduct({
       organizationId,
+      id: clientProductId,
       name: asString(productData['name']),
       description: asString(productData['description']),
       price: priceValue,
@@ -73,7 +92,7 @@ export async function createProductForShop(
     // fallback to in-memory product creation
     const now = new Date().toISOString();
     const prod: Product = {
-      id: uuidv4(),
+      id: clientProductId ?? uuidv4(),
       organizationId,
       name: asString(productData['name']),
       description: asString(productData['description']),

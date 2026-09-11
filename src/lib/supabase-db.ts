@@ -1,5 +1,6 @@
 import { supabaseAdmin } from './supabase-client';
 import { v4 as uuidv4 } from 'uuid';
+import { idempotentInsert } from './sync/idempotent-insert.server';
 import type { User, Product, Order, Invoice, Receipt, PaymentDetails, BankTransferDetails, MpesaDetails, CardDetails } from './types';
 import { deleteUploadedFiles } from './storage-usage.server';
 
@@ -44,7 +45,15 @@ function getField<T = unknown>(row: Record<string, unknown>, ...keys: string[]):
  * ============================================================
  */
 
-export async function createProduct(productData: Omit<Product, 'id' | 'createdAt' | 'updatedAt'> & { organizationId: string }) {
+/**
+ * `id` lets an offline-created product keep its client-generated UUID
+ * across a retry: this insert is idempotent on it (see idempotentInsert) —
+ * a retried create with the same id returns the original row rather than
+ * creating a second product.
+ */
+export async function createProduct(
+  productData: Omit<Product, 'id' | 'createdAt' | 'updatedAt'> & { organizationId: string; id?: string },
+) {
   try {
     if (!hasValidCredentials()) {
       throw new Error('Supabase credentials not configured');
@@ -52,26 +61,21 @@ export async function createProduct(productData: Omit<Product, 'id' | 'createdAt
 
     console.log('[Supabase] Creating product:', productData.name);
 
-    const { data, error } = await supabaseAdmin
-      .from('Product')
-      .insert([
-        {
-          id: uuidv4(),
-          ...productData,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        },
-      ])
-      .select();
+    const { id, ...rest } = productData;
+    const result = await idempotentInsert<Product>('Product', {
+      id: id ?? uuidv4(),
+      ...rest,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    });
 
-    if (error) {
-      const msg = errorToMessage(error) || 'Failed to create product';
-      console.error('[Supabase] Product creation failed:', msg);
-      throw new Error(msg);
+    if (!result.ok) {
+      console.error('[Supabase] Product creation failed:', result.error);
+      throw new Error(result.error);
     }
 
-    console.log('[Supabase] Product created successfully');
-    return (data && Array.isArray(data) ? data[0] : data) || null;
+    console.log('[Supabase] Product created successfully', { replay: !result.created });
+    return result.row;
   } catch (error) {
     console.error('[Supabase] Create product error:', errorToMessage(error));
     throw error;
