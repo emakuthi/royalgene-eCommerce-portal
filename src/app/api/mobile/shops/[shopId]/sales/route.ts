@@ -10,6 +10,8 @@ import { syncProductStockFromShopStocks } from '@/lib/supabase-db';
 import { assertCanCreate } from '@/lib/entitlements/enforce.server';
 import { generateTaxInvoiceForSale } from '@/lib/etims/tax-invoice.server';
 import { syncSaleToQuickBooks } from '@/lib/accounting/sync-sale-to-quickbooks.server';
+import { isValidClientId } from '@/lib/sync/syncable-entities';
+import { idempotentInsert } from '@/lib/sync/idempotent-insert.server';
 
 /**
  * POST /api/mobile/shops/[shopId]/sales
@@ -57,6 +59,32 @@ export async function POST(
         error: 'Missing required fields: productId, quantity, unitPrice',
         code: 'VALIDATION_ERROR',
       }, 400);
+    }
+
+    // Offline-first: the app generates the sale id and may retry a request
+    // whose response it never received. If that id is already recorded, return
+    // it and run none of the side effects (stock, invoice, accounting) again.
+    const clientSaleId = isValidClientId((body as { id?: unknown }).id) ? (body as { id: string }).id : null;
+    if (clientSaleId) {
+      const { data: dup } = await supabaseAdmin
+        .from('SalesEntry').select('*').eq('id', clientSaleId).maybeSingle();
+      if (dup) {
+        return jsonResponse({
+          success: true,
+          data: {
+            saleId: dup.id,
+            timestamp: dup.createdAt,
+            quantity: dup.quantity,
+            unitPrice: dup.unitPrice,
+            totalAmount: dup.totalAmount,
+            paymentMethod: dup.paymentMethod,
+            customerName: dup.customerName,
+            customerPhone: dup.customerPhone,
+          },
+          message: 'Sale already recorded',
+          idempotent: true,
+        }, 200);
+      }
     }
 
     // Confirm the shop exists in the Shop table and is active
@@ -204,46 +232,47 @@ export async function POST(
     const profit = totalAmount - (costPrice * quantity);
     const marginPercentage = totalAmount > 0 ? (profit / totalAmount) * 100 : 0;
 
-    // Create sales entry
-    const saleId = uuidv4();
+    // Create sales entry — client id when supplied, else server-generated.
+    const saleId = clientSaleId ?? uuidv4();
     const now = new Date().toISOString();
 
-    const { data: saleData, error: saleError } = await supabaseAdmin
-      .from('SalesEntry')
-      .insert([{
-        id: saleId,
-        organizationId: sRow['organizationId'],
-        shopId,
-        portalUserId: auth.portalUserId,
-        productId,
-        quantity,
-        unitPrice,
-        totalAmount,
-        paymentMethod: paymentMethod || 'cash',
-        customerName: customerName || null,
-        customerPhone: customerPhone || null,
-        notes: notes || null,
-        size: variantCheck.needsVariant ? (size?.trim() || null) : null,
-        color: variantCheck.needsVariant ? (color?.trim() || null) : null,
-        createdAt: now,
-        updatedAt: now
-      }])
-      .select('*')
-      .single();
+    const insert = await idempotentInsert('SalesEntry', {
+      id: saleId,
+      organizationId: sRow['organizationId'],
+      shopId,
+      portalUserId: auth.portalUserId,
+      productId,
+      quantity,
+      unitPrice,
+      totalAmount,
+      paymentMethod: paymentMethod || 'cash',
+      customerName: customerName || null,
+      customerPhone: customerPhone || null,
+      notes: notes || null,
+      size: variantCheck.needsVariant ? (size?.trim() || null) : null,
+      color: variantCheck.needsVariant ? (color?.trim() || null) : null,
+      createdAt: now,
+      updatedAt: now,
+    });
 
-    if (saleError || !saleData) {
-      logger.error('Mobile sale creation failed', { 
-        userId: auth.payload.userId,
-        shopId,
-        productId,
-        error: saleError?.message,
-        endpoint: `/api/mobile/shops/${shopId}/sales`
+    if (!insert.ok) {
+      logger.error('Mobile sale creation failed', {
+        userId: auth.payload.userId, shopId, productId,
+        error: insert.error, endpoint: `/api/mobile/shops/${shopId}/sales`,
       });
-      return jsonResponse({ 
-        success: false, 
-        error: 'Failed to record sale',
-        code: 'INTERNAL_ERROR'
-      }, 500);
+      return jsonResponse({ success: false, error: 'Failed to record sale', code: 'INTERNAL_ERROR' }, 500);
+    }
+
+    // The row already existed (a race between two retries slipped past the
+    // check above) — return it, touch nothing else.
+    if (!insert.created) {
+      const dup = insert.row as Record<string, unknown>;
+      return jsonResponse({
+        success: true,
+        data: { saleId: dup.id, timestamp: dup.createdAt, quantity: dup.quantity, totalAmount: dup.totalAmount },
+        message: 'Sale already recorded',
+        idempotent: true,
+      }, 200);
     }
 
     // Update stock. With a size × colour breakdown, decrement the specific

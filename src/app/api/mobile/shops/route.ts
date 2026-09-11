@@ -1,5 +1,7 @@
 import { NextRequest } from 'next/server';
 import { v4 as uuidv4 } from 'uuid';
+import { isValidClientId } from '@/lib/sync/syncable-entities';
+import { idempotentInsert } from '@/lib/sync/idempotent-insert.server';
 import { verifyToken } from '@/lib/auth.server';
 import { supabaseAdmin } from '@/lib/supabase-client';
 import { isSupabaseAdminConfigured } from '@/lib/supabase-client';
@@ -199,34 +201,50 @@ export async function POST(request: NextRequest) {
     if (!name?.trim() || !location?.trim()) {
       return jsonResponse({ success: false, error: 'Shop name and location are required', code: 'VALIDATION_ERROR' }, 400);
     }
+
+    // Offline-first: the app may resend a create it already succeeded. If that
+    // shop id exists (in this org), return it — don't trip the name check.
+    const clientShopId = isValidClientId((body as { id?: unknown }).id) ? (body as { id: string }).id : null;
+    if (clientShopId) {
+      const { data: dup } = await supabaseAdmin
+        .from('Shop').select('id, name, location, phone, address, organizationId').eq('id', clientShopId).maybeSingle();
+      if (dup) {
+        if (dup.organizationId !== organizationId) {
+          return jsonResponse({ success: false, error: 'Forbidden', code: 'FORBIDDEN' }, 403);
+        }
+        return jsonResponse({
+          success: true,
+          data: { id: dup.id, name: dup.name, location: dup.location, phoneNumber: dup.phone ?? null, address: dup.address ?? null },
+          idempotent: true,
+        }, 200);
+      }
+    }
+
     if (!(await isShopNameAvailable(name.trim()))) {
       return jsonResponse({ success: false, error: 'A shop with that name already exists', code: 'DUPLICATE_NAME' }, 409);
     }
 
     const now = new Date().toISOString();
-    const { data: shop, error } = await supabaseAdmin
-      .from('Shop')
-      .insert([{
-        id: uuidv4(),
-        organizationId,
-        name: name.trim(),
-        location: location.trim(),
-        phone: phone?.trim() || null,
-        address: address?.trim() || null,
-        isActive: true,
-        createdAt: now,
-        updatedAt: now,
-      }])
-      .select('id, name, location, phone, address')
-      .single();
+    const insert = await idempotentInsert<{ id: string; name: string; location: string; phone: string | null; address: string | null }>('Shop', {
+      id: clientShopId ?? uuidv4(),
+      organizationId,
+      name: name.trim(),
+      location: location.trim(),
+      phone: phone?.trim() || null,
+      address: address?.trim() || null,
+      isActive: true,
+      createdAt: now,
+      updatedAt: now,
+    });
 
-    if (error) {
-      if (error.code === '23505') {
+    if (!insert.ok) {
+      if (insert.code === '23505') {
         return jsonResponse({ success: false, error: 'A shop with that name already exists', code: 'DUPLICATE_NAME' }, 409);
       }
-      logger.error('Mobile create shop failed', { error: error.message, userId: payload.userId });
+      logger.error('Mobile create shop failed', { error: insert.error, userId: payload.userId });
       return jsonResponse({ success: false, error: 'Failed to create shop', code: 'INTERNAL_ERROR' }, 500);
     }
+    const shop = insert.row;
 
     logger.info('Mobile shop created', { shopId: shop?.id, userId: payload.userId });
     return jsonResponse({
