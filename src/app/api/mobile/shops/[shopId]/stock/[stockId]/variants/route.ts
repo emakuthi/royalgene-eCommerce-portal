@@ -7,7 +7,14 @@ import { getVariantMatrix, setVariantMatrix, type VariantCellInput } from '@/lib
 
 // Size × colour matrix for one ShopStock row (mobile).
 //   GET -> matrix + rollups
-//   PUT { cells: [{ size, color, quantity }] } -> replace the matrix
+//   PUT { cells: [{ size, color, quantity }], version? } -> replace the matrix
+//
+// Optional `version` on PUT enables optimistic concurrency: pass the
+// ShopStock version you last read and the replace only applies if nobody
+// else has changed this stock row since — otherwise a 409 VERSION_CONFLICT
+// comes back with the current matrix instead of silently overwriting
+// someone else's edit. Omit it to keep the old unconditional-replace
+// behaviour.
 
 async function loadStock(request: NextRequest, shopId: string, stockId: string) {
   const auth = await verifyMobileShopAccess(request, shopId);
@@ -15,7 +22,7 @@ async function loadStock(request: NextRequest, shopId: string, stockId: string) 
 
   const { data: stock } = await supabaseAdmin
     .from('ShopStock')
-    .select('id, shopId, organizationId, quantity')
+    .select('id, shopId, organizationId, quantity, version')
     .eq('id', stockId)
     .eq('shopId', shopId)
     .maybeSingle();
@@ -40,8 +47,9 @@ export async function PUT(request: NextRequest, ctx: { params: Promise<{ shopId:
 
   let body: unknown;
   try { body = await request.json(); } catch { return jsonResponse({ success: false, error: 'Invalid JSON', code: 'VALIDATION_ERROR' }, 400); }
-  const rawCells = (body as { cells?: unknown })?.cells;
+  const { cells: rawCells, version } = body as { cells?: unknown; version?: unknown };
   if (!Array.isArray(rawCells)) return jsonResponse({ success: false, error: 'cells[] is required', code: 'VALIDATION_ERROR' }, 400);
+  const clientVersion = typeof version === 'number' ? version : undefined;
 
   const cells: VariantCellInput[] = [];
   for (const c of rawCells) {
@@ -57,6 +65,36 @@ export async function PUT(request: NextRequest, ctx: { params: Promise<{ shopId:
   }
 
   try {
+    // Optimistic concurrency: atomically claim the ShopStock row by
+    // conditionally touching it (fires the sync_touch trigger, which bumps
+    // version) — same compare-and-swap gate as the flat-quantity PUT route,
+    // just guarding a multi-row matrix replace instead of a single UPDATE.
+    if (clientVersion !== undefined) {
+      const { data: claimed, error: claimError } = await supabaseAdmin
+        .from('ShopStock')
+        .update({ updatedAt: new Date().toISOString() })
+        .eq('id', stockId)
+        .eq('version', clientVersion)
+        .select('id, version');
+
+      if (claimError) {
+        return jsonResponse({ success: false, error: 'Failed to save breakdown', code: 'INTERNAL_ERROR' }, 500);
+      }
+
+      if (!claimed || claimed.length === 0) {
+        const [{ data: current }, currentMatrix] = await Promise.all([
+          supabaseAdmin.from('ShopStock').select('id, version, quantity').eq('id', stockId).maybeSingle(),
+          getVariantMatrix(stockId),
+        ]);
+        return jsonResponse({
+          success: false,
+          error: 'This stock breakdown was changed elsewhere since you last loaded it.',
+          code: 'VERSION_CONFLICT',
+          data: { ...currentMatrix, shopStockId: stockId, version: current?.version },
+        }, 409);
+      }
+    }
+
     const before = await getVariantMatrix(stockId);
     const matrix = await setVariantMatrix(stockId, stock.organizationId ?? null, cells);
 
@@ -71,7 +109,12 @@ export async function PUT(request: NextRequest, ctx: { params: Promise<{ shopId:
       createdAt: new Date().toISOString(),
     }]);
 
-    return jsonResponse({ success: true, data: { ...matrix, shopStockId: stockId } });
+    // The rollup trigger (ShopStockVariant -> ShopStock.quantity) already
+    // bumped ShopStock.version again during setVariantMatrix above, so
+    // re-read it fresh rather than reusing the pre-replace `stock.version`.
+    const { data: freshStock } = await supabaseAdmin.from('ShopStock').select('version').eq('id', stockId).maybeSingle();
+
+    return jsonResponse({ success: true, data: { ...matrix, shopStockId: stockId, version: freshStock?.version } });
   } catch (err) {
     return jsonResponse({ success: false, error: err instanceof Error ? err.message : 'Failed to save breakdown', code: 'INTERNAL_ERROR' }, 500);
   }
