@@ -125,6 +125,14 @@ export async function GET(
  * Update product details (name, description, price, costPrice, images, sizes, colors, sku)
  * and/or stock fields (quantity, reorderLevel / minimumStockLevel).
  *
+ * Optional `version` field enables optimistic concurrency: pass the
+ * version you last read and the update only applies if nobody else has
+ * changed the product since — otherwise a 409 VERSION_CONFLICT comes back
+ * with the current server state instead of silently overwriting it.
+ * Omit it to keep the old unconditional-overwrite behaviour (existing web
+ * portal callers). Only guards the Product-table fields — ShopStock's
+ * quantity/reorderLevel are still a plain overwrite.
+ *
  * [productId] may be the Product UUID or the ShopStock UUID.
  */
 export async function PUT(
@@ -249,11 +257,20 @@ export async function PUT(
         removedImageUrls = oldImages.filter((url) => !newImages.includes(url));
       }
 
-      productUpdates.updatedAt = new Date().toISOString();
-      const { error: prodUpdateError } = await supabaseAdmin
-        .from('Product')
-        .update(productUpdates)
-        .eq('id', resolvedProductId);
+      // Optimistic concurrency: a caller that knows the version it last
+      // read (the local-first mobile client always does) can pass it, and
+      // the UPDATE only takes effect if the row is still at that version —
+      // atomically, via the same statement, not a separate check-then-write
+      // that could race. If someone else changed this product in between,
+      // 0 rows match and the caller gets the current state back instead of
+      // silently clobbering it. A caller that omits `version` (existing web
+      // portal callers) gets the old unconditional-overwrite behaviour.
+      const clientVersion = typeof body.version === 'number' ? body.version : undefined;
+      let updateQuery = supabaseAdmin.from('Product').update(productUpdates).eq('id', resolvedProductId);
+      if (clientVersion !== undefined) {
+        updateQuery = updateQuery.eq('version', clientVersion);
+      }
+      const { data: updatedRows, error: prodUpdateError } = await updateQuery.select('id, version');
 
       if (prodUpdateError) {
         logger.error('Mobile product update: Product table update failed', {
@@ -261,6 +278,19 @@ export async function PUT(
           error: prodUpdateError.message,
         });
         return jsonResponse({ success: false, error: 'Failed to update product', code: 'INTERNAL_ERROR' }, 500);
+      }
+
+      if (clientVersion !== undefined && (!updatedRows || updatedRows.length === 0)) {
+        const { data: current } = await supabaseAdmin.from('Product').select('*').eq('id', resolvedProductId).maybeSingle();
+        logger.info('Mobile product update: version conflict', {
+          userId: auth.payload.userId, shopId, productId: resolvedProductId, clientVersion, serverVersion: current?.version,
+        });
+        return jsonResponse({
+          success: false,
+          error: 'This product was changed elsewhere since you last loaded it.',
+          code: 'VERSION_CONFLICT',
+          data: current,
+        }, 409);
       }
 
       if (removedImageUrls.length > 0) {
@@ -319,6 +349,10 @@ export async function PUT(
         colors: updatedProd?.colors || [],
         sizes: updatedProd?.sizes || [],
         reorderLevel: updatedStock?.lowStockThreshold || 5,
+        // The version after this update — a caller doing optimistic
+        // concurrency (see the `version` request field above) uses this as
+        // its new baseline for the next edit.
+        version: updatedProd?.version,
       },
       message: 'Product updated successfully',
     }, 200);
