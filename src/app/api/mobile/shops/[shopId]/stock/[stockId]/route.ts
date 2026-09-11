@@ -8,7 +8,13 @@ import { hasVariantStock } from '@/lib/variant-stock.server';
 
 /**
  * PUT /api/mobile/shops/[shopId]/stock/[stockId]
- * Update stock quantity for a specific shop stock item
+ * Update stock quantity for a specific shop stock item.
+ *
+ * Optional `version` field enables optimistic concurrency: pass the
+ * version you last read and the update only applies if nobody else has
+ * changed this stock row since — otherwise a 409 VERSION_CONFLICT comes
+ * back with the current server state instead of silently overwriting it.
+ * Omit it to keep the old unconditional-overwrite behaviour.
  */
 export async function PUT(
   request: NextRequest,
@@ -59,7 +65,8 @@ export async function PUT(
       }, 403);
     }
 
-    const { quantity, reason } = await request.json();
+    const { quantity, reason, version } = await request.json();
+    const clientVersion = typeof version === 'number' ? version : undefined;
 
     if (quantity === undefined || quantity === null) {
       return jsonResponse({
@@ -103,9 +110,11 @@ export async function PUT(
       }, 409);
     }
 
-    // Update stock
+    // Update stock. Optimistic concurrency (see JSDoc above): a conditional
+    // `.eq('version', clientVersion)` makes the UPDATE itself the atomic
+    // compare-and-swap — no separate check-then-write race window.
     const now = new Date().toISOString();
-    const { data: updated, error: updateError } = await supabaseAdmin
+    let updateQuery = supabaseAdmin
       .from('ShopStock')
       .update({
         quantity,
@@ -113,9 +122,11 @@ export async function PUT(
         lastRestockBy: portalUser.id,
         updatedAt: now,
       })
-      .eq('id', stockId)
-      .select()
-      .single();
+      .eq('id', stockId);
+    if (clientVersion !== undefined) {
+      updateQuery = updateQuery.eq('version', clientVersion);
+    }
+    const { data: updatedRows, error: updateError } = await updateQuery.select();
 
     if (updateError) {
       logger.error('Mobile stock update DB error', {
@@ -130,6 +141,25 @@ export async function PUT(
         code: 'INTERNAL_ERROR',
       }, 500);
     }
+
+    if (!updatedRows || updatedRows.length === 0) {
+      if (clientVersion !== undefined) {
+        const { data: current } = await supabaseAdmin.from('ShopStock').select('*').eq('id', stockId).maybeSingle();
+        logger.info('Mobile stock update: version conflict', {
+          userId: payload.userId, shopId, stockId, clientVersion, serverVersion: current?.version,
+        });
+        return jsonResponse({
+          success: false,
+          error: 'This stock item was changed elsewhere since you last loaded it.',
+          code: 'VERSION_CONFLICT',
+          data: current,
+        }, 409);
+      }
+      logger.error('Mobile stock update: row vanished between lookup and update', { userId: payload.userId, shopId, stockId });
+      return jsonResponse({ success: false, error: 'Failed to update stock', code: 'INTERNAL_ERROR' }, 500);
+    }
+
+    const updated = updatedRows[0];
 
     // Create transaction record
     await supabaseAdmin
