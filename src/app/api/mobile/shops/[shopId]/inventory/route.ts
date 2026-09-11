@@ -7,7 +7,7 @@ import { verifyMobileShopAccess } from '@/lib/mobile-shop-auth';
 type ShopStock = {
   id: string;
   quantity?: number | null;
-  reorderLevel?: number | null;
+  lowStockThreshold?: number | null;
   updatedAt?: string | null;
   Product: {
     id: string;
@@ -75,7 +75,7 @@ export async function GET(
     const inventory = shopStockList
       .map((ss: ShopStock) => {
         const quantity = Number(ss.quantity ?? 0);
-        const reorderLevel = Number(ss.reorderLevel ?? 5);
+        const reorderLevel = Number(ss.lowStockThreshold ?? 5);
         const daysToRunOut = quantity > 0 ? Math.ceil(quantity / 2) : 0;
 
         let status = 'in_stock';

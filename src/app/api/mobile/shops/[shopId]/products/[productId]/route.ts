@@ -102,13 +102,13 @@ export async function GET(
           images: prod.images || [],
           colors: prod.colors || [],
           sizes: prod.sizes || [],
-          reorderLevel: shopStock.reorderLevel || 5
+          reorderLevel: shopStock.lowStockThreshold || 5
         }
       }
     }, 200);
 
   } catch (error) {
-    logger.error('Mobile product details error', { 
+    logger.error('Mobile product details error', {
       error: error instanceof Error ? error.message : String(error),
       endpoint: '/api/mobile/shops/[shopId]/products/[productId]'
     });
@@ -141,7 +141,7 @@ export async function PUT(
     // Resolve the ShopStock row (supports both Product UUID and ShopStock UUID)
     let { data: shopStock, error: stockError } = await supabaseAdmin
       .from('ShopStock')
-      .select('id, productId, quantity, reorderLevel')
+      .select('id, productId, quantity, lowStockThreshold')
       .eq('shopId', shopId)
       .eq('productId', productId)
       .maybeSingle();
@@ -150,7 +150,7 @@ export async function PUT(
     if (!shopStock && !stockError) {
       const fallback = await supabaseAdmin
         .from('ShopStock')
-        .select('id, productId, quantity, reorderLevel')
+        .select('id, productId, quantity, lowStockThreshold')
         .eq('shopId', shopId)
         .eq('id', productId)
         .maybeSingle();
@@ -193,7 +193,7 @@ export async function PUT(
             createdAt: now,
             updatedAt: now,
           }])
-          .select('id, productId, quantity, reorderLevel')
+          .select('id, productId, quantity, lowStockThreshold')
           .single();
 
         if (!createErr && created) {
@@ -271,8 +271,10 @@ export async function PUT(
     // ── Update ShopStock fields ───────────────────────────────────────────────
     const stockUpdates: Record<string, unknown> = {};
     if (body.quantity !== undefined) stockUpdates.quantity = Number(body.quantity);
-    if (body.reorderLevel !== undefined) stockUpdates.reorderLevel = Number(body.reorderLevel);
-    if (body.minimumStockLevel !== undefined) stockUpdates.reorderLevel = Number(body.minimumStockLevel);
+    // Request body keys stay "reorderLevel"/"minimumStockLevel" for wire
+    // compatibility — the real column is ShopStock.lowStockThreshold.
+    if (body.reorderLevel !== undefined) stockUpdates.lowStockThreshold = Number(body.reorderLevel);
+    if (body.minimumStockLevel !== undefined) stockUpdates.lowStockThreshold = Number(body.minimumStockLevel);
 
     if (Object.keys(stockUpdates).length > 0) {
       const { error: stockUpdateError } = await supabaseAdmin
@@ -316,7 +318,7 @@ export async function PUT(
         images: updatedProd?.images || [],
         colors: updatedProd?.colors || [],
         sizes: updatedProd?.sizes || [],
-        reorderLevel: updatedStock?.reorderLevel || 5,
+        reorderLevel: updatedStock?.lowStockThreshold || 5,
       },
       message: 'Product updated successfully',
     }, 200);
