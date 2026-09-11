@@ -4,6 +4,8 @@ import { supabaseAdmin } from '@/lib/supabase-client';
 import logger from '@/lib/logger';
 import { jsonResponse } from '@/lib/apiResponse';
 import { v4 as uuidv4 } from 'uuid';
+import { isValidClientId } from '@/lib/sync/syncable-entities';
+import { idempotentInsert } from '@/lib/sync/idempotent-insert.server';
 
 /**
  * GET /api/mobile/shops/[shopId]/alerts
@@ -120,7 +122,8 @@ export async function POST(
       return jsonResponse({ success: false, error: 'Forbidden', code: 'FORBIDDEN' }, 403);
     }
 
-    const { title, message, level } = await request.json();
+    const body = await request.json();
+    const { title, message, level } = body as { title?: string; message?: string; level?: string };
 
     if (!title && !message) {
       return jsonResponse({
@@ -131,8 +134,9 @@ export async function POST(
     }
 
     const now = new Date().toISOString();
-    const record: Record<string, unknown> = {
-      id: uuidv4(),
+    const clientAlertId = isValidClientId((body as { id?: unknown }).id) ? (body as { id: string }).id : undefined;
+    const insert = await idempotentInsert('Alert', {
+      id: clientAlertId ?? uuidv4(),
       organizationId: portalUser.organizationId,
       title: title ?? null,
       message: message ?? null,
@@ -142,18 +146,13 @@ export async function POST(
       portalUserId: portalUser.id,
       createdAt: now,
       updatedAt: now,
-    };
+    });
 
-    const { data, error } = await supabaseAdmin
-      .from('Alert')
-      .insert([record])
-      .select()
-      .single();
-
-    if (error) {
-      logger.error('Mobile alert creation failed', { error: error.message, shopId });
+    if (!insert.ok) {
+      logger.error('Mobile alert creation failed', { error: insert.error, shopId });
       return jsonResponse({ success: false, error: 'Failed to create alert', code: 'INTERNAL_ERROR' }, 500);
     }
+    const data = insert.row;
 
     logger.info('Mobile alert created', {
       userId: payload.userId,

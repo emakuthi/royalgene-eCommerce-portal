@@ -4,6 +4,7 @@ import logger from '@/lib/logger';
 import { jsonResponse } from '@/lib/apiResponse';
 import { verifyMobileShopAccess } from '@/lib/mobile-shop-auth';
 import { createProductForShop } from '@/lib/portal-products';
+import { isValidClientId } from '@/lib/sync/syncable-entities';
 /**
  * GET /api/mobile/shops/[shopId]/products
  * Get available products in a shop with current stock levels
@@ -231,7 +232,13 @@ export async function POST(
       lowStockThreshold: typeof body.minimumStockLevel === 'number' ? body.minimumStockLevel : 5,
     };
 
-    const result = await createProductForShop(productData, stockData, shopId, auth.payload.userId);
+    const clientProductId = isValidClientId(body.id) ? (body.id as string) : undefined;
+    // NOTE: organizationId was previously never passed here, which makes
+    // createProductForShop throw "organizationId is required" unconditionally
+    // — fixed as part of threading the client id through.
+    const result = await createProductForShop(
+      productData, stockData, shopId, auth.payload.userId, auth.payload.organizationId ?? undefined, clientProductId,
+    );
 
     if (!result) {
       logger.error('Mobile create product returned null', {

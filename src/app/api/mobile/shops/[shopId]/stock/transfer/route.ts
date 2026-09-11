@@ -21,6 +21,8 @@ import { hasVariantStock } from '@/lib/variant-stock.server';
 import { v4 as uuidv4 } from 'uuid';
 import { assertFeatureEnabled } from '@/lib/entitlements/enforce.server';
 import { FeatureCode } from '@/lib/entitlements/feature-codes';
+import { isValidClientId } from '@/lib/sync/syncable-entities';
+import { idempotentInsert } from '@/lib/sync/idempotent-insert.server';
 
 export async function POST(
   request: NextRequest,
@@ -138,6 +140,42 @@ export async function POST(
     const now = new Date().toISOString();
     const portalUserId = auth.portalUserId;
 
+    // Offline-first idempotency: this whole transfer (decrement + increment +
+    // both audit rows) only happens once per client-supplied transfer id. The
+    // "out" StockTransaction row is the gate — reserve it first; if it
+    // already exists, every quantity change already happened on the first
+    // attempt, so a retry just returns the current state and touches nothing.
+    const clientTransferId = isValidClientId((body as { id?: unknown }).id) ? (body as { id: string }).id : null;
+    const outTxnId = clientTransferId ? `${clientTransferId}-out` : uuidv4();
+    const inTxnId = clientTransferId ? `${clientTransferId}-in` : uuidv4();
+
+    if (clientTransferId) {
+      const reserved = await idempotentInsert('StockTransaction', {
+        id: outTxnId,
+        organizationId,
+        shopStockId: srcStock.id,
+        portalUserId,
+        type: 'subtract',
+        quantity: -transferQty,
+        reason: `Mobile transfer out to ${destShop.name}${notes ? ` — ${notes}` : ''}`,
+        reference: `mobile-transfer-${clientTransferId}`,
+        createdAt: now,
+        updatedAt: now,
+      });
+      if (!reserved.ok) {
+        logger.error('Mobile stock transfer: failed to reserve transfer', { error: reserved.error });
+        return jsonResponse({ success: false, error: 'Failed to record transfer', code: 'INTERNAL_ERROR' }, 500);
+      }
+      if (!reserved.created) {
+        return jsonResponse({
+          success: true,
+          message: `${transferQty} unit(s) transferred to ${destShop.name}`,
+          data: { fromShopId: shopId, toShopId, toShopName: destShop.name, productId: resolvedProductId, quantity: transferQty },
+          idempotent: true,
+        }, 200);
+      }
+    }
+
     // Decrement source
     const newSrcQty = (srcStock.quantity as number) - transferQty;
     const { error: srcUpdateErr } = await supabaseAdmin
@@ -179,10 +217,22 @@ export async function POST(
       }]);
     }
 
-    // StockTransaction records
-    await supabaseAdmin.from('StockTransaction').insert([
+    // StockTransaction records. The "out" leg is already reserved above when
+    // the client supplied a transfer id; otherwise insert both fresh, as before.
+    const rowsToInsert = [
       {
-        id: uuidv4(),
+        id: inTxnId,
+        organizationId,
+        shopStockId: destStockId,
+        portalUserId,
+        type: 'add',
+        quantity: transferQty,
+        reason: `Mobile transfer in from shop ${shopId}${notes ? ` — ${notes}` : ''}`,
+        reference: `mobile-transfer-${clientTransferId ?? now}`,
+        createdAt: now,
+      },
+      ...(clientTransferId ? [] : [{
+        id: outTxnId,
         organizationId,
         shopStockId: srcStock.id,
         portalUserId,
@@ -191,19 +241,9 @@ export async function POST(
         reason: `Mobile transfer out to ${destShop.name}${notes ? ` — ${notes}` : ''}`,
         reference: `mobile-transfer-${now}`,
         createdAt: now,
-      },
-      {
-        id: uuidv4(),
-        organizationId,
-        shopStockId: destStockId,
-        portalUserId,
-        type: 'add',
-        quantity: transferQty,
-        reason: `Mobile transfer in from shop ${shopId}${notes ? ` — ${notes}` : ''}`,
-        reference: `mobile-transfer-${now}`,
-        createdAt: now,
-      },
-    ]);
+      }]),
+    ];
+    await supabaseAdmin.from('StockTransaction').insert(rowsToInsert);
 
     // Sync aggregated product stock
     try {
