@@ -4,7 +4,25 @@ import { verifyToken, type VerifiedPayload } from '@/lib/auth.server';
 import { supabaseAdmin } from '@/lib/supabase-client';
 import { jsonResponse } from '@/lib/apiResponse';
 import { assertTenantMatch } from '@/lib/tenant-guard';
+import { isDeviceRevoked } from '@/lib/device-registry.server';
 import logger from '@/lib/logger';
+
+/**
+ * A token with no `deviceId` claim (issued before device identity existed,
+ * or a web-portal token that somehow reached a mobile-only route) is never
+ * checked — nothing to look up. Only tokens the mobile app itself issued
+ * with a device id are subject to remote revocation.
+ */
+async function rejectIfDeviceRevoked(payload: VerifiedPayload): Promise<Response | null> {
+  if (!payload.deviceId) return null;
+  if (await isDeviceRevoked(payload.userId, payload.deviceId)) {
+    return jsonResponse(
+      { success: false, error: 'This device has been signed out remotely. Please sign in again.', code: 'DEVICE_REVOKED' },
+      401,
+    );
+  }
+  return null;
+}
 
 /**
  * Result of a successful mobile auth + shop access check.
@@ -106,6 +124,9 @@ export async function verifyMobileShopAccess(
     );
   }
 
+  const deviceRevoked = await rejectIfDeviceRevoked(payload);
+  if (deviceRevoked) return deviceRevoked;
+
   const tenantMismatch = assertTenantMatch(request, payload);
   if (tenantMismatch) return tenantMismatch;
 
@@ -187,9 +208,9 @@ export async function verifyMobileShopAccess(
  * Lightweight auth-only check (no shop scope).
  * Returns the decoded payload or an error response.
  */
-export function verifyMobileAuth(
+export async function verifyMobileAuth(
   request: NextRequest,
-): { payload: VerifiedPayload; isAdmin: boolean } | Response {
+): Promise<{ payload: VerifiedPayload; isAdmin: boolean } | Response> {
   const token = request.headers.get('Authorization')?.replace('Bearer ', '');
 
   if (!token) {
@@ -206,6 +227,9 @@ export function verifyMobileAuth(
       401,
     );
   }
+
+  const deviceRevoked = await rejectIfDeviceRevoked(payload);
+  if (deviceRevoked) return deviceRevoked;
 
   const tenantMismatch = assertTenantMatch(request, payload);
   if (tenantMismatch) return tenantMismatch;

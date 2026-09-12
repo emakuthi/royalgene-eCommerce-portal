@@ -4,6 +4,7 @@ import { hashPassword, signAuthToken } from '@/lib/auth.server';
 import logger from '@/lib/logger';
 import { v4 as uuidv4 } from 'uuid';
 import { jsonResponse } from '@/lib/apiResponse';
+import { deviceInfoFromBody, registerDevice } from '@/lib/device-registry.server';
 
 /**
  * POST /api/mobile/auth/register
@@ -13,7 +14,9 @@ export async function POST(request: NextRequest) {
   const startTime = Date.now();
 
   try {
-    const { email, password, name, phone, invitationCode } = await request.json();
+    const body = await request.json();
+    const { email, password, name, phone, invitationCode } = body;
+    const device = deviceInfoFromBody(body);
 
     logger.info('Mobile registration attempt', {
       email,
@@ -159,7 +162,13 @@ export async function POST(request: NextRequest) {
       email: email.toLowerCase(),
       role: 'portal_user',
       shopId: resolvedShopId,
+      deviceId: device?.deviceId ?? null,
     });
+
+    if (device) {
+      // Best-effort — registerDevice never throws, a registry hiccup must not fail registration.
+      await registerDevice(organizationId, userId, device);
+    }
 
     // Fetch shop info for response
     const { data: shop } = await supabaseAdmin

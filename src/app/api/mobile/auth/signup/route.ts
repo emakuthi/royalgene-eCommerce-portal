@@ -3,6 +3,7 @@ import { jsonResponse } from '@/lib/apiResponse';
 import logger from '@/lib/logger';
 import { getSelfSignupEnabled } from '@/lib/platform-settings.server';
 import { provisionWorkspace, SignupError } from '@/lib/signup.server';
+import { deviceInfoFromBody } from '@/lib/device-registry.server';
 import { trackActivity, extractClientIp, detectDeviceType } from '@/lib/activity-tracker';
 
 /**
@@ -31,7 +32,8 @@ export async function POST(request: NextRequest) {
       return jsonResponse({ success: false, error: 'orgName, name, email and password are required', code: 'VALIDATION_ERROR' }, 400);
     }
 
-    const result = await provisionWorkspace({ orgName, name, email, password, requestedSlug: slug });
+    const device = deviceInfoFromBody(body as Record<string, unknown>);
+    const result = await provisionWorkspace({ orgName, name, email, password, requestedSlug: slug, device });
 
     void trackActivity({
       userId: result.userId,

@@ -20,7 +20,7 @@ type SalesEntry = {
  */
 export async function GET(request: NextRequest) {
   try {
-    const auth = verifyMobileAuth(request);
+    const auth = await verifyMobileAuth(request);
     if (auth instanceof Response) return auth;
     if (!auth.isAdmin) {
       return jsonResponse({ success: false, error: 'Forbidden', code: 'FORBIDDEN' }, 403);

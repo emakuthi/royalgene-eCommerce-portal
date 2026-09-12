@@ -1,6 +1,7 @@
 import 'server-only';
 import { supabaseAdmin } from './supabase-client';
 import { signAuthToken } from './auth.server';
+import { registerDevice, type DeviceInfo } from './device-registry.server';
 
 function formatShop(s: Record<string, unknown>) {
   const phoneVal = s['phone'];
@@ -38,7 +39,10 @@ export interface MobileAuthPayload {
  * userId is established: same admin/PortalUser/allShops resolution, same
  * session data the client expects and already knows how to parse.
  */
-export async function buildMobileAuthResponse(userId: string): Promise<{ ok: true; data: MobileAuthPayload } | { ok: false; error: string }> {
+export async function buildMobileAuthResponse(
+  userId: string,
+  device?: DeviceInfo,
+): Promise<{ ok: true; data: MobileAuthPayload } | { ok: false; error: string }> {
   const { data: user, error: userError } = await supabaseAdmin.from('User').select('*').eq('id', userId).maybeSingle();
   if (userError || !user) return { ok: false, error: 'User not found' };
 
@@ -87,7 +91,13 @@ export async function buildMobileAuthResponse(userId: string): Promise<{ ok: tru
     email: user.email,
     role: user.role,
     shopId,
+    deviceId: device?.deviceId ?? null,
   });
+
+  if (device && user.organizationId) {
+    // Best-effort — registerDevice never throws, a registry hiccup must not fail login.
+    await registerDevice(user.organizationId, user.id, device);
+  }
 
   let organization: MobileAuthPayload['organization'] = null;
   if (user.organizationId) {

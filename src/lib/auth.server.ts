@@ -18,6 +18,8 @@ export type VerifiedPayload = {
   role?: string;
   organizationId?: string | null;
   shopId?: string | null;
+  /** See AuthTokenPayload.deviceId. */
+  deviceId?: string | null;
   [k: string]: unknown;
 };
 
@@ -42,6 +44,15 @@ export interface AuthTokenPayload {
   email: string;
   role: 'customer' | 'admin' | 'super_admin' | 'portal_user';
   shopId?: string | null;
+  /**
+   * The mobile app's stable per-install id, when this token was issued to
+   * the app (mobile login/register/signup/social-auth) — absent for web
+   * portal tokens. Lets verifyMobileShopAccess/verifyMobileAuth reject a
+   * request whose device has been remotely revoked (see
+   * src/lib/device-registry.server.ts) without making the shared,
+   * synchronous verifyToken() do a DB read.
+   */
+  deviceId?: string | null;
 }
 
 /** Standardized JWT signing helper — every signing site should use this. */

@@ -8,6 +8,7 @@ import { createOrganization, isSlugAvailable, isValidSlug, slugify } from './org
 import { RESERVED_SUBDOMAINS } from './tenant';
 import { sendVerificationEmail } from './email/verification-email';
 import { isShopNameAvailable } from './shops.server';
+import { registerDevice, type DeviceInfo } from './device-registry.server';
 
 const VERIFICATION_TOKEN_TTL_MS = 24 * 60 * 60 * 1000;
 
@@ -28,6 +29,8 @@ export interface ProvisionWorkspaceInput {
   requestedSlug?: string;
   /** Send the verification email (default true — set false for tests). */
   sendEmail?: boolean;
+  /** Only ever set by the mobile signup route — omitted, the web signup route creates no Device row. */
+  device?: DeviceInfo;
 }
 
 export interface ProvisionWorkspaceResult {
@@ -45,7 +48,7 @@ export interface ProvisionWorkspaceResult {
  * verification, and returns a signed session token. Rolls back on any failure.
  */
 export async function provisionWorkspace(input: ProvisionWorkspaceInput): Promise<ProvisionWorkspaceResult> {
-  const { orgName, name, email, password, requestedSlug, sendEmail = true } = input;
+  const { orgName, name, email, password, requestedSlug, sendEmail = true, device } = input;
 
   if (!orgName?.trim() || !name?.trim() || !email?.trim() || !password) {
     throw new SignupError(400, 'orgName, name, email and password are required');
@@ -164,7 +167,15 @@ export async function provisionWorkspace(input: ProvisionWorkspaceInput): Promis
     if (!emailResult.ok) logger.warn('provisionWorkspace: verification email failed to send', { error: emailResult.error, userId });
   }
 
-  const token = signAuthToken({ userId, organizationId: organization.id, email: normalizedEmail, role: 'admin', shopId });
+  const token = signAuthToken({
+    userId, organizationId: organization.id, email: normalizedEmail, role: 'admin', shopId,
+    deviceId: device?.deviceId ?? null,
+  });
+
+  if (device) {
+    // Best-effort — registerDevice never throws, a registry hiccup must not fail signup.
+    await registerDevice(organization.id, userId, device);
+  }
 
   return {
     token,

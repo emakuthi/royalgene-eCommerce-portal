@@ -3,6 +3,7 @@ import { jsonResponse, optionsResponse } from '@/lib/apiResponse';
 import { verifyFacebookAccessToken, exchangeFacebookAuthCode, getFacebookNativeRedirectUri } from '@/lib/facebook-auth.server';
 import { findOrProvisionUserForSocialIdentity } from '@/lib/social-auth-provision.server';
 import { buildMobileAuthResponse } from '@/lib/mobile-auth-response.server';
+import { deviceInfoFromBody } from '@/lib/device-registry.server';
 import { trackActivity, extractClientIp, detectDeviceType } from '@/lib/activity-tracker';
 import logger from '@/lib/logger';
 
@@ -57,7 +58,8 @@ export async function POST(request: NextRequest) {
       return jsonResponse({ success: false, error: 'Failed to set up your account', code: 'INTERNAL_ERROR' }, 500);
     }
 
-    const result = await buildMobileAuthResponse(userId);
+    const device = deviceInfoFromBody(body);
+    const result = await buildMobileAuthResponse(userId, device);
     if (!result.ok) {
       return jsonResponse({ success: false, error: result.error, code: 'FORBIDDEN' }, 403);
     }
