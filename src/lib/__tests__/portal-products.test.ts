@@ -4,6 +4,7 @@ import type { Product, ShopStock } from '../types';
 // Mocks must be set up before importing the module under test
 vi.mock('../supabase-db', () => ({
   createProduct: vi.fn(),
+  hasValidCredentials: vi.fn(() => false),
 }));
 
 vi.mock('../supabase-client', () => ({
@@ -22,12 +23,13 @@ vi.mock('../logger', () => ({
 }));
 
 import { createProductForShop } from '../portal-products';
-import { createProduct } from '../supabase-db';
+import { createProduct, hasValidCredentials } from '../supabase-db';
 import { supabaseAdmin } from '../supabase-client';
 import { createShopStock, db } from '../db';
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.mocked(hasValidCredentials).mockReturnValue(false);
   // reset in-memory db products
   (db as { products: Product[] }).products = [];
 });
@@ -75,7 +77,7 @@ describe('createProductForShop', () => {
       return {} as unknown as ReturnType<typeof supabaseAdmin.from>;
     });
 
-    const res = await createProductForShop({ name: 'Test Product', sku: 'SKU-1', price: 10 }, { quantity: 5, lowStockThreshold: 1 }, 'shop-1');
+    const res = await createProductForShop({ name: 'Test Product', sku: 'SKU-1', price: 10 }, { quantity: 5, lowStockThreshold: 1 }, 'shop-1', 'user-1', 'org-1');
 
     expect(createProduct).toHaveBeenCalled();
     expect(vi.mocked(supabaseAdmin).from).toHaveBeenCalledWith('ShopStock');
@@ -85,7 +87,8 @@ describe('createProductForShop', () => {
     expect(typed.inMemoryFallback).toBeUndefined();
   });
 
-  it('falls back to in-memory DB when Supabase create fails', async () => {
+  it('falls back to in-memory DB when Supabase create fails AND no real credentials are configured (local dev only)', async () => {
+    vi.mocked(hasValidCredentials).mockReturnValue(false);
     // make createProduct throw so code falls back to in-memory product
     vi.mocked(createProduct).mockRejectedValue(new Error('Supabase down'));
 
@@ -102,7 +105,7 @@ describe('createProductForShop', () => {
       metadata: rec.metadata ?? null,
     } as ShopStock));
 
-    const res = await createProductForShop({ name: 'Fail Product', sku: 'SKU-FAIL', price: 9.99 }, { quantity: 3, lowStockThreshold: 1 }, 'shop-f');
+    const res = await createProductForShop({ name: 'Fail Product', sku: 'SKU-FAIL', price: 9.99 }, { quantity: 3, lowStockThreshold: 1 }, 'shop-f', 'user-1', 'org-1');
 
     expect(createProduct).toHaveBeenCalled();
     expect(vi.mocked(createShopStock)).toHaveBeenCalled();
@@ -110,5 +113,62 @@ describe('createProductForShop', () => {
     const typed = res as ShopStockWithProduct;
     expect(typed.inMemoryFallback).toBe(true);
     expect(typed.Product).toBeDefined();
+  });
+
+  it('throws instead of silently falling back when Supabase create fails WITH valid credentials configured', async () => {
+    // This is the actual production bug this guard fixes: a real Supabase
+    // failure must never be masked as a fake success via the dev-only
+    // in-memory fallback.
+    vi.mocked(hasValidCredentials).mockReturnValue(true);
+    vi.mocked(createProduct).mockRejectedValue(new Error('Supabase down'));
+
+    await expect(
+      createProductForShop({ name: 'Fail Product', sku: 'SKU-FAIL-2', price: 9.99 }, { quantity: 3, lowStockThreshold: 1 }, 'shop-f', 'user-1', 'org-1'),
+    ).rejects.toThrow('Supabase down');
+
+    expect(createShopStock).not.toHaveBeenCalled();
+  });
+
+  it('throws instead of silently falling back when the ShopStock upsert fails WITH valid credentials configured', async () => {
+    const product: Product = {
+      id: 'p-2',
+      name: 'Test Product 2',
+      description: 'desc',
+      price: 1000,
+      category: 'dresses',
+      images: [],
+      sizes: [],
+      colors: [],
+      stockQuantity: 5,
+      sku: 'SKU-2',
+      featured: false,
+      trending: false,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    vi.mocked(hasValidCredentials).mockReturnValue(true);
+    vi.mocked(createProduct).mockResolvedValue(product);
+
+    const productMaybeSingle = vi.fn().mockResolvedValue({ data: { id: 'p-2' }, error: null });
+    const productEq = vi.fn(() => ({ maybeSingle: productMaybeSingle }));
+    const productSelect = vi.fn(() => ({ eq: productEq }));
+    const selectMock = vi.fn().mockResolvedValue({ data: null, error: { message: 'upsert failed' } });
+    const upsertMock = vi.fn(() => ({ select: selectMock }));
+
+    vi.mocked(supabaseAdmin).from.mockImplementation((relation: string) => {
+      if (relation === 'ShopStock') {
+        return { upsert: upsertMock } as unknown as ReturnType<typeof supabaseAdmin.from>;
+      }
+      if (relation === 'Product') {
+        return { select: productSelect } as unknown as ReturnType<typeof supabaseAdmin.from>;
+      }
+      return {} as unknown as ReturnType<typeof supabaseAdmin.from>;
+    });
+
+    await expect(
+      createProductForShop({ name: 'Test Product 2', sku: 'SKU-2', price: 10 }, { quantity: 5, lowStockThreshold: 1 }, 'shop-1', 'user-1', 'org-1'),
+    ).rejects.toThrow();
+
+    expect(createShopStock).not.toHaveBeenCalled();
   });
 });
