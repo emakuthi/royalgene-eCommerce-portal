@@ -69,4 +69,16 @@ describe('idempotentInsert', () => {
     const r = await idempotentInsert('Shop', { id: 'x0000000-0000-0000-0000-000000000000', name: 'Dup' });
     expect(r).toMatchObject({ ok: false, code: '23505' });
   });
+
+  it('strips keys explicitly set to undefined before inserting, instead of sending them as SQL NULL', async () => {
+    // Regression test: supabase-js serializes {costPrice: undefined} as a
+    // literal NULL, not an omitted key the way JSON.stringify would —
+    // which silently violated a NOT NULL column default in production
+    // (see critical-product-creation-silently-broken memory). A caller
+    // building an object with an optional field set to `undefined` must
+    // behave exactly like omitting the key entirely.
+    await idempotentInsert('Product', { id, name: 'Widget', costPrice: undefined });
+    expect(rows).toHaveLength(1);
+    expect('costPrice' in rows[0]).toBe(false);
+  });
 });

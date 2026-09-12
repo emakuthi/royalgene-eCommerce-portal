@@ -71,8 +71,16 @@ export async function createProductForShop(
       name: asString(productData['name']),
       description: asString(productData['description']),
       price: priceValue,
-      // costPrice is also in major units (KES), not cents
-      costPrice: typeof productData['costPrice'] === 'number' ? (productData['costPrice'] as number) : undefined,
+      // costPrice is also in major units (KES), not cents. Product.costPrice
+      // is NOT NULL with a column default — the key must be OMITTED (not
+      // set to `undefined`) when the caller didn't provide one, so that
+      // default applies. An explicit `costPrice: undefined` key gets
+      // serialized by supabase-js as a literal SQL NULL, not dropped like
+      // plain JSON.stringify would — this exact mistake silently violated
+      // the not-null constraint on every product create without a
+      // costPrice, which is what caused the incident this comment is next
+      // to (see [[critical-product-creation-silently-broken]] in memory).
+      ...(typeof productData['costPrice'] === 'number' ? { costPrice: productData['costPrice'] as number } : {}),
       category,
       images: (Array.isArray(productData['images']) ? (productData['images'] as unknown as string[]) : []) || [],
       sizes: (Array.isArray(productData['sizes']) ? (productData['sizes'] as unknown as string[]) : []) || [],
