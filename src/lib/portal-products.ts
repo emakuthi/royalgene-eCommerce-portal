@@ -1,6 +1,6 @@
 // Helper utilities for portal product creation. This file exports createProductForShop so CLI scripts and tests can import it
 import { v4 as uuidv4 } from 'uuid';
-import { createProduct } from '@/lib/supabase-db';
+import { createProduct, hasValidCredentials } from '@/lib/supabase-db';
 import { supabaseAdmin } from '@/lib/supabase-client';
 import logger from '@/lib/logger';
 import util from 'util';
@@ -87,6 +87,20 @@ export async function createProductForShop(
       throw new Error('Product creation returned null');
     }
   } catch (err) {
+    // The in-memory fallback below is a LOCAL-DEV-ONLY convenience for
+    // running this app without Supabase configured at all. If credentials
+    // ARE configured, this is a real production failure — surface it
+    // instead of silently faking a success the product was never actually
+    // saved for (this exact silent-fallback masked a real Product-insert
+    // failure for months in production before it was caught: every
+    // "created" product just vanished on the next request).
+    if (hasValidCredentials()) {
+      logger.error('Product creation failed with valid Supabase credentials — refusing the in-memory fallback', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+      throw err instanceof Error ? err : new Error('Failed to create product in Supabase');
+    }
+
     // mark that product creation failed for Supabase and we used the in-memory fallback
     productCreatedInSupabase = false;
     // fallback to in-memory product creation
@@ -239,6 +253,22 @@ export async function createProductForShop(
       status: errObj && (typeof errObj.status === 'number' || typeof errObj.status === 'string') ? errObj.status : undefined,
       code: errObj && (typeof errObj.code === 'string' || typeof errObj.code === 'number') ? errObj.code : undefined,
     };
+
+    // Same reasoning as the Product-insert catch above: the Product row
+    // above DID land for real in Supabase at this point, so silently
+    // faking an in-memory ShopStock here on a real failure would leave a
+    // genuine Product with no durable stock anywhere while still
+    // reporting success. Only fall back when Supabase isn't configured
+    // at all.
+    if (hasValidCredentials()) {
+      logger.error('ShopStock creation failed with valid Supabase credentials — refusing the in-memory fallback', {
+        error: safeStringify(err),
+        errorInspect: util.inspect(err, { depth: null, getters: true }),
+        supabaseError: errInfo,
+        stockRecord: { shopId: stockRecord.shopId, productId: stockRecord.productId, quantity: stockRecord.quantity },
+      });
+      throw err instanceof Error ? err : new Error('Failed to create ShopStock in Supabase');
+    }
 
     logger.warn('Failed to create ShopStock in Supabase, falling back to in-memory DB', {
       // Provide a deep util.inspect dump so nested error fields are visible in logs
