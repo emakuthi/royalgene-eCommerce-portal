@@ -20,9 +20,21 @@ export async function idempotentInsert<T = Record<string, unknown>>(
   | { ok: true; created: boolean; row: T }
   | { ok: false; error: string; code?: string }
 > {
+  // A key present with value `undefined` gets serialized by supabase-js as
+  // a literal SQL NULL — NOT dropped the way plain JSON.stringify would
+  // drop it. For any NOT NULL column with a default (e.g. Product.costPrice),
+  // that silently sends NULL instead of letting the column default apply,
+  // failing the insert. Strip these before every insert so a caller
+  // building an object with an optional field set to `undefined` (a very
+  // natural thing to write) can never trip this — omitting a key and
+  // setting it to `undefined` must behave identically.
+  const cleanRow = Object.fromEntries(
+    Object.entries(row).filter(([, value]) => value !== undefined),
+  ) as typeof row;
+
   const { data, error } = await supabaseAdmin
     .from(table)
-    .insert([row])
+    .insert([cleanRow])
     .select('*')
     .single();
 
