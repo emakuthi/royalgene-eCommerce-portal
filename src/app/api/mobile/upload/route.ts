@@ -22,7 +22,7 @@ import { v4 as uuidv4 } from 'uuid';
 export async function POST(request: NextRequest) {
   try {
     // Auth – reuse the lightweight mobile auth helper (no shop scope needed here)
-    const authResult = verifyMobileAuth(request);
+    const authResult = await verifyMobileAuth(request);
     if (authResult instanceof Response) return authResult;
 
     const formData = await request.formData();

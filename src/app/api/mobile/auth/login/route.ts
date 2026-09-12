@@ -4,6 +4,7 @@ import logger from '@/lib/logger';
 import bcrypt from 'bcryptjs';
 import { jsonResponse } from '@/lib/apiResponse';
 import { buildMobileAuthResponse } from '@/lib/mobile-auth-response.server';
+import { deviceInfoFromBody } from '@/lib/device-registry.server';
 import { trackActivity, extractClientIp, detectDeviceType } from '@/lib/activity-tracker';
 
 /**
@@ -18,7 +19,9 @@ export async function POST(request: NextRequest) {
   const startTime = Date.now();
 
   try {
-    const { email, password } = await request.json();
+    const body = await request.json();
+    const { email, password } = body;
+    const device = deviceInfoFromBody(body);
 
     if (!email || !password) {
       logger.warn('Mobile login failed: missing credentials', {
@@ -65,7 +68,7 @@ export async function POST(request: NextRequest) {
 
     const user = matched[0] as { id: string; email: string; role: string };
 
-    const result = await buildMobileAuthResponse(user.id);
+    const result = await buildMobileAuthResponse(user.id, device);
     if (!result.ok) {
       void trackActivity({
         userId: user.id, userEmail: user.email, userRole: user.role,
