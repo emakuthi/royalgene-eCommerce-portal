@@ -8,6 +8,7 @@ import {
   reactivateSubscription,
   suspendSubscription,
 } from '@/lib/entitlements/subscription-status.server';
+import logger from '@/lib/logger';
 
 // GET /api/platform/organizations/[id]/subscription — full subscription context for one org, super_admin only.
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -65,6 +66,11 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         return jsonResponse({ success: false, error: 'Unknown action. Use assignPlan | extendTrial | suspend | reactivate.' }, 400);
     }
   } catch (err) {
+    logger.error('[platform subscription] action failed', {
+      organizationId: id,
+      action,
+      error: err instanceof Error ? err.message : String(err),
+    });
     return jsonResponse({ success: false, error: err instanceof Error ? err.message : 'Failed to update subscription' }, 500);
   }
 }
