@@ -1,6 +1,6 @@
 import 'server-only';
 import { supabaseAdmin } from './supabase-client';
-import { createPaystackPlan } from './paystack.server';
+import { createPaystackPlan, isPaystackConfigured } from './paystack.server';
 import type { PlatformPlan } from './types';
 
 export async function listPlans(onlyActive = false): Promise<PlatformPlan[]> {
@@ -103,6 +103,49 @@ export async function updatePlan(id: string, input: UpdatePlanInput): Promise<Pl
   const { data, error } = await supabaseAdmin
     .from('PlatformPlan')
     .update({ ...input, updatedAt: new Date().toISOString() })
+    .eq('id', id)
+    .select('*')
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  return data as PlatformPlan | null;
+}
+
+/**
+ * Backfills any MISSING Paystack plan codes for an existing plan — for a
+ * plan created before PAYSTACK_SECRET_KEY was ever configured (createPlan's
+ * opportunistic mint fails soft to null in that case), or one that only
+ * partially minted (one interval's Paystack call failed, the other
+ * succeeded). Only fills gaps: never overwrites a code that already exists,
+ * for the same "amount is immutable once minted" reason updatePlan refuses
+ * price changes — a plan's price and its codes must always describe the
+ * same amount Paystack will actually charge.
+ */
+export async function ensurePaystackPlanCodes(id: string): Promise<PlatformPlan | null> {
+  const plan = await getPlanById(id);
+  if (!plan) return null;
+  if (plan.paystackMonthlyPlanCode && plan.paystackAnnualPlanCode) return plan;
+  if (!isPaystackConfigured()) return plan;
+
+  const [monthlyCode, annualCode] = await Promise.all([
+    plan.paystackMonthlyPlanCode
+      ? Promise.resolve(plan.paystackMonthlyPlanCode)
+      : createPaystackPlan({ name: `${plan.name} (Monthly)`, amountKobo: plan.monthlyPriceKobo, interval: 'monthly', currency: plan.currency }),
+    plan.paystackAnnualPlanCode
+      ? Promise.resolve(plan.paystackAnnualPlanCode)
+      : createPaystackPlan({ name: `${plan.name} (Annual)`, amountKobo: plan.annualPriceKobo, interval: 'annually', currency: plan.currency }),
+  ]);
+
+  if (monthlyCode === plan.paystackMonthlyPlanCode && annualCode === plan.paystackAnnualPlanCode) {
+    return plan; // nothing actually changed (e.g. both mint attempts failed)
+  }
+
+  const { data, error } = await supabaseAdmin
+    .from('PlatformPlan')
+    .update({
+      paystackMonthlyPlanCode: monthlyCode,
+      paystackAnnualPlanCode: annualCode,
+      updatedAt: new Date().toISOString(),
+    })
     .eq('id', id)
     .select('*')
     .maybeSingle();

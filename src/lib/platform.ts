@@ -8,6 +8,7 @@ export interface ApiResult<T = unknown> {
   success?: boolean;
   data?: T;
   error?: string;
+  message?: string;
 }
 
 export interface OrganizationWithCounts extends Organization {
@@ -34,7 +35,7 @@ async function request<T>(path: string, token: string | null | undefined, init?:
       },
     });
     const json = await res.json().catch(() => ({}));
-    return { ok: res.ok, status: res.status, success: json?.success, data: json?.data as T, error: json?.error };
+    return { ok: res.ok, status: res.status, success: json?.success, data: json?.data as T, error: json?.error, message: json?.message };
   } catch (err: unknown) {
     return { ok: false, status: 0, success: false, error: err instanceof Error ? err.message : String(err) };
   }
@@ -160,6 +161,13 @@ export function updatePlatformPlan(
   return request<PlatformPlan>(`/api/platform/plans/${encodeURIComponent(id)}`, token, {
     method: 'PATCH',
     body: JSON.stringify(payload),
+  });
+}
+
+/** Mint any MISSING Paystack plan codes for a plan created before PAYSTACK_SECRET_KEY was configured. Never touches an existing code. */
+export function syncPlatformPlanBilling(token: string | null | undefined, id: string) {
+  return request<PlatformPlan>(`/api/platform/plans/${encodeURIComponent(id)}/sync-billing`, token, {
+    method: 'POST',
   });
 }
 
