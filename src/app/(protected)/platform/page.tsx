@@ -28,6 +28,7 @@ import {
   restorePlatformOrganization,
   setPlatformOrgDomain,
   setPlatformSelfSignupEnabled,
+  syncPlatformPlanBilling,
   updatePlanEntitlements,
   updatePlatformOrganization,
   updatePlatformPlan,
@@ -224,6 +225,20 @@ function PlatformAdminConsole() {
       toast.success(`${plan.name} is now ${res.data.isActive ? 'active' : 'inactive'}`);
     } else {
       toast.error(res.error || 'Failed to update plan');
+    }
+    setPlanBusyId(null);
+  };
+
+  const syncPlanBilling = async (plan: PlatformPlan) => {
+    setPlanBusyId(plan.id);
+    const res = await syncPlatformPlanBilling(token, plan.id);
+    if (res.success && res.data) {
+      setPlans((prev) => prev.map((p) => (p.id === plan.id ? { ...p, ...res.data } : p)));
+      const nowSynced = res.data.paystackMonthlyPlanCode && res.data.paystackAnnualPlanCode;
+      if (nowSynced) toast.success(`${plan.name} billing codes synced with Paystack`);
+      else toast.error(res.message || 'Paystack is not configured — codes still missing');
+    } else {
+      toast.error(res.error || 'Failed to sync billing codes');
     }
     setPlanBusyId(null);
   };
@@ -728,6 +743,16 @@ function PlatformAdminConsole() {
                       </td>
                       <td className="py-4">
                         <div className="flex items-center gap-2">
+                          {!(plan.paystackMonthlyPlanCode && plan.paystackAnnualPlanCode) && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              disabled={planBusyId === plan.id}
+                              onClick={() => syncPlanBilling(plan)}
+                            >
+                              Sync billing
+                            </Button>
+                          )}
                           <Button
                             size="sm"
                             variant="outline"
