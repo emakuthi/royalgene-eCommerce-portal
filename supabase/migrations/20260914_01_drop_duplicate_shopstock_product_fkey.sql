@@ -1,0 +1,26 @@
+-- ShopStock and Product currently have TWO foreign key constraints
+-- enforcing the exact same relationship (ShopStock.productId -> Product.id):
+--
+--   ShopStock_productId_fkey  (the real/intended one — matches this DB's
+--                               naming convention used everywhere else)
+--   shopstock_productid_fkey  (a lowercase duplicate — likely a leftover
+--                               from an early schema-setup pass, same
+--                               vintage as the other orphaned lowercase
+--                               objects already known in this DB, e.g. the
+--                               legacy `shops`/`portal_users` tables)
+--
+-- This breaks PostgREST's automatic relationship embedding for any query
+-- that writes `.select('*, Product(...)')` on ShopStock WITHOUT explicitly
+-- naming which constraint to use — PostgREST can't tell the two apart and
+-- returns PGRST201 "Could not embed because more than one relationship was
+-- found for 'ShopStock' and 'Product'". Confirmed live 2026-09-14: this is
+-- exactly what was breaking GET /api/mobile/shops/[shopId]/inventory in
+-- production for every tenant.
+--
+-- Fix: drop the redundant duplicate. The real constraint
+-- (ShopStock_productId_fkey) stays, so referential integrity is completely
+-- unaffected — this only removes a duplicate enforcement of the same rule.
+--
+-- Idempotent.
+
+ALTER TABLE "ShopStock" DROP CONSTRAINT IF EXISTS shopstock_productid_fkey;
