@@ -407,7 +407,7 @@ export async function GET(request: NextRequest) {
     // organizationId, gets everything).
     let query = supabaseAdmin
       .from('SalesEntry')
-      .select('*, ProfitMargin(*)')
+      .select('*, ProfitMargin(*), product:Product(name, price, costPrice)')
       .order('createdAt', { ascending: false })
       .range(offset, offset + limit - 1);
 

@@ -46,7 +46,7 @@ function SalesEntryContent() {
     shopId?: string | null;
     portalUserId?: string | null;
     productId: string;
-    product?: { name?: string; price?: number } | null;
+    product?: { name?: string; price?: number; costPrice?: number } | null;
     customerName?: string | null;
     customerPhone?: string | null;
     notes?: string | null;
@@ -139,7 +139,9 @@ function SalesEntryContent() {
         if (response.ok) {
           const data = await response.json();
           if (data.success) {
-            // map returned ShopStock rows (which include Product relation)
+            // map returned ShopStock rows (which include an embedded Product
+            // relation directly from /api/portal/stock) — no separate
+            // per-product fetch needed.
             const items: StockRow[] = (data.data || []).map((s: ApiStock) => ({
               id: s.id,
               shopId: s.shopId,
@@ -149,35 +151,7 @@ function SalesEntryContent() {
               product: s.Product || s.product || null,
             }));
 
-            // If any product is missing authoritative price, fetch product records from /api/products/:id
-            const uniqueProductIds = Array.from(new Set(items.map(i => i.productId).filter(Boolean)));
-            if (uniqueProductIds.length > 0) {
-              const productsById: Record<string, Product> = {};
-              await Promise.all(uniqueProductIds.map(async (pid) => {
-                try {
-                  const r = await fetch(`/api/products/${pid}`);
-                  if (!r.ok) return;
-                  const j = await r.json();
-                  if (j && j.success && j.data) {
-                    productsById[pid] = j.data;
-                  }
-                } catch (err) {
-                  // ignore individual product fetch failures; we'll fall back to relation data if present
-                  console.warn('Failed to fetch product', pid, err);
-                }
-              }));
-
-              // Merge authoritative product data into stock rows (prefer admin product record)
-              const merged: StockRow[] = items.map(it => ({
-                ...it,
-                product: productsById[it.productId] || it.product || null,
-              }));
-
-              setStocks(merged);
-            } else {
-              // no products (unlikely) - still set stocks
-              setStocks(items);
-           }
+            setStocks(items);
          }
        }
       } catch (err) {
@@ -200,48 +174,17 @@ function SalesEntryContent() {
         });
         const json = await res.json();
         if (json.success && Array.isArray(json.data)) {
-          let salesData = json.data || [];
-
-          // Fetch product details (name, cost price) for accurate display and profit calculation
-          const uniqueProductIds = Array.from(new Set(salesData.map((s: SalesRow) => s.productId).filter(Boolean)));
-          if (uniqueProductIds.length > 0) {
-            const productsById: Record<string, Product> = {};
-            await Promise.all(uniqueProductIds.map(async (pid: unknown) => {
-              try {
-                const pidStr = String(pid);
-                const r = await fetch(`/api/products/${pidStr}`);
-                if (!r.ok) return;
-                const j = await r.json();
-                if (j && j.success && j.data) {
-                  productsById[pidStr] = j.data;
-                }
-              } catch (err) {
-                console.warn('Failed to fetch product', pid, err);
-              }
-            }));
-
-            // Merge product data (name, cost price) into sales rows
-            salesData = salesData.map((s: SalesRow) => {
-              const productData = productsById[s.productId];
-              const costPrice = productData?.costPrice || s.costPrice || 0;
-              const profitPerUnit = s.unitPrice - costPrice;
-              const profit = profitPerUnit * s.quantity;
-
-              return {
-                ...s,
-                product: {
-                  name: productData?.name || s.product?.name || 'Unknown Product',
-                  price: productData?.price || s.product?.price,
-                },
-                costPrice: costPrice,
-                // Store calculated profit in ProfitMargin for consistency
-                ProfitMargin: {
-                  profit: profit,
-                  costPrice: costPrice,
-                },
-              };
-            });
-          }
+          // Product name/price/costPrice now comes embedded straight from
+          // GET /api/portal/sales (s.product) — no more per-row fetch to
+          // the long-removed /api/products/[id]. Cost price prefers the
+          // SalesEntry's own historical snapshot (what it actually cost at
+          // sale time) over the product's current cost, which may have
+          // since changed.
+          const salesData = (json.data || []).map((s: SalesRow) => {
+            const costPrice = s.costPrice || s.product?.costPrice || 0;
+            const profit = (s.unitPrice - costPrice) * s.quantity;
+            return { ...s, costPrice, ProfitMargin: { profit, costPrice } };
+          });
 
           setSales(salesData);
         } else {
@@ -269,48 +212,14 @@ function SalesEntryContent() {
         const res = await fetch(`/api/portal/sales?${qs.toString()}`, { headers: { Authorization: `Bearer ${token}` }, cache: 'no-store' });
         const j = await res.json();
         if (!canceled && j?.success && Array.isArray(j.data)) {
-          let salesData = j.data || [];
-
-          // Fetch product details (name, cost price) for accurate display and profit calculation
-          const uniqueProductIds = Array.from(new Set(salesData.map((s: SalesRow) => s.productId).filter(Boolean)));
-          if (uniqueProductIds.length > 0) {
-            const productsById: Record<string, Product> = {};
-            await Promise.all(uniqueProductIds.map(async (pid: unknown) => {
-              try {
-                const pidStr = String(pid);
-                const r = await fetch(`/api/products/${pidStr}`);
-                if (!r.ok) return;
-                const j = await r.json();
-                if (j && j.success && j.data) {
-                  productsById[pidStr] = j.data;
-                }
-              } catch (err) {
-                console.warn('Failed to fetch product', pid, err);
-              }
-            }));
-
-            // Merge product data (name, cost price) into sales rows
-            salesData = salesData.map((s: SalesRow) => {
-              const productData = productsById[s.productId];
-              const costPrice = productData?.costPrice || s.costPrice || 0;
-              const profitPerUnit = s.unitPrice - costPrice;
-              const profit = profitPerUnit * s.quantity;
-
-              return {
-                ...s,
-                product: {
-                  name: productData?.name || s.product?.name || 'Unknown Product',
-                  price: productData?.price || s.product?.price,
-                },
-                costPrice: costPrice,
-                // Store calculated profit in ProfitMargin for consistency
-                ProfitMargin: {
-                  profit: profit,
-                  costPrice: costPrice,
-                },
-              };
-            });
-          }
+          // Same fix as the initial fetch above — product data is embedded
+          // by the API now, cost price prefers the SalesEntry's own
+          // historical snapshot.
+          const salesData = (j.data || []).map((s: SalesRow) => {
+            const costPrice = s.costPrice || s.product?.costPrice || 0;
+            const profit = (s.unitPrice - costPrice) * s.quantity;
+            return { ...s, costPrice, ProfitMargin: { profit, costPrice } };
+          });
 
           setSales(salesData);
         }
@@ -482,7 +391,7 @@ function SalesEntryContent() {
                               if (prefill.productId) params.set('productId', prefill.productId);
                               if (prefill.unitPrice) params.set('unitPrice', String(prefill.unitPrice));
                               if (prefill.paymentMethod) params.set('paymentMethod', prefill.paymentMethod);
-                              router.push(`/portal/sales/new?${params.toString()}`);
+                              router.push(`/sales/new?${params.toString()}`);
                             }}
                             title="Record similar sale"
                           >
@@ -491,7 +400,7 @@ function SalesEntryContent() {
                           <button
                             aria-label="View/Edit"
                             className={`p-2 rounded hover:bg-opacity-50 transition ${theme === 'dark' ? 'hover:bg-gray-700' : 'hover:bg-gray-200'}`}
-                            onClick={() => { router.push(`/portal/sales/new?saleId=${encodeURIComponent(s.id)}`); }}
+                            onClick={() => { router.push(`/sales/new?saleId=${encodeURIComponent(s.id)}`); }}
                             title="Edit sale"
                           >
                             <Eye className="h-4 w-4" />

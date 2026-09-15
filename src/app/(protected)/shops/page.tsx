@@ -213,7 +213,7 @@ export default function ShopsPage() {
                                   <td className="py-4 px-4">
                                     <div className="flex items-center gap-3">
                                       <Button variant="ghost" size="icon"><Eye className="h-4 w-4" /></Button>
-                                      <Link href={`/portal/shops/${shop.id}/edit`}>
+                                      <Link href={`/shops/${shop.id}/edit`}>
                                         <Button variant="ghost" size="icon"><Edit className="h-4 w-4" /></Button>
                                       </Link>
                                       <Button variant="ghost" size="icon"><Settings className="h-4 w-4" /></Button>
