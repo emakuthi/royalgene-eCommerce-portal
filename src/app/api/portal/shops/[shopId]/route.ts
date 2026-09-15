@@ -78,6 +78,80 @@ export async function PATCH(
   }
 }
 
+/**
+ * DELETE /api/portal/shops/[shopId]
+ * Soft-deletes the shop (isActive=false, deletedAt=now) rather than removing
+ * the row — Shop is a synced entity (Android's offline cache tombstones a
+ * row via `deletedAt`, not by it disappearing from a hard DELETE) and a real
+ * DELETE would also hit the FK from every ShopStock/SalesEntry/
+ * StockTransaction/PortalUser row still pointing at it. Admin (or
+ * super_admin) only.
+ */
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: Promise<{ shopId: string }> }
+) {
+  try {
+    const { shopId } = await params;
+    const auth = requireTenantUser(request);
+    if (auth instanceof NextResponse) return auth;
+    if (auth.role !== 'admin' && auth.role !== 'super_admin') {
+      return jsonResponse({ success: false, error: 'Admin access required' }, 403);
+    }
+
+    let existingQuery = supabaseAdmin.from('Shop').select('id, isActive, deletedAt').eq('id', shopId);
+    if (auth.organizationId) existingQuery = existingQuery.eq('organizationId', auth.organizationId);
+    const { data: existing, error: fetchError } = await existingQuery.maybeSingle();
+
+    if (fetchError) {
+      logger.error('Portal delete shop lookup failed', { shopId, error: fetchError.message });
+      return jsonResponse({ success: false, error: 'Failed to fetch shop' }, 500);
+    }
+    if (!existing) return jsonResponse({ success: false, error: 'Shop not found' }, 404);
+    if (existing.deletedAt || !existing.isActive) {
+      return jsonResponse({ success: false, error: 'Shop is already deleted' }, 409);
+    }
+
+    // Refuse to leave an organization with zero shops — product creation,
+    // sales, and the mobile app's "All Shops" view all assume at least one
+    // active shop exists.
+    let remainingQuery = supabaseAdmin
+      .from('Shop')
+      .select('id', { count: 'exact', head: true })
+      .eq('isActive', true)
+      .neq('id', shopId);
+    if (auth.organizationId) remainingQuery = remainingQuery.eq('organizationId', auth.organizationId);
+    const { count: remaining, error: countError } = await remainingQuery;
+
+    if (countError) {
+      logger.error('Portal delete shop count failed', { shopId, error: countError.message });
+      return jsonResponse({ success: false, error: 'Failed to verify remaining shops' }, 500);
+    }
+    if (!remaining) {
+      return jsonResponse({ success: false, error: 'Cannot delete the only remaining shop — create another shop first' }, 400);
+    }
+
+    const now = new Date().toISOString();
+    const { data: deleted, error } = await supabaseAdmin
+      .from('Shop')
+      .update({ isActive: false, deletedAt: now, updatedAt: now })
+      .eq('id', shopId)
+      .select()
+      .maybeSingle();
+
+    if (error) {
+      logger.error('Portal delete shop failed', { shopId, error: error.message });
+      return jsonResponse({ success: false, error: 'Failed to delete shop' }, 500);
+    }
+
+    logger.info('Portal shop deleted', { shopId, userId: auth.userId });
+    return jsonResponse({ success: true, data: deleted });
+  } catch (err) {
+    logger.error('Portal delete shop error', { error: err instanceof Error ? err.message : String(err) });
+    return jsonResponse({ success: false, error: 'Internal server error' }, 500);
+  }
+}
+
 export function OPTIONS() {
-  return optionsResponse('GET,PATCH,OPTIONS');
+  return optionsResponse('GET,PATCH,DELETE,OPTIONS');
 }
