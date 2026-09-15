@@ -334,7 +334,11 @@ function StockManagementContent() {
         return false;
       }
       setStocks(prev => prev.filter(s => s.id !== stockId));
-      toast.success('Product deleted');
+      if (delRes.json.data?.deactivated) {
+        toast.success(delRes.json.message || 'Product has sales history, so it was archived instead of deleted.');
+      } else {
+        toast.success('Product deleted');
+      }
       return true;
     } catch (err) {
       console.error('Delete error', err);

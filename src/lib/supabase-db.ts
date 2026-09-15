@@ -125,7 +125,7 @@ export async function updateProduct(productId: string, updateData: Partial<Produ
   }
 }
 
-export async function deleteProduct(productId: string) {
+export async function deleteProduct(productId: string): Promise<{ softDeleted: boolean }> {
   try {
     console.log('[Supabase] Deleting product:', productId);
 
@@ -144,13 +144,34 @@ export async function deleteProduct(productId: string) {
       .delete()
       .eq('id', productId);
 
+    let softDeleted = false;
+
     if (error) {
-      const msg = errorToMessage(error) || 'Failed to delete product';
-      console.error('[Supabase] Product deletion failed:', msg);
-      throw new Error(msg);
+      // A product that's been sold has a SalesEntry row pointing at it (and
+      // possibly StockTransaction/Alert too) — the same referential-integrity
+      // block already handled for Shop/PortalUser. Fall back to tombstoning
+      // the row (Product already carries deletedAt/version from the sync
+      // metadata migration) instead of surfacing a raw FK error.
+      if (error.code === '23503') {
+        const { error: softError } = await supabaseAdmin
+          .from('Product')
+          .update({ deletedAt: new Date().toISOString(), updatedAt: new Date().toISOString() })
+          .eq('id', productId);
+        if (softError) {
+          const msg = errorToMessage(softError) || 'Failed to delete product';
+          console.error('[Supabase] Product soft-delete failed:', msg);
+          throw new Error(msg);
+        }
+        softDeleted = true;
+      } else {
+        const msg = errorToMessage(error) || 'Failed to delete product';
+        console.error('[Supabase] Product deletion failed:', msg);
+        throw new Error(msg);
+      }
     }
 
-    // Remove associated ShopStock rows to avoid orphaned stock records
+    // Remove associated ShopStock rows to avoid orphaned stock records — the
+    // product should no longer show as stocked at any shop either way.
     try {
       const { error: stockErr } = await supabaseAdmin
         .from('ShopStock')
@@ -164,9 +185,13 @@ export async function deleteProduct(productId: string) {
       console.warn('[Supabase] Error deleting ShopStock rows after product deletion:', errorToMessage(stockDeleteErr));
     }
 
-    if (imagesToDelete.length > 0) {
+    // A soft-deleted product still exists (just tombstoned) — its images stay
+    // with it, since historical sales/receipts may still reference them.
+    if (!softDeleted && imagesToDelete.length > 0) {
       void deleteUploadedFiles(imagesToDelete, productOrgId);
     }
+
+    return { softDeleted };
 
     console.log('[Supabase] Product deleted successfully:', productId);
   } catch (error) {

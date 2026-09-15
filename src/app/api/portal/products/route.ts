@@ -231,7 +231,14 @@ export async function DELETE(request: NextRequest) {
         // If no shopId provided, admins may request full product deletion (remove product + shopstock)
         // Use existing db helper to keep behavior consistent
         try {
-          await (await import('@/lib/supabase-db')).deleteProduct(productId);
+          const { softDeleted } = await (await import('@/lib/supabase-db')).deleteProduct(productId);
+          if (softDeleted) {
+            return jsonResponse({
+              success: true,
+              data: { deactivated: true },
+              message: 'This product has sales history, so it was archived instead of deleted — it no longer shows in any shop.',
+            }, 200);
+          }
           return jsonResponse({ success: true }, 200);
         } catch (supabaseErr) {
           logger.warn('Admin full-product delete failed in Supabase; attempting in-memory fallback', { error: supabaseErr instanceof Error ? supabaseErr.message : String(supabaseErr), productId });
