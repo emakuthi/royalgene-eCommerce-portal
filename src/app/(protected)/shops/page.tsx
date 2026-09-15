@@ -5,13 +5,19 @@ import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Plus, MapPin, Phone, Mail, User, Eye, Edit, Settings, Store, Users, TrendingUp } from 'lucide-react';
+import { Plus, MapPin, Phone, Mail, User, Eye, Edit, Settings, Store, Users, TrendingUp, Trash2 } from 'lucide-react';
 import PortalHeader from '@/components/portal/PortalHeader';
 import { useHydratedAuth } from '@/lib/hooks';
 import { toast } from 'sonner';
 import { getShops } from '@/lib/shops';
 import StatCard from '@/components/ui/stat-card';
 import { formatKESMajor } from '@/lib/format';
+import MuiDialog from '@mui/material/Dialog';
+import MuiDialogTitle from '@mui/material/DialogTitle';
+import MuiDialogContent from '@mui/material/DialogContent';
+import MuiDialogContentText from '@mui/material/DialogContentText';
+import MuiDialogActions from '@mui/material/DialogActions';
+import MuiButton from '@mui/material/Button';
 
 interface Shop {
   id: string;
@@ -44,6 +50,32 @@ export default function ShopsPage() {
   const [tabVisible, setTabVisible] = useState(true);
 
   const { token, mounted } = useHydratedAuth();
+
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
+  const [deleting, setDeleting] = useState<string | null>(null);
+
+  const handleDelete = async (shopId: string) => {
+    setDeleting(shopId);
+    try {
+      const res = await fetch(`/api/portal/shops/${shopId}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const json = await res.json().catch(() => ({}));
+      if (res.ok && json.success) {
+        toast.success('Shop deleted');
+        setShops(prev => prev.filter(s => s.id !== shopId));
+      } else {
+        toast.error(json.error || 'Failed to delete shop');
+      }
+    } catch (err) {
+      console.error('Error deleting shop', err);
+      toast.error('Error deleting shop');
+    } finally {
+      setDeleting(null);
+      setDeleteTarget(null);
+    }
+  };
 
   // sampleShops is a stable module-level constant; avoid noisy linter here
   useEffect(() => {
@@ -217,6 +249,15 @@ export default function ShopsPage() {
                                         <Button variant="ghost" size="icon"><Edit className="h-4 w-4" /></Button>
                                       </Link>
                                       <Button variant="ghost" size="icon"><Settings className="h-4 w-4" /></Button>
+                                      <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        className="text-destructive hover:text-destructive"
+                                        disabled={deleting === shop.id}
+                                        onClick={() => setDeleteTarget({ id: shop.id, name: shop.name })}
+                                      >
+                                        <Trash2 className="h-4 w-4" />
+                                      </Button>
                                     </div>
                                   </td>
                                 </tr>
@@ -264,6 +305,20 @@ export default function ShopsPage() {
             )}
           </div>
         </div>
+
+        {/* Delete Shop Confirmation Modal */}
+        <MuiDialog open={Boolean(deleteTarget)} onClose={() => !deleting && setDeleteTarget(null)} maxWidth="xs" fullWidth PaperProps={{ sx: { borderRadius: 3, p: 1 } }}>
+          <MuiDialogTitle sx={{ fontWeight: 700 }}>🗑️ Delete Shop</MuiDialogTitle>
+          <MuiDialogContent>
+            <MuiDialogContentText>
+              Are you sure you want to delete <strong>{deleteTarget?.name}</strong>? Staff assigned to it will need to be reassigned, and it can only be restored from the database. Products and sales history are kept, not deleted.
+            </MuiDialogContentText>
+          </MuiDialogContent>
+          <MuiDialogActions sx={{ px: 3, pb: 2, gap: 1 }}>
+            <MuiButton onClick={() => setDeleteTarget(null)} variant="outlined" size="small" disabled={Boolean(deleting)}>Cancel</MuiButton>
+            <MuiButton onClick={() => deleteTarget && void handleDelete(deleteTarget.id)} variant="contained" size="small" disabled={Boolean(deleting)} sx={{ bgcolor: '#ef4444', '&:hover': { bgcolor: '#dc2626' } }}>{deleting ? 'Deleting…' : 'Delete'}</MuiButton>
+          </MuiDialogActions>
+        </MuiDialog>
       </>
     );
   }
