@@ -1,7 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const slugAvailable = vi.fn(async (..._a: unknown[]) => true);
-const shopNameAvailable = vi.fn(async (..._a: unknown[]) => true);
 const createOrg = vi.fn(async (..._a: unknown[]) => ({ id: 'org-1', name: 'Acme', slug: 'acme', status: 'pending_verification' }));
 
 vi.mock('@/lib/organizations.server', () => ({
@@ -10,7 +9,6 @@ vi.mock('@/lib/organizations.server', () => ({
   slugify: (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''),
   createOrganization: (...a: unknown[]) => createOrg(...a),
 }));
-vi.mock('@/lib/shops.server', () => ({ isShopNameAvailable: (...a: unknown[]) => shopNameAvailable(...a) }));
 vi.mock('@/lib/auth.server', () => ({
   hashPassword: async () => 'hashed',
   signAuthToken: () => 'signed.jwt.token',
@@ -40,13 +38,12 @@ vi.mock('@/lib/supabase-client', () => ({
   },
 }));
 
-import { provisionWorkspace, SignupError } from '@/lib/signup.server';
+import { provisionWorkspace } from '@/lib/signup.server';
 
 beforeEach(() => {
   for (const k of Object.keys(inserts)) delete inserts[k];
   existingEmailRows = [];
   slugAvailable.mockResolvedValue(true);
-  shopNameAvailable.mockResolvedValue(true);
 });
 afterEach(() => { vi.clearAllMocks(); });
 
@@ -60,11 +57,6 @@ describe('provisionWorkspace validation', () => {
   it('rejects a taken slug with 409', async () => {
     slugAvailable.mockResolvedValue(false);
     await expect(provisionWorkspace(base)).rejects.toMatchObject({ status: 409 });
-  });
-
-  it('rejects a taken shop name with 409', async () => {
-    shopNameAvailable.mockResolvedValue(false);
-    await expect(provisionWorkspace(base)).rejects.toBeInstanceOf(SignupError);
   });
 
   it('rejects an email already registered anywhere with 409', async () => {

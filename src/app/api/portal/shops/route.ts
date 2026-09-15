@@ -61,8 +61,8 @@ export async function POST(request: NextRequest) {
       return jsonResponse({ success: false, error: 'Shop name and location are required' }, 400);
     }
 
-    // Shop names must be globally unique, not just within this organization.
-    if (!(await isShopNameAvailable(name))) {
+    // Shop names must be unique within this organization.
+    if (!(await isShopNameAvailable(name, organizationId))) {
       logger.warn('Portal create shop failed: duplicate name', { userId: auth.userId, name, endpoint: '/api/portal/shops' });
       return jsonResponse({ success: false, error: 'A shop with that name already exists' }, 409);
     }

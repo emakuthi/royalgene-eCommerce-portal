@@ -20,11 +20,11 @@ vi.mock('@/lib/entitlements/enforce.server', () => ({
 vi.mock('@/lib/supabase-client', () => ({
   supabaseAdmin: {
     from: vi.fn(() => ({
-      // Duplicate-name check: .select('id').eq('organizationId', id).ilike('name', name).limit(1).single()
+      // Duplicate-name check: .select('id').ilike('name', name).eq('organizationId', id).eq('isActive', true).maybeSingle()
       select: vi.fn(() => ({
-        eq: vi.fn(() => ({
-          ilike: vi.fn(() => ({
-            limit: vi.fn(() => ({ single: vi.fn(async () => ({ data: null, error: null })) })),
+        ilike: vi.fn(() => ({
+          eq: vi.fn(() => ({
+            eq: vi.fn(() => ({ maybeSingle: vi.fn(async () => ({ data: null, error: null })) })),
           })),
         })),
       })),

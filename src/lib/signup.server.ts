@@ -7,7 +7,6 @@ import logger from './logger';
 import { createOrganization, isSlugAvailable, isValidSlug, slugify } from './organizations.server';
 import { RESERVED_SUBDOMAINS } from './tenant';
 import { sendVerificationEmail } from './email/verification-email';
-import { isShopNameAvailable } from './shops.server';
 import { registerDevice, type DeviceInfo } from './device-registry.server';
 
 const VERIFICATION_TOKEN_TTL_MS = 24 * 60 * 60 * 1000;
@@ -67,10 +66,9 @@ export async function provisionWorkspace(input: ProvisionWorkspaceInput): Promis
   if (!(await isSlugAvailable(slug))) {
     throw new SignupError(409, 'That workspace URL is already taken');
   }
-  // Default shop is named after orgName; shop names are globally unique.
-  if (!(await isShopNameAvailable(orgName))) {
-    throw new SignupError(409, 'A shop with that name already exists — please choose a different business name');
-  }
+  // Shop names only need to be unique within an organization, and this is a
+  // brand-new one about to be created below — it can't yet have any shop to
+  // collide with, so there's nothing to check here.
 
   const normalizedEmail = email.toLowerCase().trim();
   const now = new Date().toISOString();
