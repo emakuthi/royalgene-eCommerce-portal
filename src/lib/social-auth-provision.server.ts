@@ -83,11 +83,10 @@ export async function findOrProvisionUserForSocialIdentity(
   }
 
   const shopId = uuidv4();
-  // Shop names must be globally unique. orgName here is auto-generated
-  // ("Jane's Workspace"), not something the user typed and could retry with
-  // a different value on collision, so disambiguate automatically instead
-  // of failing the sign-in — mirrors uniqueSlugFor above.
-  const shopName = await uniqueShopNameFor(orgName);
+  // Shop names only need to be unique within this (brand-new) organization,
+  // so this practically never has to disambiguate — kept for parity with
+  // the manual-signup path and to mirror uniqueSlugFor above.
+  const shopName = await uniqueShopNameFor(orgName, organization.id);
   const { error: shopError } = await supabaseAdmin.from('Shop').insert([{
     id: shopId,
     name: shopName,

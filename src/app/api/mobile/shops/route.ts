@@ -220,7 +220,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    if (!(await isShopNameAvailable(name.trim()))) {
+    if (!(await isShopNameAvailable(name.trim(), organizationId))) {
       return jsonResponse({ success: false, error: 'A shop with that name already exists', code: 'DUPLICATE_NAME' }, 409);
     }
 
