@@ -66,6 +66,13 @@ function PortalUsersContent() {
   const [deleting, setDeleting] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
 
+  // Permanent-delete (purge) confirmation — only offered for an already-
+  // disabled account, mirroring the platform console's soft-delete-then-purge
+  // pattern for tenants.
+  const [purgeTarget, setPurgeTarget] = useState<{ id: string; name: string; email: string } | null>(null);
+  const [purgeConfirm, setPurgeConfirm] = useState('');
+  const [purging, setPurging] = useState(false);
+
   // Edit user modal state
   const [editingUser, setEditingUser] = useState<PortalUser | null>(null);
   const [updating, setUpdating] = useState(false);
@@ -323,6 +330,31 @@ function PortalUsersContent() {
     }
   };
 
+  const confirmPurge = async () => {
+    if (!purgeTarget) return;
+    setPurging(true);
+    try {
+      const res = await fetch(`/api/portal/users/${purgeTarget.id}?purge=true`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ confirm: purgeConfirm.trim() }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (res.ok && json.success) {
+        toast.success(`${purgeTarget.name} permanently deleted`);
+        setPortalUsers(prev => prev.filter(u => u.id !== purgeTarget.id));
+        setPurgeTarget(null);
+      } else {
+        toast.error(json.error || 'Failed to permanently delete');
+      }
+    } catch (err) {
+      console.error(err);
+      toast.error('Error permanently deleting portal user');
+    } finally {
+      setPurging(false);
+    }
+  };
+
   const createUser = async (e?: React.FormEvent) => {
     e?.preventDefault();
     if (!newUser.name || !newUser.email || !newUser.password || !newUser.position || !newUser.shopId) return toast.error('Please fill all required fields including shop');
@@ -575,7 +607,19 @@ function PortalUsersContent() {
                       <td className="py-4">
                         <div className="flex items-center gap-3">
                           <Button variant="ghost" size="icon" onClick={() => openEditModal(u)} className="hover:text-slate-700">Edit</Button>
-                          <Button variant="ghost" size="icon" onClick={() => setDeleteTarget({ id: u.id, name: u.user?.name ?? u.id })} disabled={deleting === u.id} className="text-destructive hover:text-destructive"><Trash2 className="h-4 w-4"/></Button>
+                          {u.isActive ? (
+                            <Button variant="ghost" size="icon" onClick={() => setDeleteTarget({ id: u.id, name: u.user?.name ?? u.id })} disabled={deleting === u.id} className="text-destructive hover:text-destructive"><Trash2 className="h-4 w-4"/></Button>
+                          ) : (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => { setPurgeTarget({ id: u.id, name: u.user?.name ?? u.id, email: u.user?.email ?? '' }); setPurgeConfirm(''); }}
+                              className="text-destructive hover:text-destructive"
+                              title="Permanently delete — this account is already disabled"
+                            >
+                              <Trash2 className="h-4 w-4 mr-1"/>Purge
+                            </Button>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -734,6 +778,42 @@ function PortalUsersContent() {
           <MuiButton onClick={() => deleteTarget && void handleDelete(deleteTarget.id)} variant="contained" size="small" disabled={Boolean(deleting)} sx={{ bgcolor: '#ef4444', '&:hover': { bgcolor: '#dc2626' } }}>{deleting ? 'Deleting…' : 'Delete'}</MuiButton>
         </MuiDialogActions>
       </MuiDialog>
+
+      {/* Permanent-delete (purge) confirmation */}
+      <Dialog open={Boolean(purgeTarget)} onOpenChange={(open) => !open && !purging && setPurgeTarget(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Permanently delete {purgeTarget?.name}?</DialogTitle>
+            <DialogDescription>
+              This account is disabled because it has sales or stock history. Purging reassigns that
+              history to a &quot;Deleted User&quot; placeholder and removes the account itself — the
+              records stay, but the name is gone for good. This cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 mt-1">
+            <Label htmlFor="user-purge-confirm">
+              Type <span className="font-mono font-semibold">{purgeTarget?.email}</span> to confirm
+            </Label>
+            <Input
+              id="user-purge-confirm"
+              value={purgeConfirm}
+              onChange={(e) => setPurgeConfirm(e.target.value)}
+              disabled={purging}
+              autoComplete="off"
+            />
+            <div className="flex gap-3 pt-1">
+              <Button
+                className="flex-1 bg-red-600 hover:bg-red-700 text-white"
+                disabled={purging || purgeConfirm.trim().toLowerCase() !== purgeTarget?.email.toLowerCase()}
+                onClick={confirmPurge}
+              >
+                {purging ? 'Deleting…' : 'Permanently delete'}
+              </Button>
+              <Button variant="outline" type="button" onClick={() => setPurgeTarget(null)} disabled={purging}>Cancel</Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
      </div>
    );
 }
