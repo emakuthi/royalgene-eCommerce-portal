@@ -2,6 +2,7 @@ import 'server-only';
 import { supabaseAdmin } from '../supabase-client';
 import logger from '../logger';
 import { SYNC_ENTITIES, SYNC_ENTITY_NAMES, type SyncEntityName } from './syncable-entities';
+import { redactCostFields } from '../cost-visibility.server';
 
 const DEFAULT_PAGE_SIZE = 200;
 const MAX_PAGE_SIZE = 500;
@@ -48,12 +49,18 @@ export function encodeCursor(cursor: SyncCursor): string {
  *
  * Soft-deleted rows are included (operation: DELETE) so a device can drop
  * them; StockTransaction (append-only, no deletedAt) is always UPSERT.
+ *
+ * `includeCostData` defaults to FALSE deliberately: cost/profit figures are
+ * owner-only (see cost-visibility.server.ts), and this feed writes straight
+ * into a device's local database, so a caller must opt in explicitly rather
+ * than leak them by forgetting to opt out.
  */
 export async function pullChanges(opts: {
   organizationId: string;
   cursor: SyncCursor;
   entities?: SyncEntityName[];
   pageSize?: number;
+  includeCostData?: boolean;
 }): Promise<{ changes: SyncChange[]; cursor: SyncCursor; hasMore: boolean }> {
   const entities = (opts.entities?.length ? opts.entities : SYNC_ENTITY_NAMES)
     .filter((e): e is SyncEntityName => e in SYNC_ENTITIES);
@@ -99,7 +106,7 @@ export async function pullChanges(opts: {
         operation: isDeleted ? 'DELETE' : 'UPSERT',
         version: typeof row.version === 'number' ? row.version : null,
         updatedAt: String(row.updatedAt),
-        data: isDeleted ? null : row,
+        data: isDeleted ? null : (opts.includeCostData ? row : redactCostFields(entityName, row)),
       });
     }
 

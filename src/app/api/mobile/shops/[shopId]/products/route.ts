@@ -5,6 +5,7 @@ import { jsonResponse } from '@/lib/apiResponse';
 import { verifyMobileShopAccess } from '@/lib/mobile-shop-auth';
 import { createProductForShop } from '@/lib/portal-products';
 import { isValidClientId } from '@/lib/sync/syncable-entities';
+import { canViewCostData } from '@/lib/cost-visibility.server';
 /**
  * GET /api/mobile/shops/[shopId]/products
  * Get available products in a shop with current stock levels
@@ -79,6 +80,9 @@ export async function GET(
       }, 500);
     }
 
+    // Cost price is owner-only; staff see null (see cost-visibility.server.ts).
+    const showCost = await canViewCostData(auth.payload);
+
     // Build product list — with !inner join Product is always present, but keep the
     // null-guard for safety in case the DB has orphaned ShopStock rows.
     const products = (shopStocks || [])
@@ -102,7 +106,7 @@ export async function GET(
           category: product.category,
           description: product.description,
           price: product.price,
-          costPrice: (product.costPrice as number) || 0,
+          costPrice: showCost ? ((product.costPrice as number) || 0) : null,
           quantity: ss.quantity,
           images: (product.images as string[]) || [],
           colors: (product.colors as string[]) || [],

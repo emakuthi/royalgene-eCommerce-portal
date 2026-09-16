@@ -5,6 +5,7 @@ import logger from '@/lib/logger';
 import { jsonResponse } from '@/lib/apiResponse';
 import { assertFeatureEnabled } from '@/lib/entitlements/enforce.server';
 import { FeatureCode } from '@/lib/entitlements/feature-codes';
+import { canViewCostData } from '@/lib/cost-visibility.server';
 
 // Define typed shapes we expect from Supabase queries
 interface ProfitMarginRow {
@@ -182,7 +183,13 @@ export async function GET(request: NextRequest) {
       duration: Date.now() - startTime
     });
 
-    return jsonResponse({ success: true, data: { summary: { totalSales, totalProfit, avgMargin, totalTransactions: salesList.length }, salesData, topProducts } }, 200);
+    // Cost/profit are owner-only (see cost-visibility.server.ts): blank the
+    // totals and strip the per-point/per-product profit for everyone else.
+    const showCost = await canViewCostData(payload);
+    const gatedSalesData = showCost ? salesData : salesData.map(({ profit: _p, ...rest }) => rest);
+    const gatedTopProducts = showCost ? topProducts : topProducts.map(({ profit: _p, ...rest }) => rest);
+
+    return jsonResponse({ success: true, data: { summary: { totalSales, totalProfit: showCost ? totalProfit : null, avgMargin: showCost ? avgMargin : null, totalTransactions: salesList.length }, salesData: gatedSalesData, topProducts: gatedTopProducts } }, 200);
   } catch (error) {
     logger.error('Analytics error', {
       error: error instanceof Error ? error.message : String(error),

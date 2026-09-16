@@ -12,6 +12,7 @@ import { generateTaxInvoiceForSale } from '@/lib/etims/tax-invoice.server';
 import { syncSaleToQuickBooks } from '@/lib/accounting/sync-sale-to-quickbooks.server';
 import { isValidClientId } from '@/lib/sync/syncable-entities';
 import { idempotentInsert } from '@/lib/sync/idempotent-insert.server';
+import { canViewCostData } from '@/lib/cost-visibility.server';
 
 /**
  * POST /api/mobile/shops/[shopId]/sales
@@ -228,6 +229,9 @@ export async function POST(
 
     // Calculate totals
     const totalAmount = quantity * unitPrice;
+    // The sale still records cost/profit in the DB — this only gates what is
+    // echoed back to the person who rang it up (see cost-visibility.server.ts).
+    const showCostOnSale = await canViewCostData(auth.payload);
     const costPrice = product.costPrice || product.price;
     const profit = totalAmount - (costPrice * quantity);
     const marginPercentage = totalAmount > 0 ? (profit / totalAmount) * 100 : 0;
@@ -332,9 +336,9 @@ export async function POST(
         quantity,
         unitPrice,
         totalAmount,
-        costPrice,
-        profit,
-        marginPercentage: Math.round(marginPercentage * 100) / 100,
+        costPrice: showCostOnSale ? costPrice : null,
+        profit: showCostOnSale ? profit : null,
+        marginPercentage: showCostOnSale ? Math.round(marginPercentage * 100) / 100 : null,
         paymentMethod: paymentMethod || 'cash',
         customerName: customerName || null,
         customerPhone: customerPhone || null

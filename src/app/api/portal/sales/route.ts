@@ -11,6 +11,7 @@ import { trackFromRequest } from '@/lib/activity-tracker';
 import { generateTaxInvoiceForSale } from '@/lib/etims/tax-invoice.server';
 import { syncSaleToQuickBooks } from '@/lib/accounting/sync-sale-to-quickbooks.server';
 import { assertCanCreate } from '@/lib/entitlements/enforce.server';
+import { canViewCostData } from '@/lib/cost-visibility.server';
 
 export async function POST(request: NextRequest) {
   const startTime = Date.now();
@@ -422,6 +423,23 @@ export async function GET(request: NextRequest) {
     if (error) {
       logger.error('Failed to fetch sales', { error: error.message });
       return jsonResponse({ success: false, error: 'Failed to fetch sales' }, 500);
+    }
+
+    // Cost/profit are owner-only — strip the embedded ProfitMargin rows, the
+    // per-sale cost snapshot and the product's cost price for everyone else
+    // (see cost-visibility.server.ts).
+    if (!(await canViewCostData(payload))) {
+      const redacted = (sales ?? []).map((sale) => {
+        const row = sale as Record<string, unknown>;
+        const product = row.product as Record<string, unknown> | null;
+        return {
+          ...row,
+          costPrice: null,
+          ProfitMargin: null,
+          product: product ? { ...product, costPrice: null } : product,
+        };
+      });
+      return jsonResponse({ success: true, data: redacted }, 200);
     }
 
     return jsonResponse({ success: true, data: sales || [] }, 200);

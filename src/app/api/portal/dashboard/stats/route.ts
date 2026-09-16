@@ -3,6 +3,7 @@ import { requireTenantUser } from '@/lib/authorize';
 import { supabaseAdmin } from '@/lib/supabase-client';
 import logger from '@/lib/logger';
 import { jsonResponse, optionsResponse } from '@/lib/apiResponse';
+import { canViewCostData } from '@/lib/cost-visibility.server';
 
 interface ProfitMarginRow {
   profit?: number;
@@ -155,7 +156,10 @@ export async function GET(request: NextRequest) {
       duration: Date.now() - startTime
     });
 
-    return jsonResponse({ success: true, data: { totalSales: salesThisMonth, totalProfit: profitThisMonth, averageMargin, lowStockProducts: lowStockItems.length, topSellingProducts, salesToday, salesThisMonth } }, 200);
+    // Cost/profit are owner-only (see cost-visibility.server.ts).
+    const showCost = await canViewCostData(payload);
+
+    return jsonResponse({ success: true, data: { totalSales: salesThisMonth, totalProfit: showCost ? profitThisMonth : null, averageMargin: showCost ? averageMargin : null, lowStockProducts: lowStockItems.length, topSellingProducts, salesToday, salesThisMonth } }, 200);
   } catch (error) {
     logger.error('Dashboard stats error', {
       error: error instanceof Error ? error.message : String(error),
