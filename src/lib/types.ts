@@ -339,6 +339,9 @@ export interface ShopStockVariant {
   size: string;   // '' means "no size dimension"
   color: string;  // '' means "no colour dimension"
   quantity: number;
+  /** Null = this cell uses the product's own price/costPrice. Set only when this size/colour sells for something different. */
+  price?: number | null;
+  costPrice?: number | null;
   createdAt: string;
   updatedAt: string;
 }

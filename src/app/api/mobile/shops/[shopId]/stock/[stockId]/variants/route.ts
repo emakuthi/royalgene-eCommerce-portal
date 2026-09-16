@@ -3,7 +3,13 @@ import { v4 as uuidv4 } from 'uuid';
 import { supabaseAdmin } from '@/lib/supabase-client';
 import { jsonResponse } from '@/lib/apiResponse';
 import { verifyMobileShopAccess } from '@/lib/mobile-shop-auth';
-import { getVariantMatrix, setVariantMatrix, type VariantCellInput } from '@/lib/variant-stock.server';
+import { getVariantMatrix, setVariantMatrix, type VariantCellInput, type VariantMatrix } from '@/lib/variant-stock.server';
+import { canViewCostData } from '@/lib/cost-visibility.server';
+
+/** Cost is owner-only (see cost-visibility.server.ts) — same rule as the product's own costPrice. */
+function redactMatrixCost(matrix: VariantMatrix): VariantMatrix {
+  return { ...matrix, cells: matrix.cells.map((c) => ({ ...c, costPrice: null })) };
+}
 
 // Size × colour matrix for one ShopStock row (mobile).
 //   GET -> matrix + rollups
@@ -35,7 +41,8 @@ export async function GET(request: NextRequest, ctx: { params: Promise<{ shopId:
   const res = await loadStock(request, shopId, stockId);
   if ('error' in res) return res.error;
 
-  const matrix = await getVariantMatrix(stockId);
+  const rawMatrix = await getVariantMatrix(stockId);
+  const matrix = (await canViewCostData(res.auth.payload)) ? rawMatrix : redactMatrixCost(rawMatrix);
   return jsonResponse({ success: true, data: { ...matrix, shopStockId: stockId, flatQuantity: res.stock.quantity } });
 }
 
@@ -61,6 +68,8 @@ export async function PUT(request: NextRequest, ctx: { params: Promise<{ shopId:
       size: typeof cell.size === 'string' ? cell.size : '',
       color: typeof cell.color === 'string' ? cell.color : '',
       quantity: q,
+      price: typeof cell.price === 'number' ? cell.price : null,
+      costPrice: typeof cell.costPrice === 'number' ? cell.costPrice : null,
     });
   }
 
@@ -82,15 +91,16 @@ export async function PUT(request: NextRequest, ctx: { params: Promise<{ shopId:
       }
 
       if (!claimed || claimed.length === 0) {
-        const [{ data: current }, currentMatrix] = await Promise.all([
+        const [{ data: current }, currentMatrix, showCost] = await Promise.all([
           supabaseAdmin.from('ShopStock').select('id, version, quantity').eq('id', stockId).maybeSingle(),
           getVariantMatrix(stockId),
+          canViewCostData(auth.payload),
         ]);
         return jsonResponse({
           success: false,
           error: 'This stock breakdown was changed elsewhere since you last loaded it.',
           code: 'VERSION_CONFLICT',
-          data: { ...currentMatrix, shopStockId: stockId, version: current?.version },
+          data: { ...(showCost ? currentMatrix : redactMatrixCost(currentMatrix)), shopStockId: stockId, version: current?.version },
         }, 409);
       }
     }
@@ -114,7 +124,8 @@ export async function PUT(request: NextRequest, ctx: { params: Promise<{ shopId:
     // re-read it fresh rather than reusing the pre-replace `stock.version`.
     const { data: freshStock } = await supabaseAdmin.from('ShopStock').select('version').eq('id', stockId).maybeSingle();
 
-    return jsonResponse({ success: true, data: { ...matrix, shopStockId: stockId, version: freshStock?.version } });
+    const respMatrix = (await canViewCostData(auth.payload)) ? matrix : redactMatrixCost(matrix);
+    return jsonResponse({ success: true, data: { ...respMatrix, shopStockId: stockId, version: freshStock?.version } });
   } catch (err) {
     return jsonResponse({ success: false, error: err instanceof Error ? err.message : 'Failed to save breakdown', code: 'INTERNAL_ERROR' }, 500);
   }

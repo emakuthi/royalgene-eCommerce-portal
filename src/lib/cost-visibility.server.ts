@@ -20,6 +20,7 @@ const OWNER_POSITIONS = new Set(['shop_owner', 'owner', 'admin']);
 export const COST_FIELDS: Record<string, string[]> = {
   Product: ['costPrice'],
   SalesEntry: ['costPrice'],
+  ShopStockVariant: ['costPrice'],
 };
 
 /**
