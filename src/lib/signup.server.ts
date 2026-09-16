@@ -8,6 +8,7 @@ import { createOrganization, isSlugAvailable, isValidSlug, slugify } from './org
 import { RESERVED_SUBDOMAINS } from './tenant';
 import { sendVerificationEmail } from './email/verification-email';
 import { registerDevice, type DeviceInfo } from './device-registry.server';
+import { isValidEmail, normalizeEmail } from './email-validation';
 
 const VERIFICATION_TOKEN_TTL_MS = 24 * 60 * 60 * 1000;
 
@@ -70,7 +71,11 @@ export async function provisionWorkspace(input: ProvisionWorkspaceInput): Promis
   // brand-new one about to be created below — it can't yet have any shop to
   // collide with, so there's nothing to check here.
 
-  const normalizedEmail = email.toLowerCase().trim();
+  if (!isValidEmail(email)) {
+    throw new SignupError(400, 'Enter a valid email address');
+  }
+
+  const normalizedEmail = normalizeEmail(email);
   const now = new Date().toISOString();
 
   // One email = one workspace. Enforced here for every new signup even before

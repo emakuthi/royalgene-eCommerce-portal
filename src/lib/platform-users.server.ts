@@ -2,6 +2,7 @@ import 'server-only';
 import { supabaseAdmin } from './supabase-client';
 import { hashPassword } from './auth.server';
 import logger from './logger';
+import { isValidEmail } from './email-validation';
 
 /**
  * Super-admin view of the people (User + PortalUser rows) inside one tenant,
@@ -30,8 +31,6 @@ export interface PlatformOrgUser {
   emailVerified: boolean;
   memberships: PlatformOrgMembership[];
 }
-
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export async function listOrganizationUsers(orgId: string): Promise<PlatformOrgUser[]> {
   const { data: users, error } = await supabaseAdmin
@@ -112,7 +111,7 @@ export async function updateOrganizationUser(
 
   if (patch.email !== undefined) {
     const email = patch.email.trim().toLowerCase();
-    if (!EMAIL_RE.test(email)) return { ok: false, status: 400, error: 'Enter a valid email address' };
+    if (!isValidEmail(email)) return { ok: false, status: 400, error: 'Enter a valid email address' };
     const { data: clash } = await supabaseAdmin
       .from('User').select('id').eq('email', email).neq('id', userId).limit(1);
     if (clash && clash.length > 0) return { ok: false, status: 409, error: 'That email already belongs to another account' };
