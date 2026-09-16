@@ -5,6 +5,7 @@ import { jsonResponse, optionsResponse } from '@/lib/apiResponse';
 import { assertTenantMatch } from '@/lib/tenant-guard';
 import { v4 as uuidv4 } from 'uuid';
 import { assertCanCreate } from '@/lib/entitlements/enforce.server';
+import { isValidEmail, normalizeEmail } from '@/lib/email-validation';
 
 function requireAdmin(request: NextRequest): NextResponse | VerifiedPayload {
   const token = request.headers.get('Authorization')?.replace('Bearer ', '');
@@ -60,6 +61,9 @@ export async function POST(request: NextRequest) {
   if (!name || !email || !password || !position || !shopId)
     return jsonResponse({ success: false, error: 'name, email, password, position and shopId are required' }, 400);
 
+  if (!isValidEmail(String(email)))
+    return jsonResponse({ success: false, error: 'Enter a valid email address' }, 400);
+
   if (password.length < 8)
     return jsonResponse({ success: false, error: 'Password must be at least 8 characters' }, 400);
 
@@ -86,7 +90,7 @@ export async function POST(request: NextRequest) {
   const { data: emailRows } = await supabaseAdmin
     .from('User')
     .select('id')
-    .eq('email', String(email).trim().toLowerCase())
+    .eq('email', normalizeEmail(String(email)))
     .limit(1);
   if (emailRows && emailRows.length > 0) {
     return jsonResponse({ success: false, error: 'That email already belongs to an account' }, 409);
@@ -97,7 +101,7 @@ export async function POST(request: NextRequest) {
   const hashed = await hashPassword(password);
 
   const { error: userError } = await supabaseAdmin.from('User').insert([{
-    id: userId, email: String(email).trim().toLowerCase(), password: hashed, name,
+    id: userId, email: normalizeEmail(String(email)), password: hashed, name,
     role: 'portal_user', twoFactorEnabled: false, organizationId,
     createdAt: now, updatedAt: now,
   }]);

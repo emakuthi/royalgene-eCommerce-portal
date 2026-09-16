@@ -5,6 +5,7 @@ import { supabaseAdmin } from '@/lib/supabase-client';
 import { jsonResponse } from '@/lib/apiResponse';
 import { assertCanCreate } from '@/lib/entitlements/enforce.server';
 import logger from '@/lib/logger';
+import { isValidEmail, normalizeEmail } from '@/lib/email-validation';
 
 // Attendants of a shop = PortalUser rows (role portal_user on the User).
 // GET  -> list this shop's attendants
@@ -71,6 +72,9 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ shopId
   if (!name?.trim() || !email?.trim() || !password) {
     return jsonResponse({ success: false, error: 'name, email and password are required', code: 'VALIDATION_ERROR' }, 400);
   }
+  if (!isValidEmail(email)) {
+    return jsonResponse({ success: false, error: 'Enter a valid email address', code: 'VALIDATION_ERROR' }, 400);
+  }
   if (password.length < 8) {
     return jsonResponse({ success: false, error: 'Password must be at least 8 characters', code: 'VALIDATION_ERROR' }, 400);
   }
@@ -81,7 +85,7 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ shopId
   const limitResponse = await assertCanCreate(organizationId, 'USER');
   if (limitResponse) return limitResponse;
 
-  const normalizedEmail = email.toLowerCase().trim();
+  const normalizedEmail = normalizeEmail(email);
   // One email = one account, across every workspace.
   const { data: existingRows } = await supabaseAdmin
     .from('User')

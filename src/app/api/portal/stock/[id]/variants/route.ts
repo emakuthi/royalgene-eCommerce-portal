@@ -3,7 +3,13 @@ import { requireTenantUser } from '@/lib/authorize';
 import { supabaseAdmin } from '@/lib/supabase-client';
 import { v4 as uuidv4 } from 'uuid';
 import { jsonResponse, optionsResponse } from '@/lib/apiResponse';
-import { getVariantMatrix, setVariantMatrix, type VariantCellInput } from '@/lib/variant-stock.server';
+import { getVariantMatrix, setVariantMatrix, type VariantCellInput, type VariantMatrix } from '@/lib/variant-stock.server';
+import { canViewCostData } from '@/lib/cost-visibility.server';
+
+/** Cost is owner-only (see cost-visibility.server.ts) — same rule as the product's own costPrice. */
+function redactMatrixCost(matrix: VariantMatrix): VariantMatrix {
+  return { ...matrix, cells: matrix.cells.map((c) => ({ ...c, costPrice: null })) };
+}
 
 // Size × colour matrix for one ShopStock row.
 //   GET  -> the matrix + row/column rollups
@@ -39,7 +45,8 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   const res = await loadStock(request, id);
   if ('error' in res) return res.error;
 
-  const matrix = await getVariantMatrix(id);
+  const rawMatrix = await getVariantMatrix(id);
+  const matrix = (await canViewCostData(res.payload)) ? rawMatrix : redactMatrixCost(rawMatrix);
   return jsonResponse({ success: true, data: { ...matrix, shopStockId: id, flatQuantity: res.stock.quantity } });
 }
 
@@ -64,6 +71,8 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
       size: typeof cell.size === 'string' ? cell.size : '',
       color: typeof cell.color === 'string' ? cell.color : '',
       quantity: q,
+      price: typeof cell.price === 'number' ? cell.price : null,
+      costPrice: typeof cell.costPrice === 'number' ? cell.costPrice : null,
     });
   }
 
@@ -86,7 +95,8 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
       createdAt: new Date().toISOString(),
     }]);
 
-    return jsonResponse({ success: true, data: { ...matrix, shopStockId: id } });
+    const respMatrix = (await canViewCostData(payload)) ? matrix : redactMatrixCost(matrix);
+    return jsonResponse({ success: true, data: { ...respMatrix, shopStockId: id } });
   } catch (err) {
     return jsonResponse({ success: false, error: err instanceof Error ? err.message : 'Failed to save breakdown' }, 500);
   }

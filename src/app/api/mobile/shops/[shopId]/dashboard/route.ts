@@ -3,6 +3,7 @@ import { supabaseAdmin } from '@/lib/supabase-client';
 import logger from '@/lib/logger';
 import { jsonResponse } from '@/lib/apiResponse';
 import { verifyMobileShopAccess } from '@/lib/mobile-shop-auth';
+import { canViewCostData } from '@/lib/cost-visibility.server';
 
 /**
  * GET /api/mobile/shops/[shopId]/dashboard
@@ -137,7 +138,7 @@ export async function GET(
         summary: {
           totalSales,
           totalRevenue: Math.round(totalRevenue * 100) / 100,
-          totalProfit: Math.round(totalProfit * 100) / 100,
+          totalProfit: (await canViewCostData(auth.payload)) ? Math.round(totalProfit * 100) / 100 : null,
           averageTransactionValue: Math.round(averageTransactionValue * 100) / 100,
           topProduct
         },

@@ -3,6 +3,7 @@ import { supabaseAdmin } from '@/lib/supabase-client';
 import logger from '@/lib/logger';
 import { jsonResponse } from '@/lib/apiResponse';
 import { verifyMobileShopAccess } from '@/lib/mobile-shop-auth';
+import { canViewCostData } from '@/lib/cost-visibility.server';
 
 /**
  * GET /api/mobile/shops/[shopId]/sales/[saleId]
@@ -77,6 +78,8 @@ export async function GET(
       }
     }
 
+    // Cost/profit are owner-only (see cost-visibility.server.ts).
+    const showCost = await canViewCostData(auth.payload);
     const costPrice = sale.costPrice || 0;
     const profit = sale.totalAmount - (costPrice * sale.quantity);
     const marginPercentage = sale.totalAmount > 0 ? (profit / sale.totalAmount) * 100 : 0;
@@ -105,9 +108,9 @@ export async function GET(
           quantity: sale.quantity,
           unitPrice: sale.unitPrice,
           totalAmount: sale.totalAmount,
-          costPrice,
-          profit: Math.round(profit * 100) / 100,
-          marginPercentage: Math.round(marginPercentage * 100) / 100,
+          costPrice: showCost ? costPrice : null,
+          profit: showCost ? Math.round(profit * 100) / 100 : null,
+          marginPercentage: showCost ? Math.round(marginPercentage * 100) / 100 : null,
           paymentMethod: sale.paymentMethod,
           customerName: sale.customerName,
           customerPhone: sale.customerPhone,

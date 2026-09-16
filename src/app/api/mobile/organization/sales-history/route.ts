@@ -4,6 +4,7 @@ import logger from '@/lib/logger';
 import { jsonResponse, optionsResponse } from '@/lib/apiResponse';
 import { verifyMobileAuth } from '@/lib/mobile-shop-auth';
 import { getOrgShopIds } from '@/lib/mobile-org-shops';
+import { canViewCostData } from '@/lib/cost-visibility.server';
 
 /**
  * GET /api/mobile/organization/sales-history
@@ -121,7 +122,7 @@ export async function GET(request: NextRequest) {
       data: {
         sales: salesList,
         pagination: { page, limit, total, pages },
-        summary: { totalSales, totalAmount, totalProfit: Math.round(totalProfit * 100) / 100 },
+        summary: { totalSales, totalAmount, totalProfit: (await canViewCostData(auth.payload)) ? Math.round(totalProfit * 100) / 100 : null },
       },
     }, 200);
   } catch (error) {

@@ -5,6 +5,7 @@ import logger from '@/lib/logger';
 import { v4 as uuidv4 } from 'uuid';
 import { jsonResponse } from '@/lib/apiResponse';
 import { deviceInfoFromBody, registerDevice } from '@/lib/device-registry.server';
+import { isValidEmail, normalizeEmail } from '@/lib/email-validation';
 
 /**
  * POST /api/mobile/auth/register
@@ -29,6 +30,14 @@ export async function POST(request: NextRequest) {
       return jsonResponse({
         success: false,
         error: 'Missing required fields: email, password, name, invitationCode',
+        code: 'VALIDATION_ERROR',
+      }, 400);
+    }
+
+    if (!isValidEmail(email)) {
+      return jsonResponse({
+        success: false,
+        error: 'Enter a valid email address',
         code: 'VALIDATION_ERROR',
       }, 400);
     }
@@ -68,7 +77,7 @@ export async function POST(request: NextRequest) {
     const { data: existingUser } = await supabaseAdmin
       .from('User')
       .select('id')
-      .eq('email', email.toLowerCase())
+      .eq('email', normalizeEmail(email))
       .eq('organizationId', organizationId)
       .maybeSingle();
 
@@ -95,7 +104,7 @@ export async function POST(request: NextRequest) {
       .from('User')
       .insert([{
         id: userId,
-        email: email.toLowerCase(),
+        email: normalizeEmail(email),
         password: hashedPassword,
         name,
         phone: phone || null,
@@ -159,7 +168,7 @@ export async function POST(request: NextRequest) {
     const token = signAuthToken({
       userId,
       organizationId,
-      email: email.toLowerCase(),
+      email: normalizeEmail(email),
       role: 'portal_user',
       shopId: resolvedShopId,
       deviceId: device?.deviceId ?? null,
@@ -194,7 +203,7 @@ export async function POST(request: NextRequest) {
         token,
         user: {
           id: userId,
-          email: email.toLowerCase(),
+          email: normalizeEmail(email),
           name,
           phone: phone || null,
           role: 'portal_user',

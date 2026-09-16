@@ -4,6 +4,7 @@ import { jsonResponse } from '@/lib/apiResponse';
 import { decodeCursor, encodeCursor, pullChanges } from '@/lib/sync/pull.server';
 import { SYNC_ENTITY_NAMES, type SyncEntityName } from '@/lib/sync/syncable-entities';
 import logger from '@/lib/logger';
+import { canViewCostData } from '@/lib/cost-visibility.server';
 
 /**
  * GET /api/mobile/sync/changes?since=<cursor>&entities=Product,SalesEntry&limit=200
@@ -48,6 +49,9 @@ export async function GET(request: NextRequest) {
       cursor,
       entities,
       pageSize,
+      // Cost/profit figures are owner-only and this feed lands in the
+      // device's local DB, so gate them here rather than in the UI.
+      includeCostData: await canViewCostData(payload),
     });
 
     return jsonResponse({

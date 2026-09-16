@@ -4,6 +4,7 @@ import { verifyToken, hashPassword, type VerifiedPayload } from '@/lib/auth.serv
 import { assertTenantMatch } from '@/lib/tenant-guard';
 import { jsonResponse, optionsResponse } from '@/lib/apiResponse';
 import { v4 as uuidv4 } from 'uuid';
+import { isValidEmail, normalizeEmail } from '@/lib/email-validation';
 
 // Every column across the schema that points at PortalUser.id — a purge has
 // to reassign all of them to the placeholder before the row can be removed,
@@ -121,9 +122,12 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 
   // Update User fields if provided
   if (name !== undefined || email !== undefined) {
+    if (email !== undefined && !isValidEmail(String(email))) {
+      return jsonResponse({ success: false, error: 'Enter a valid email address' }, 400);
+    }
     const userUpdate: Record<string, unknown> = { updatedAt: new Date().toISOString() };
     if (name !== undefined) userUpdate.name = name;
-    if (email !== undefined) userUpdate.email = email;
+    if (email !== undefined) userUpdate.email = normalizeEmail(String(email));
     const { error: uError } = await supabaseAdmin.from('User').update(userUpdate).eq('id', pu.userId);
     if (uError) return jsonResponse({ success: false, error: uError.message }, 500);
   }

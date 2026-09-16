@@ -3,6 +3,7 @@ import { supabaseAdmin } from '@/lib/supabase-client';
 import logger from '@/lib/logger';
 import { jsonResponse } from '@/lib/apiResponse';
 import { verifyMobileShopAccess } from '@/lib/mobile-shop-auth';
+import { canViewCostData } from '@/lib/cost-visibility.server';
 
 type SalesEntry = {
   createdAt: string;
@@ -125,16 +126,21 @@ export async function GET(
       endpoint: `/api/mobile/shops/${shopId}/analytics/sales`
     });
 
+    // Cost/profit are owner-only (see cost-visibility.server.ts). The trend
+    // series carries a per-bucket profit too, so strip that alongside the totals.
+    const showCost = await canViewCostData(auth.payload);
+    const gatedTrend = showCost ? salesTrend : salesTrend.map(({ profit: _profit, ...rest }) => rest);
+
     return jsonResponse({
       success: true,
       data: {
         analytics: {
           totalSales,
           totalRevenue: Math.round(totalRevenue * 100) / 100,
-          totalProfit: Math.round(totalProfit * 100) / 100,
-          averageProfit: Math.round(averageProfit * 100) / 100,
-          profitMargin: Math.round(profitMargin * 100) / 100,
-          salesTrend
+          totalProfit: showCost ? Math.round(totalProfit * 100) / 100 : null,
+          averageProfit: showCost ? Math.round(averageProfit * 100) / 100 : null,
+          profitMargin: showCost ? Math.round(profitMargin * 100) / 100 : null,
+          salesTrend: gatedTrend
         }
       }
     }, 200);
