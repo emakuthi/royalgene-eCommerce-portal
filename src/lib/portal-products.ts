@@ -87,6 +87,7 @@ export async function createProductForShop(
       colors: (Array.isArray(productData['colors']) ? (productData['colors'] as unknown as string[]) : []) || [],
       stockQuantity: asNumber(productData['stockQuantity']),
       sku: asString(productData['sku']),
+      brand: asString(productData['brand']) || undefined,
       featured: Boolean(productData['featured']),
       trending: Boolean(productData['trending']),
     });
@@ -126,6 +127,7 @@ export async function createProductForShop(
       colors: (Array.isArray(productData['colors']) ? (productData['colors'] as unknown as string[]) : []) || [],
       stockQuantity: asNumber(productData['stockQuantity']),
       sku: asString(productData['sku']),
+      brand: asString(productData['brand']) || undefined,
       featured: Boolean(productData['featured']),
       trending: Boolean(productData['trending']),
       createdAt: now,

@@ -392,7 +392,7 @@ export async function PUT(request: NextRequest) {
     }
 
     // Build update object from allowed fields
-    const allowedFields = ['name', 'description', 'price', 'costPrice', 'sizes', 'colors', 'images', 'sku', 'featured', 'trending'];
+    const allowedFields = ['name', 'description', 'price', 'costPrice', 'brand', 'sizes', 'colors', 'images', 'sku', 'featured', 'trending'];
     const updates: Record<string, unknown> = {};
     for (const k of allowedFields) {
       if (Object.prototype.hasOwnProperty.call(body, k)) updates[k] = (body as Record<string, unknown>)[k] as unknown;

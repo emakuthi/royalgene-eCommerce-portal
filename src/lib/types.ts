@@ -137,6 +137,7 @@ export interface Product {
   price: number;
   // costPrice stored in cents (optional in types to keep backward compatibility)
   costPrice?: number;
+  brand?: string | null;
   category: 'dresses' | 'shoes' | 'trousers' | 'textiles';
   images: string[];
   sizes: string[];
