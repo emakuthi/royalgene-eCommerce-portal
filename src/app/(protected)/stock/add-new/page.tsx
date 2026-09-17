@@ -193,6 +193,7 @@ export default function AddNewProductPage() {
           description: addForm.description,
           price: sellingPriceFinal,
           costPrice: costPriceFinal,
+          brand: addForm.brand,
           category: addForm.category,
           images: addForm.images,
           sizes: addForm.sizesArray,

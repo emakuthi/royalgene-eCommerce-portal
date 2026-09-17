@@ -96,6 +96,7 @@ export async function GET(
           name: prod.name,
           sku: prod.sku,
           category: prod.category,
+          brand: prod.brand ?? null,
           description: prod.description,
           price: prod.price,
           costPrice: (await canViewCostData(auth.payload)) ? (prod.costPrice || 0) : null,
@@ -235,7 +236,7 @@ export async function PUT(
     const resolvedProductId = shopStock.productId as string;
 
     // ── Update Product table fields ──────────────────────────────────────────
-    const allowedProductFields = ['name', 'description', 'price', 'costPrice', 'images', 'sizes', 'colors', 'sku', 'category', 'featured', 'trending'];
+    const allowedProductFields = ['name', 'description', 'price', 'costPrice', 'brand', 'images', 'sizes', 'colors', 'sku', 'category', 'featured', 'trending'];
     const productUpdates: Record<string, unknown> = {};
     for (const k of allowedProductFields) {
       if (Object.prototype.hasOwnProperty.call(body, k)) {
@@ -342,6 +343,7 @@ export async function PUT(
         name: updatedProd?.name,
         sku: updatedProd?.sku,
         category: updatedProd?.category,
+        brand: updatedProd?.brand ?? null,
         description: updatedProd?.description,
         price: updatedProd?.price,
         costPrice: (await canViewCostData(auth.payload)) ? (updatedProd?.costPrice || 0) : null,
