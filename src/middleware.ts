@@ -40,6 +40,12 @@ const TENANT_OPTIONAL_PATHS = [
   '/api/webhooks/paystack',
   '/api/plans',
   '/pricing',
+  // App-update feed and its CI publish endpoint are global — one APK build
+  // serves every tenant, so neither is scoped to a workspace. The Android
+  // app calls the GET on the shared root host, same as auth.
+  '/api/mobile/app/latest-version',
+  '/api/internal/app-releases',
+  '/download',
 ];
 
 function isTenantOptional(pathname: string): boolean {
