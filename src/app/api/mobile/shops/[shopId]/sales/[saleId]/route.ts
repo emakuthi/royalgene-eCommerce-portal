@@ -39,6 +39,13 @@ export async function GET(
       }, 404);
     }
 
+    // Fetch shop name — for the receipt header.
+    let shopName: string | null = null;
+    {
+      const { data: shopRow } = await supabaseAdmin.from('Shop').select('name').eq('id', shopId).maybeSingle();
+      shopName = (shopRow as { name?: string } | null)?.name ?? null;
+    }
+
     // Fetch related product
     let productInfo: { id: string; name: string; sku: string; category: string } | null = null;
     if (sale.productId) {
@@ -99,6 +106,7 @@ export async function GET(
           saleNumber: `SALE-${new Date(sale.createdAt).toISOString().split('T')[0].replace(/-/g, '')}-${sale.id.substring(0, 6).toUpperCase()}`,
           timestamp: sale.createdAt,
           shopId: sale.shopId,
+          shopName,
           product: {
             id: productInfo?.id ?? null,
             name: productInfo?.name ?? null,
