@@ -13,6 +13,7 @@ import { syncSaleToQuickBooks } from '@/lib/accounting/sync-sale-to-quickbooks.s
 import { isValidClientId } from '@/lib/sync/syncable-entities';
 import { idempotentInsert } from '@/lib/sync/idempotent-insert.server';
 import { canViewCostData } from '@/lib/cost-visibility.server';
+import { hasCapability } from '@/lib/permissions.server';
 
 /**
  * POST /api/mobile/shops/[shopId]/sales
@@ -28,6 +29,13 @@ export async function POST(
     const { shopId } = await context.params;
     const auth = await verifyMobileShopAccess(request, shopId);
     if (auth instanceof Response) return auth;
+
+    if (!(await hasCapability(auth.payload, 'record_sales'))) {
+      return jsonResponse(
+        { success: false, error: 'You do not have permission to record sales. Ask an admin to grant it.', code: 'FORBIDDEN' },
+        403,
+      );
+    }
 
     const body = await request.json();
     const {
@@ -230,12 +238,28 @@ export async function POST(
       }, 409);
     }
 
+    // An admin/owner must fill in cost price before this product can be
+    // sold — falling back to product.price (as this used to) silently
+    // recorded every sale at 0 profit, hiding that the number was never
+    // actually set rather than surfacing it.
+    if (product.costPrice == null || Number(product.costPrice) <= 0) {
+      logger.warn('Mobile sale blocked: product has no cost price set', {
+        userId: auth.payload.userId, shopId, productId,
+        endpoint: `/api/mobile/shops/${shopId}/sales`,
+      });
+      return jsonResponse({
+        success: false,
+        error: 'This item is missing a cost price. Ask an admin to set it before it can be sold.',
+        code: 'COST_PRICE_REQUIRED',
+      }, 409);
+    }
+
     // Calculate totals
     const totalAmount = quantity * unitPrice;
     // The sale still records cost/profit in the DB — this only gates what is
     // echoed back to the person who rang it up (see cost-visibility.server.ts).
     const showCostOnSale = await canViewCostData(auth.payload);
-    const costPrice = product.costPrice || product.price;
+    const costPrice = product.costPrice;
     const profit = totalAmount - (costPrice * quantity);
     const marginPercentage = totalAmount > 0 ? (profit / totalAmount) * 100 : 0;
 

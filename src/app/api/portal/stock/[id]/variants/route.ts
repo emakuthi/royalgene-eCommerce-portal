@@ -5,6 +5,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { jsonResponse, optionsResponse } from '@/lib/apiResponse';
 import { getVariantMatrix, setVariantMatrix, type VariantCellInput, type VariantMatrix } from '@/lib/variant-stock.server';
 import { canViewCostData } from '@/lib/cost-visibility.server';
+import { hasCapability } from '@/lib/permissions.server';
 
 /** Cost is owner-only (see cost-visibility.server.ts) — same rule as the product's own costPrice. */
 function redactMatrixCost(matrix: VariantMatrix): VariantMatrix {
@@ -56,10 +57,23 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
   if ('error' in res) return res.error;
   const { stock, payload } = res;
 
+  if (!(await hasCapability(payload, 'edit_inventory'))) {
+    return jsonResponse({ success: false, error: 'You do not have permission to edit inventory. Ask an admin to grant it.' }, 403);
+  }
+
   let body: unknown;
   try { body = await request.json(); } catch { return jsonResponse({ success: false, error: 'Invalid JSON' }, 400); }
   const rawCells = (body as { cells?: unknown })?.cells;
   if (!Array.isArray(rawCells)) return jsonResponse({ success: false, error: 'cells[] is required' }, 400);
+
+  // Cost price is owner-level (see cost-visibility.server.ts) — a caller
+  // without the capability can't set a per-cell cost either.
+  const canSetCostPrice = await canViewCostData(payload);
+  let productPrice: number | null = null;
+  if (canSetCostPrice && stock.productId) {
+    const { data: product } = await supabaseAdmin.from('Product').select('price').eq('id', stock.productId).maybeSingle();
+    productPrice = typeof product?.price === 'number' ? product.price : null;
+  }
 
   const cells: VariantCellInput[] = [];
   for (const c of rawCells) {
@@ -67,12 +81,20 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     const cell = c as Record<string, unknown>;
     const q = Number(cell.quantity);
     if (!Number.isFinite(q) || q < 0) return jsonResponse({ success: false, error: 'Each cell needs a quantity >= 0' }, 400);
+    const cellPrice = typeof cell.price === 'number' ? cell.price : null;
+    const cellCostPrice = canSetCostPrice && typeof cell.costPrice === 'number' ? cell.costPrice : null;
+    if (cellCostPrice != null) {
+      const ceiling = cellPrice ?? productPrice;
+      if (typeof ceiling === 'number' && cellCostPrice >= ceiling) {
+        return jsonResponse({ success: false, error: 'Cost price must be less than the selling price' }, 400);
+      }
+    }
     cells.push({
       size: typeof cell.size === 'string' ? cell.size : '',
       color: typeof cell.color === 'string' ? cell.color : '',
       quantity: q,
-      price: typeof cell.price === 'number' ? cell.price : null,
-      costPrice: typeof cell.costPrice === 'number' ? cell.costPrice : null,
+      price: cellPrice,
+      costPrice: cellCostPrice,
     });
   }
 

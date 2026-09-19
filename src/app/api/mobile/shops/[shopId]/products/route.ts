@@ -6,6 +6,7 @@ import { verifyMobileShopAccess } from '@/lib/mobile-shop-auth';
 import { createProductForShop } from '@/lib/portal-products';
 import { isValidClientId } from '@/lib/sync/syncable-entities';
 import { canViewCostData } from '@/lib/cost-visibility.server';
+import { hasCapability } from '@/lib/permissions.server';
 /**
  * GET /api/mobile/shops/[shopId]/products
  * Get available products in a shop with current stock levels
@@ -166,6 +167,13 @@ export async function POST(
     const auth = await verifyMobileShopAccess(request, shopId);
     if (auth instanceof Response) return auth;
 
+    if (!(await hasCapability(auth.payload, 'add_inventory'))) {
+      return jsonResponse(
+        { success: false, error: 'You do not have permission to add inventory. Ask an admin to grant it.', code: 'FORBIDDEN' },
+        403,
+      );
+    }
+
     const body = await request.json();
 
     logger.info('Mobile create product request', {
@@ -187,6 +195,20 @@ export async function POST(
     if (body.price == null || typeof body.price !== 'number' || body.price < 0) {
       return jsonResponse(
         { success: false, error: 'A valid price is required', code: 'VALIDATION_ERROR' },
+        400,
+      );
+    }
+
+    // Cost price is owner-level (see cost-visibility.server.ts): a caller
+    // without the capability can't set it even if their client sends one —
+    // the field is meant to be hidden from them, not just display-redacted.
+    const canSetCostPrice = await canViewCostData(auth.payload);
+    if (!canSetCostPrice && body.costPrice != null) {
+      body.costPrice = undefined;
+    }
+    if (canSetCostPrice && typeof body.costPrice === 'number' && body.costPrice >= body.price) {
+      return jsonResponse(
+        { success: false, error: 'Cost price must be less than the selling price', code: 'VALIDATION_ERROR' },
         400,
       );
     }

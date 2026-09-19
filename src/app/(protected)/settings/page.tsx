@@ -23,6 +23,7 @@ import {
   Moon,
   Monitor,
   ShieldCheck,
+  Users,
   LogOut,
   Mail,
   Phone,
@@ -62,6 +63,7 @@ import {
   getTaxProfile, setTaxProfile,
   getQuickBooksStatus, getQuickBooksAuthorizationUrl, disconnectQuickBooks, type QuickBooksStatus,
 } from '@/lib/integrations';
+import PermissionsTab from '@/components/settings/PermissionsTab';
 
 // ── Tab config ────────────────────────────────────────────────────────────────
 const TABS = [
@@ -70,6 +72,7 @@ const TABS = [
   { id: 'security',    label: 'Security',     icon: Lock },
   { id: 'shop',        label: 'Shop Info',    icon: Store },
   { id: 'notifications', label: 'Notifications', icon: Bell },
+  { id: 'permissions', label: 'Permissions',  icon: Users },
   { id: 'billing',     label: 'Billing',      icon: CreditCard },
   { id: 'domain',      label: 'Domain',       icon: Globe },
   { id: 'integrations', label: 'Integrations', icon: Plug },
@@ -731,7 +734,7 @@ export default function PortalSettingsPage() {
         {/* Tab row */}
         <div className="max-w-5xl mx-auto px-4 sm:px-6">
           <div className="flex gap-1 overflow-x-auto scrollbar-none -mb-px">
-            {TABS.map(tab => {
+            {TABS.filter(tab => tab.id !== 'permissions' || isBillingAdmin).map(tab => {
               const Icon = tab.icon;
               const active = activeTab === tab.id;
               return (
@@ -1249,6 +1252,9 @@ export default function PortalSettingsPage() {
             </div>
           </Section>
         )}
+
+        {/* ── PERMISSIONS ────────────────────────────────────────── */}
+        {activeTab === 'permissions' && <PermissionsTab token={token} />}
 
         {/* ── BILLING ────────────────────────────────────────────── */}
         {activeTab === 'billing' && (
