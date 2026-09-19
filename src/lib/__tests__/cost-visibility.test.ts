@@ -1,64 +1,27 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 
-// Rows the mocked PortalUser lookup returns for the caller under test.
-let portalUserRows: Array<{ position: string }> = [];
-
-vi.mock('@/lib/supabase-client', () => ({
-  supabaseAdmin: {
-    from: () => ({
-      select: () => ({
-        eq: () => ({
-          eq: async () => ({ data: portalUserRows, error: null }),
-        }),
-      }),
-    }),
-  },
+// canViewCostData is now a thin forward to permissions.server.ts's
+// hasCapability('view_cost_price') — see permissions.server.test.ts for the
+// actual owner-bypass / override / default-fallback behaviour it exercises.
+const hasCapability = vi.fn(async (_payload: unknown, _capability: unknown) => true);
+vi.mock('@/lib/permissions.server', () => ({
+  hasCapability: (payload: unknown, capability: unknown) => hasCapability(payload, capability),
 }));
 
 import { canViewCostData, redactCostFields } from '../cost-visibility.server';
 
-beforeEach(() => {
-  portalUserRows = [];
-});
-
 describe('canViewCostData', () => {
-  it('allows the workspace admin without any lookup', async () => {
-    portalUserRows = [{ position: 'shopkeeper' }]; // would say no — role wins first
-    expect(await canViewCostData({ userId: 'u1', role: 'admin' })).toBe(true);
+  it('forwards to hasCapability with the view_cost_price capability', async () => {
+    const payload = { userId: 'u1', role: 'admin' };
+    await canViewCostData(payload as never);
+    expect(hasCapability).toHaveBeenCalledWith(payload, 'view_cost_price');
   });
 
-  it('allows super_admin', async () => {
-    expect(await canViewCostData({ userId: 'u1', role: 'super_admin' })).toBe(true);
-  });
-
-  it('allows a portal_user whose active position is shop_owner', async () => {
-    portalUserRows = [{ position: 'shop_owner' }];
-    expect(await canViewCostData({ userId: 'u1', role: 'portal_user' })).toBe(true);
-  });
-
-  it('allows the legacy "owner" position spelling', async () => {
-    portalUserRows = [{ position: 'owner' }];
-    expect(await canViewCostData({ userId: 'u1', role: 'portal_user' })).toBe(true);
-  });
-
-  it('denies a shopkeeper', async () => {
-    portalUserRows = [{ position: 'shopkeeper' }];
-    expect(await canViewCostData({ userId: 'u1', role: 'portal_user' })).toBe(false);
-  });
-
-  it('denies a shop_manager — managing a shop is not owning it', async () => {
-    portalUserRows = [{ position: 'shop_manager' }];
-    expect(await canViewCostData({ userId: 'u1', role: 'portal_user' })).toBe(false);
-  });
-
-  it('allows someone who owns one shop while only staffing another', async () => {
-    portalUserRows = [{ position: 'cashier' }, { position: 'shop_owner' }];
-    expect(await canViewCostData({ userId: 'u1', role: 'portal_user' })).toBe(true);
-  });
-
-  it('denies when the caller has no portal membership at all', async () => {
-    portalUserRows = [];
-    expect(await canViewCostData({ userId: 'u1', role: 'portal_user' })).toBe(false);
+  it('returns whatever hasCapability decides', async () => {
+    hasCapability.mockResolvedValueOnce(false);
+    expect(await canViewCostData({ userId: 'u1', role: 'portal_user' } as never)).toBe(false);
+    hasCapability.mockResolvedValueOnce(true);
+    expect(await canViewCostData({ userId: 'u1', role: 'portal_user' } as never)).toBe(true);
   });
 });
 

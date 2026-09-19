@@ -12,6 +12,8 @@ import { jsonResponse, optionsResponse } from '@/lib/apiResponse';
 import { trackFromRequest } from '@/lib/activity-tracker';
 import { assertCanCreate } from '@/lib/entitlements/enforce.server';
 import { deleteUploadedFiles } from '@/lib/storage-usage.server';
+import { hasCapability } from '@/lib/permissions.server';
+import { canViewCostData } from '@/lib/cost-visibility.server';
 
 type IncomingStock = { quantity?: number; lowStockThreshold?: number };
 
@@ -26,11 +28,24 @@ export async function POST(request: NextRequest) {
     }
     const organizationId = payload.organizationId;
 
+    if (!(await hasCapability(payload, 'add_inventory'))) {
+      return jsonResponse({ success: false, error: 'You do not have permission to add inventory. Ask an admin to grant it.' }, 403);
+    }
+
     const body = await request.json() as { product?: Record<string, unknown>; stock?: IncomingStock; shopId?: string };
     const { product: productData, stock: stockData, shopId: providedShopId } = body || {};
 
     if (!productData || !productData.name || !productData.sku) {
       return jsonResponse({ success: false, error: 'Missing product name or sku' }, 400);
+    }
+
+    // Cost price is owner-level (see cost-visibility.server.ts) — a caller
+    // without the capability can't set it even if their client sends one.
+    const canSetCostPrice = await canViewCostData(payload);
+    if (!canSetCostPrice) {
+      delete productData.costPrice;
+    } else if (typeof productData.costPrice === 'number' && typeof productData.price === 'number' && productData.costPrice >= productData.price) {
+      return jsonResponse({ success: false, error: 'Cost price must be less than the selling price' }, 400);
     }
 
     // Resolve shopId: portal users must create under their shop; admins may provide an admin-provided shopId
@@ -167,6 +182,10 @@ export async function DELETE(request: NextRequest) {
     const auth = requireTenantUser(request);
     if (auth instanceof NextResponse) return auth;
     const payload = auth;
+
+    if (!(await hasCapability(payload, 'delete_inventory'))) {
+      return jsonResponse({ success: false, error: 'You do not have permission to delete inventory. Ask an admin to grant it.' }, 403);
+    }
 
     const body = await request.json() as { id?: string; productId?: string; shopId?: string };
     const productId = String(body.id || body.productId || '');
@@ -338,6 +357,10 @@ export async function PUT(request: NextRequest) {
     if (auth instanceof NextResponse) return auth;
     const payload = auth;
 
+    if (!(await hasCapability(payload, 'edit_inventory'))) {
+      return jsonResponse({ success: false, error: 'You do not have permission to edit inventory. Ask an admin to grant it.' }, 403);
+    }
+
     const body = await request.json() as Record<string, unknown>;
     const productId = typeof body.id === 'string' ? body.id : (typeof body.productId === 'string' ? body.productId : undefined);
     if (!productId) {
@@ -396,6 +419,20 @@ export async function PUT(request: NextRequest) {
     const updates: Record<string, unknown> = {};
     for (const k of allowedFields) {
       if (Object.prototype.hasOwnProperty.call(body, k)) updates[k] = (body as Record<string, unknown>)[k] as unknown;
+    }
+
+    // Cost price is owner-level (see cost-visibility.server.ts) — a caller
+    // without the capability can't set it even if their client sends one.
+    const canSetCostPrice = await canViewCostData(payload);
+    if (!canSetCostPrice) {
+      delete updates.costPrice;
+    } else if (typeof updates.costPrice === 'number') {
+      const effectivePrice = typeof updates.price === 'number'
+        ? updates.price
+        : (await supabaseAdmin.from('Product').select('price').eq('id', productId).maybeSingle()).data?.price;
+      if (typeof effectivePrice === 'number' && updates.costPrice >= effectivePrice) {
+        return jsonResponse({ success: false, error: 'Cost price must be less than the selling price' }, 400);
+      }
     }
 
     if (Object.keys(updates).length === 0) {

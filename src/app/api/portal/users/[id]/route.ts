@@ -5,6 +5,7 @@ import { assertTenantMatch } from '@/lib/tenant-guard';
 import { jsonResponse, optionsResponse } from '@/lib/apiResponse';
 import { v4 as uuidv4 } from 'uuid';
 import { isValidEmail, normalizeEmail } from '@/lib/email-validation';
+import { hasCapability } from '@/lib/permissions.server';
 
 // Every column across the schema that points at PortalUser.id — a purge has
 // to reassign all of them to the placeholder before the row can be removed,
@@ -68,12 +69,15 @@ async function resolveDeletedUserPlaceholder(organizationId: string): Promise<{ 
   return { portalUserId };
 }
 
-function requireAdmin(request: NextRequest): NextResponse | VerifiedPayload {
+// Admin (JWT role) always passes; a shop_owner or anyone else granted the
+// 'manage_staff' capability (see permissions.server.ts) can also manage
+// staff now — previously this was admin-only, full stop.
+async function requireAdmin(request: NextRequest): Promise<NextResponse | VerifiedPayload> {
   const token = request.headers.get('Authorization')?.replace('Bearer ', '');
   if (!token) return jsonResponse({ success: false, error: 'Unauthorized' }, 401);
   const payload = verifyToken(token);
   if (!payload) return jsonResponse({ success: false, error: 'Invalid token' }, 401);
-  if (payload.role !== 'admin' && payload.role !== 'super_admin')
+  if (payload.role !== 'admin' && payload.role !== 'super_admin' && !(await hasCapability(payload, 'manage_staff')))
     return jsonResponse({ success: false, error: 'Admin access required' }, 403);
   const tenantMismatch = assertTenantMatch(request, payload);
   if (tenantMismatch) return tenantMismatch;
@@ -82,7 +86,7 @@ function requireAdmin(request: NextRequest): NextResponse | VerifiedPayload {
 
 // PATCH /api/portal/users/[id] — update position, shopId, isActive, name, email
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const auth = requireAdmin(request);
+  const auth = await requireAdmin(request);
   if (auth instanceof NextResponse) return auth;
 
   const { id } = await params;
@@ -150,7 +154,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 // "Deleted User" placeholder first. Irreversible — the name is gone, only
 // history stays.
 export async function DELETE(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const auth = requireAdmin(request);
+  const auth = await requireAdmin(request);
   if (auth instanceof NextResponse) return auth;
 
   const { id } = await params;

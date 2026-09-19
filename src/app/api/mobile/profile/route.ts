@@ -100,6 +100,11 @@ export async function GET(request: NextRequest) {
           role: user.role,
           organizationId: user.organizationId ?? null,
           organization,
+          // The Android client can't tell a shop_owner apart from any other
+          // non-admin staff without this — role alone is "admin" vs
+          // "portal_user" for everyone else, but cost-visibility.server.ts
+          // (and now permissions.server.ts) treat shop_owner as owner-level.
+          position: portalUser?.position ?? null,
           shop: portalUser?.Shop ? {
             id: portalUser.Shop.id,
             name: portalUser.Shop.name,

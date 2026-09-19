@@ -1,6 +1,6 @@
 import 'server-only';
-import { supabaseAdmin } from './supabase-client';
 import type { VerifiedPayload } from './auth.server';
+import { hasCapability } from './permissions.server';
 
 /**
  * Cost price and profit are owner-level numbers: what the business pays for
@@ -11,10 +11,13 @@ import type { VerifiedPayload } from './auth.server';
  * server-side (including in the offline sync feed, so the numbers never reach
  * a non-owner's device at all) rather than by hiding UI, which a client could
  * simply ignore.
+ *
+ * PHASE 24: delegates to permissions.server.ts's 'view_cost_price'
+ * capability — admin/shop_owner still always pass (hardcoded there), but a
+ * shop_manager/shopkeeper/cashier/assistant can now be individually granted
+ * it from the Permissions screen instead of it being all-or-nothing by
+ * position.
  */
-
-/** Positions that own the business rather than staff it. Legacy spellings included — see types.ts. */
-const OWNER_POSITIONS = new Set(['shop_owner', 'owner', 'admin']);
 
 /** Fields to strip, per synced entity, when the caller isn't privileged. */
 export const COST_FIELDS: Record<string, string[]> = {
@@ -23,26 +26,9 @@ export const COST_FIELDS: Record<string, string[]> = {
   ShopStockVariant: ['costPrice'],
 };
 
-/**
- * True when this caller may see cost/profit figures.
- *
- * `admin` is the workspace owner's own role (signup creates admin + a
- * shop_owner PortalUser). A `portal_user` is checked against their active
- * PortalUser positions, so an owner recorded only by position still counts.
- */
+/** True when this caller may see cost/profit figures (and set cost price). */
 export async function canViewCostData(payload: VerifiedPayload): Promise<boolean> {
-  if (payload.role === 'admin' || payload.role === 'super_admin') return true;
-  if (!payload.userId) return false;
-
-  const { data } = await supabaseAdmin
-    .from('PortalUser')
-    .select('position')
-    .eq('userId', payload.userId)
-    .eq('isActive', true);
-
-  return (data ?? []).some((row) =>
-    OWNER_POSITIONS.has(String((row as { position?: unknown }).position ?? '').toLowerCase()),
-  );
+  return hasCapability(payload, 'view_cost_price');
 }
 
 /**
