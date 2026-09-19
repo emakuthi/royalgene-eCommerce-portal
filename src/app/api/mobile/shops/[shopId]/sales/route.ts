@@ -41,6 +41,7 @@ export async function POST(
       notes,
       size,
       color,
+      saleGroupId,
     } = body as {
       productId: string;
       quantity: number;
@@ -52,6 +53,8 @@ export async function POST(
       notes?: string;
       size?: string;
       color?: string;
+      /** Shared across every line item recorded in the same checkout — see 20260919_01_sale_group_id.sql. */
+      saleGroupId?: string;
     };
 
     if (!productId || typeof quantity !== 'number' || typeof unitPrice !== 'number') {
@@ -255,6 +258,7 @@ export async function POST(
       notes: notes || null,
       size: variantCheck.needsVariant ? (size?.trim() || null) : null,
       color: variantCheck.needsVariant ? (color?.trim() || null) : null,
+      saleGroupId: isValidClientId(saleGroupId) ? saleGroupId : null,
       createdAt: now,
       updatedAt: now,
     });
