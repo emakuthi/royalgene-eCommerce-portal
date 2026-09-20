@@ -222,8 +222,21 @@ export async function POST(request: NextRequest) {
       salesUsesVariant = variantCheck.needsVariant;
     }
 
+    // No item may be sold until an admin has filled in its cost price —
+    // falling back to product.price (as this used to, via a `const
+    // costPrice = product.price` bug) always recorded a 0 profit sale
+    // instead of surfacing that the number was never actually set.
+    if (product.costPrice == null || Number(product.costPrice) <= 0) {
+      logger.warn('Portal sale blocked: product has no cost price set', { userId: payload.userId, shopId, productId });
+      return jsonResponse({
+        success: false,
+        error: 'This item is missing a cost price. Ask an admin to set it before it can be sold.',
+        code: 'COST_PRICE_REQUIRED',
+      }, 409);
+    }
+
     const totalAmount = quantity * unitPrice;
-    const costPrice = product.price;
+    const costPrice = product.costPrice;
     const profit = totalAmount - (costPrice * quantity);
     const marginPercentage = totalAmount > 0 ? (profit / totalAmount) * 100 : 0;
 
@@ -242,6 +255,7 @@ export async function POST(request: NextRequest) {
         quantity,
         unitPrice,
         totalAmount,
+        costPrice,
         paymentMethod,
         customerName: customerName || null,
         customerPhone: customerPhone || null,
