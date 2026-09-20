@@ -30,6 +30,13 @@ vi.mock('@/lib/variant-stock.server', () => ({
   setVariantMatrix: vi.fn(async () => replacedMatrix),
 }));
 
+// Same bypass philosophy as verifyMobileShopAccess above — the
+// edit_inventory/view_cost_price capability gates added alongside
+// optimistic concurrency aren't what this file tests.
+vi.mock('@/lib/permissions.server', () => ({
+  hasCapability: vi.fn(async () => true),
+}));
+
 const stock = { id: 'stock-1', shopId: 'shop-1', organizationId: 'org-1', quantity: 0, version: 2 };
 const claimedRows = [{ id: 'stock-1', version: 3 }];
 const conflictCurrent = { id: 'stock-1', version: 6, quantity: 8 };
