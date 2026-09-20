@@ -256,8 +256,10 @@ export async function POST(
 
     // Calculate totals
     const totalAmount = quantity * unitPrice;
-    // The sale still records cost/profit in the DB — this only gates what is
-    // echoed back to the person who rang it up (see cost-visibility.server.ts).
+    // showCostOnSale only gates what's echoed back to the person who rang
+    // this up (see cost-visibility.server.ts) — costPrice itself is always
+    // persisted below, a snapshot at sale time, so Analytics/Reports/Sale
+    // Detail can compute profit later regardless of who's looking.
     const showCostOnSale = await canViewCostData(auth.payload);
     const costPrice = product.costPrice;
     const profit = totalAmount - (costPrice * quantity);
@@ -276,6 +278,7 @@ export async function POST(
       quantity,
       unitPrice,
       totalAmount,
+      costPrice,
       paymentMethod: paymentMethod || 'cash',
       customerName: customerName || null,
       customerPhone: customerPhone || null,
