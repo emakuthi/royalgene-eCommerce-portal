@@ -46,11 +46,15 @@ export async function buildMobileAuthResponse(
   const { data: user, error: userError } = await supabaseAdmin.from('User').select('*').eq('id', userId).maybeSingle();
   if (userError || !user) return { ok: false, error: 'User not found' };
 
-  // The app is a tenant operations tool. A platform account (super_admin,
-  // no organizationId) has no shop, no inventory and no tenant to act on —
-  // platform staff work from the web console.
-  if (user.role === 'super_admin' || !user.organizationId) {
-    return { ok: false, error: 'Platform accounts sign in on the web console, not the app.' };
+  // A platform account (super_admin, no organizationId) now has its own
+  // Platform Console in the app — this used to hard-block them entirely,
+  // back when the only way to manage the platform was the web console.
+  // Every OTHER role always has an organizationId (an "admin" is a
+  // workspace owner, never platform-level) — no organizationId there is
+  // corrupted data, not a legitimate platform account, so that case still
+  // gets rejected outright.
+  if (user.role !== 'super_admin' && !user.organizationId) {
+    return { ok: false, error: 'This account has no workspace. Contact support.' };
   }
 
   const isAdmin = user.role === 'admin' || user.role === 'super_admin';
@@ -124,9 +128,12 @@ export async function buildMobileAuthResponse(
   }
 
   let allShops: Array<Record<string, unknown>> | null = null;
-  if (isAdmin && !shopId) {
-    let shopsQuery = supabaseAdmin.from('Shop').select('id, name, location, phone, address').eq('isActive', true).order('name', { ascending: true });
-    if (user.organizationId) shopsQuery = shopsQuery.eq('organizationId', user.organizationId);
+  // A platform account has no organizationId to scope this by — without the
+  // explicit exclusion here, an admin with no shopId (which a super_admin
+  // always is) would fall through to an unfiltered Shop query and get back
+  // every active shop across every tenant in the database.
+  if (isAdmin && !shopId && user.organizationId) {
+    const shopsQuery = supabaseAdmin.from('Shop').select('id, name, location, phone, address').eq('isActive', true).eq('organizationId', user.organizationId).order('name', { ascending: true });
     const { data: shops } = await shopsQuery;
     allShops = (shops as Array<Record<string, unknown>>) ?? [];
   }

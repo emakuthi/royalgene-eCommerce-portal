@@ -16,6 +16,13 @@ vi.mock('@/lib/storage-usage.server', () => ({
   deleteUploadedFiles: vi.fn(async () => undefined),
 }));
 
+// Same bypass philosophy as verifyMobileShopAccess above — the
+// add_inventory/edit_inventory/view_cost_price capability gates added
+// alongside optimistic concurrency aren't what this file tests.
+vi.mock('@/lib/permissions.server', () => ({
+  hasCapability: vi.fn(async () => true),
+}));
+
 const state = {
   shopStock: { id: 'stock-1', productId: 'prod-1', quantity: 10, lowStockThreshold: 5 },
   productUpdateRows: [{ id: 'prod-1', version: 3 }] as Array<{ id: string; version: number }>,
