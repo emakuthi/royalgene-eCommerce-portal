@@ -6,6 +6,7 @@ import { verifyMobileShopAccess } from '@/lib/mobile-shop-auth';
 import { deleteUploadedFiles } from '@/lib/storage-usage.server';
 import { canViewCostData } from '@/lib/cost-visibility.server';
 import { hasCapability } from '@/lib/permissions.server';
+import { deleteProductsInOrg } from '@/lib/product-delete.server';
 
 /**
  * GET /api/mobile/shops/[shopId]/products/[productId]
@@ -393,6 +394,49 @@ export async function PUT(
 }
 
 /**
+ * DELETE /api/mobile/shops/[shopId]/products/[productId]
+ * Delete a wrongly-created product. Workspace admins only, and it removes the
+ * product from EVERY shop (not just [shopId]) — a product that has sales
+ * history is archived instead of erased. See POST /api/mobile/products/bulk-delete
+ * for the multi-select form.
+ */
+export async function DELETE(
+  request: NextRequest,
+  context: { params: Promise<{ shopId: string; productId: string }> }
+) {
+  try {
+    const { shopId, productId } = await context.params;
+    const auth = await verifyMobileShopAccess(request, shopId);
+    if (auth instanceof Response) return auth;
+
+    const organizationId = auth.payload.organizationId ?? null;
+    if (!organizationId || !auth.isAdmin || !(await hasCapability(auth.payload, 'delete_inventory'))) {
+      return jsonResponse({ success: false, error: 'Only workspace admins can delete inventory.', code: 'FORBIDDEN' }, 403);
+    }
+
+    const outcome = await deleteProductsInOrg(organizationId, [productId]);
+    if (outcome.notFound.length > 0) {
+      return jsonResponse({ success: false, error: 'Product not found', code: 'NOT_FOUND' }, 404);
+    }
+    if (outcome.failed.length > 0) {
+      return jsonResponse({ success: false, error: 'Failed to delete product', code: 'INTERNAL_ERROR' }, 500);
+    }
+    const archived = outcome.archived.length > 0;
+    logger.info('Mobile product deleted', { userId: auth.payload.userId, shopId, productId, archived });
+    return jsonResponse({
+      success: true,
+      data: { archived },
+      message: archived
+        ? 'This product has sales history, so it was archived instead of deleted — it no longer shows in any shop.'
+        : 'Product deleted',
+    }, 200);
+  } catch (error) {
+    logger.error('Mobile product delete error', { error: error instanceof Error ? error.message : String(error) });
+    return jsonResponse({ success: false, error: 'Internal server error', code: 'INTERNAL_ERROR' }, 500);
+  }
+}
+
+/**
  * OPTIONS handler for CORS
  */
 export async function OPTIONS(_request: NextRequest) {
@@ -400,7 +444,7 @@ export async function OPTIONS(_request: NextRequest) {
     status: 200,
     headers: {
       'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, PUT, PATCH, OPTIONS',
+      'Access-Control-Allow-Methods': 'GET, PUT, PATCH, DELETE, OPTIONS',
       'Access-Control-Allow-Headers': 'Content-Type, Authorization',
     },
   });

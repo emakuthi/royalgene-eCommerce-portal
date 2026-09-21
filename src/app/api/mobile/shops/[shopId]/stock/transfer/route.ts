@@ -6,7 +6,14 @@
  *   productId  – Product.id (or ShopStock.id) to transfer from [shopId]
  *   toShopId   – destination Shop.id
  *   quantity   – number of units to transfer (> 0 and <= source quantity)
+ *   variants?  – REQUIRED when the product is tracked by size/colour at the
+ *                source shop: [{ size, color, quantity }, ...]. The total
+ *                becomes the transfer quantity (any `quantity` sent is ignored).
+ *   id?        – client-generated UUID, makes the call safe to retry
  *   notes?     – optional reason / notes
+ *
+ * Every successful transfer also writes a StockTransfer row (status
+ * 'confirmed', kind 'instant') so it shows up in the transfer history.
  *
  * Auth: verifyMobileShopAccess (portal_user must own the source shop; admins are bypassed)
  */
@@ -18,6 +25,7 @@ import { jsonResponse } from '@/lib/apiResponse';
 import { verifyMobileShopAccess } from '@/lib/mobile-shop-auth';
 import { syncProductStockFromShopStocks } from '@/lib/supabase-db';
 import { hasVariantStock } from '@/lib/variant-stock.server';
+import { moveVariantCells, normalizeTransferCells, type TransferCell } from '@/lib/stock-transfer.server';
 import { v4 as uuidv4 } from 'uuid';
 import { assertFeatureEnabled } from '@/lib/entitlements/enforce.server';
 import { FeatureCode } from '@/lib/entitlements/feature-codes';
@@ -37,20 +45,22 @@ export async function POST(
       productId?: string;
       toShopId?: string;
       quantity?: number;
+      variants?: unknown;
       notes?: string;
     };
 
     const { productId, toShopId, quantity, notes } = body;
 
-    if (!productId || !toShopId || quantity == null) {
+    if (!productId || !toShopId || (quantity == null && body.variants == null)) {
       return jsonResponse(
         { success: false, error: 'productId, toShopId, and quantity are required', code: 'VALIDATION_ERROR' },
         400,
       );
     }
 
-    const transferQty = Number(quantity);
-    if (!Number.isFinite(transferQty) || transferQty <= 0) {
+    // Overwritten below with the cells' total when the product is tracked by size/colour.
+    let transferQty = Number(quantity);
+    if (body.variants == null && (!Number.isFinite(transferQty) || transferQty <= 0)) {
       return jsonResponse(
         { success: false, error: 'quantity must be a positive number', code: 'VALIDATION_ERROR' },
         400,
@@ -87,15 +97,24 @@ export async function POST(
       return jsonResponse({ success: false, error: 'Product not found in source shop', code: 'NOT_FOUND' }, 404);
     }
 
+    // A product tracked by size/colour moves cell by cell — the client says
+    // how many of each size/colour, and the total becomes the transfer quantity.
+    let variantCells: TransferCell[] | null = null;
     if (await hasVariantStock(srcStock.id as string)) {
-      return jsonResponse({
-        success: false,
-        error: 'This product is tracked by size/colour — adjust the breakdown at each shop instead.',
-        code: 'VARIANT_STOCK',
-      }, 409);
+      const parsed = normalizeTransferCells(body.variants);
+      if (!parsed.ok) {
+        return jsonResponse({ success: false, error: parsed.error, code: 'VARIANTS_REQUIRED' }, 400);
+      }
+      variantCells = parsed.cells;
+      transferQty = parsed.total;
+    } else if (!Number.isFinite(transferQty) || transferQty <= 0) {
+      return jsonResponse(
+        { success: false, error: 'quantity must be a positive number', code: 'VALIDATION_ERROR' },
+        400,
+      );
     }
 
-    if ((srcStock.quantity as number) < transferQty) {
+    if (!variantCells && (srcStock.quantity as number) < transferQty) {
       return jsonResponse(
         { success: false, error: `Insufficient stock. Available: ${srcStock.quantity}, requested: ${transferQty}`, code: 'INSUFFICIENT_STOCK' },
         400,
@@ -140,12 +159,137 @@ export async function POST(
     const now = new Date().toISOString();
     const portalUserId = auth.portalUserId;
 
+    const clientTransferId = isValidClientId((body as { id?: unknown }).id) ? (body as { id: string }).id : null;
+
+    // ── Size/colour product: gate on the StockTransfer row, move cell by cell ──
+    if (variantCells) {
+      const transferId = clientTransferId ?? uuidv4();
+      const reserved = await idempotentInsert('StockTransfer', {
+        id: transferId,
+        organizationId,
+        productId: resolvedProductId,
+        fromShopId: shopId,
+        toShopId,
+        quantity: transferQty,
+        status: 'confirmed',
+        kind: 'instant',
+        variants: variantCells,
+        notes: notes?.trim() ? notes.trim() : null,
+        initiatedByPortalUserId: portalUserId,
+        initiatedAt: now,
+        resolvedByPortalUserId: portalUserId,
+        resolvedAt: now,
+      });
+      if (!reserved.ok) {
+        logger.error('Mobile variant stock transfer: failed to reserve transfer', { error: reserved.error });
+        return jsonResponse({ success: false, error: 'Failed to record transfer', code: 'INTERNAL_ERROR' }, 500);
+      }
+      if (!reserved.created) {
+        return jsonResponse({
+          success: true,
+          message: `${transferQty} unit(s) transferred to ${destShop.name}`,
+          data: { fromShopId: shopId, toShopId, toShopName: destShop.name, productId: resolvedProductId, quantity: transferQty },
+          idempotent: true,
+        }, 200);
+      }
+
+      const { data: existingDest } = await supabaseAdmin
+        .from('ShopStock')
+        .select('id')
+        .eq('shopId', toShopId)
+        .eq('productId', resolvedProductId)
+        .maybeSingle();
+      let destStockId = existingDest?.id as string | undefined;
+      let createdDestStock = false;
+      if (!destStockId) {
+        destStockId = uuidv4();
+        // Starts at 0 — the variant rollup trigger sets the real total as the cells land.
+        const { error: destInsertErr } = await supabaseAdmin.from('ShopStock').insert([{
+          id: destStockId,
+          organizationId,
+          shopId: toShopId,
+          productId: resolvedProductId,
+          quantity: 0,
+          lowStockThreshold: srcStock.lowStockThreshold ?? 5,
+          createdAt: now,
+          updatedAt: now,
+        }]);
+        if (destInsertErr) {
+          await supabaseAdmin.from('StockTransfer').delete().eq('id', transferId);
+          logger.error('Mobile variant stock transfer: failed to create destination stock', { error: destInsertErr.message });
+          return jsonResponse({ success: false, error: 'Failed to update destination stock', code: 'INTERNAL_ERROR' }, 500);
+        }
+        createdDestStock = true;
+      }
+
+      const moved = await moveVariantCells({
+        srcShopStockId: srcStock.id as string,
+        destShopStockId: destStockId,
+        organizationId,
+        cells: variantCells,
+      });
+      if (!moved.ok) {
+        // Nothing moved — drop the history row (and the empty destination row we just made) so a retry starts clean.
+        await supabaseAdmin.from('StockTransfer').delete().eq('id', transferId);
+        if (createdDestStock) await supabaseAdmin.from('ShopStock').delete().eq('id', destStockId);
+        return jsonResponse({ success: false, error: moved.error, code: 'INSUFFICIENT_STOCK' }, 400);
+      }
+
+      const noteSuffix = notes?.trim() ? ` — ${notes.trim()}` : '';
+      await supabaseAdmin.from('StockTransaction').insert(variantCells.flatMap((cell, i) => [
+        {
+          id: `${transferId}-out-${i}`,
+          organizationId,
+          shopStockId: srcStock.id,
+          portalUserId,
+          type: 'subtract',
+          quantity: -cell.quantity,
+          size: cell.size,
+          color: cell.color,
+          reason: `Mobile transfer out to ${destShop.name}${noteSuffix}`,
+          reference: `mobile-transfer-${transferId}`,
+          createdAt: now,
+        },
+        {
+          id: `${transferId}-in-${i}`,
+          organizationId,
+          shopStockId: destStockId,
+          portalUserId,
+          type: 'add',
+          quantity: cell.quantity,
+          size: cell.size,
+          color: cell.color,
+          reason: `Mobile transfer in from shop ${shopId}${noteSuffix}`,
+          reference: `mobile-transfer-${transferId}`,
+          createdAt: now,
+        },
+      ]));
+
+      try {
+        await syncProductStockFromShopStocks(resolvedProductId);
+      } catch (syncErr) {
+        logger.warn('Mobile variant stock transfer: failed to sync product stockQuantity', {
+          error: syncErr instanceof Error ? syncErr.message : String(syncErr),
+          productId: resolvedProductId,
+        });
+      }
+
+      logger.info('Mobile variant stock transfer completed', {
+        userId: auth.payload.userId, fromShopId: shopId, toShopId, productId: resolvedProductId, quantity: transferQty, cells: variantCells.length,
+      });
+
+      return jsonResponse({
+        success: true,
+        message: `${transferQty} unit(s) transferred to ${destShop.name}`,
+        data: { fromShopId: shopId, toShopId, toShopName: destShop.name, productId: resolvedProductId, quantity: transferQty, transferId },
+      }, 200);
+    }
+
     // Offline-first idempotency: this whole transfer (decrement + increment +
     // both audit rows) only happens once per client-supplied transfer id. The
     // "out" StockTransaction row is the gate — reserve it first; if it
     // already exists, every quantity change already happened on the first
     // attempt, so a retry just returns the current state and touches nothing.
-    const clientTransferId = isValidClientId((body as { id?: unknown }).id) ? (body as { id: string }).id : null;
     const outTxnId = clientTransferId ? `${clientTransferId}-out` : uuidv4();
     const inTxnId = clientTransferId ? `${clientTransferId}-in` : uuidv4();
 
@@ -244,6 +388,29 @@ export async function POST(
       }]),
     ];
     await supabaseAdmin.from('StockTransaction').insert(rowsToInsert);
+
+    // History row for the transfer list. Best-effort: the stock has already
+    // moved and is audited above, so a failure here must not fail the transfer.
+    // Keyed on the client's transfer id when it sent one, so a retry can't add a second row.
+    const historyId = clientTransferId ?? uuidv4();
+    const history = await idempotentInsert('StockTransfer', {
+      id: historyId,
+      organizationId,
+      productId: resolvedProductId,
+      fromShopId: shopId,
+      toShopId,
+      quantity: transferQty,
+      status: 'confirmed',
+      kind: 'instant',
+      notes: notes?.trim() ? notes.trim() : null,
+      initiatedByPortalUserId: portalUserId,
+      initiatedAt: now,
+      resolvedByPortalUserId: portalUserId,
+      resolvedAt: now,
+    });
+    if (!history.ok) {
+      logger.warn('Mobile stock transfer: failed to write history row', { error: history.error, historyId });
+    }
 
     // Sync aggregated product stock
     try {
