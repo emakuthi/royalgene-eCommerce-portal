@@ -18,7 +18,7 @@ vi.mock('../supabase-client', () => ({
 }));
 
 const decrementCell = vi.fn();
-const incrementCell = vi.fn(async () => undefined);
+const incrementCell = vi.fn(async (..._args: unknown[]) => undefined);
 vi.mock('../variant-stock.server', () => ({
   decrementCell: (...a: unknown[]) => decrementCell(...a),
   incrementCell: (...a: unknown[]) => incrementCell(...a),
