@@ -558,23 +558,27 @@ export default function AnalyticsPage() {
 
                   <div className="border-t border-gray-200 dark:border-gray-700 pt-4 space-y-3">
                     <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">By shop</p>
-                    {inventory.shops.map(shop => {
+                    {inventory.shops.map((shop, index) => {
                       const maxValue = Math.max(...inventory.shops.map(s => s.retailValue), 1);
                       const pct = inventory.totalRetailValue > 0 ? (shop.retailValue / inventory.totalRetailValue) * 100 : 0;
+                      const color = CHART_COLORS[index % CHART_COLORS.length];
                       return (
                         <div key={shop.shopId}>
                           <div className="flex items-center justify-between text-sm">
-                            <span className="font-medium text-gray-900 dark:text-white truncate">{shop.shopName}</span>
+                            <span className="flex items-center gap-2 font-medium text-gray-900 dark:text-white truncate">
+                              <span className="h-2.5 w-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: color }} />
+                              {shop.shopName}
+                            </span>
                             <span className="font-semibold text-gray-900 dark:text-white">{formatCurrency(shop.retailValue)}</span>
                           </div>
-                          <p className="text-xs text-gray-500 dark:text-gray-400">
+                          <p className="text-xs text-gray-500 dark:text-gray-400 pl-[18px]">
                             {shop.units.toLocaleString('en-KE')} unit{shop.units === 1 ? '' : 's'}
                             {inventory.totalRetailValue > 0 ? ` · ${pct.toFixed(0)}% of value` : ''}
                           </p>
                           <div className="mt-1.5 h-1.5 w-full rounded-full bg-gray-100 dark:bg-gray-800 overflow-hidden">
                             <div
-                              className="h-full rounded-full bg-blue-500"
-                              style={{ width: `${Math.min(100, (shop.retailValue / maxValue) * 100)}%` }}
+                              className="h-full rounded-full"
+                              style={{ width: `${Math.min(100, (shop.retailValue / maxValue) * 100)}%`, backgroundColor: color }}
                             />
                           </div>
                         </div>
