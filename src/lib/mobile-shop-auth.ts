@@ -38,22 +38,41 @@ export interface MobileShopAuth {
 /**
  * Admins/super_admins bypass the PortalUser membership check, but writes
  * (SalesEntry, StockTransaction, ...) have an FK to PortalUser.id, so we
- * still need a real row to point at. PortalUser.userId is UNIQUE (one row
- * per user, not per shop), so reuse the admin's existing row if any, and
- * otherwise lazily provision one scoped to the shop they're acting on.
+ * still need a real row to point at. PortalUser.userId is NOT unique — the
+ * DB's real constraint is UNIQUE(userId, shopId), and an admin who's been
+ * added as a named member of one or more shops (on top of their org-wide
+ * admin access) ends up with one PortalUser row per shop. So: prefer a row
+ * already scoped to THIS shop; otherwise reuse any existing row (any of
+ * them is an equally valid FK target — callers only need a real id, not a
+ * shop-accurate one); otherwise lazily provision one scoped to this shop.
+ *
+ * Every read here uses `.limit(1)` instead of `.maybeSingle()`/`.single()` —
+ * those error out (not just return null) when more than one row matches,
+ * which a naive `.eq('userId', userId).maybeSingle()` used to hit for
+ * exactly this multi-shop admin case, throwing 500s on this and every other
+ * request while making an existing row look like it needed to be re-created.
  */
 async function resolveAdminPortalUserId(
   userId: string,
   shopId: string,
   organizationId: string,
 ): Promise<string> {
-  const { data: existing } = await supabaseAdmin
+  const { data: forThisShop } = await supabaseAdmin
     .from('PortalUser')
     .select('id')
     .eq('userId', userId)
+    .eq('shopId', shopId)
+    .limit(1)
     .maybeSingle();
+  if (forThisShop) return forThisShop.id;
 
-  if (existing) return existing.id;
+  const { data: anyExisting } = await supabaseAdmin
+    .from('PortalUser')
+    .select('id')
+    .eq('userId', userId)
+    .limit(1)
+    .maybeSingle();
+  if (anyExisting) return anyExisting.id;
 
   const now = new Date().toISOString();
   const newId = uuidv4();
@@ -73,12 +92,13 @@ async function resolveAdminPortalUserId(
     .single();
 
   if (error || !created) {
-    // Extremely unlikely race (another request just created the row) —
-    // re-read rather than fail the caller's request.
+    // Race: another request just created a row (for this shop or another)
+    // between the reads above and this insert — re-read rather than fail.
     const { data: raced } = await supabaseAdmin
       .from('PortalUser')
       .select('id')
       .eq('userId', userId)
+      .limit(1)
       .maybeSingle();
     if (raced) return raced.id;
 
