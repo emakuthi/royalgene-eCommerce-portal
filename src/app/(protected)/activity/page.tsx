@@ -154,6 +154,8 @@ function ActivityContent() {
   // Admins/super_admins default to seeing the whole team's activity, not
   // just their own — see GET /api/mobile/activity's own scope doc.
   const isAdmin = authRole === 'admin' || authRole === 'super_admin';
+  // Worth a column only in team scope — in self scope every row is implicitly "you".
+  const showWhoColumn = isAdmin && scope === 'team';
 
   const textPrimary   = theme === 'dark' ? 'text-white' : 'text-gray-900';
   const textSecondary = theme === 'dark' ? 'text-gray-400' : 'text-gray-500';
@@ -324,18 +326,19 @@ function ActivityContent() {
           </CardHeader>
           <CardContent>
             {loading ? (
-              /* Skeleton rows (matches analytics / sales skeleton) */
-              <div className="space-y-3">
-                {Array.from({ length: 6 }).map((_, i) => (
-                  <div key={i} className="flex items-center gap-4 p-4 rounded-xl bg-gray-50 dark:bg-gray-800/50 animate-pulse">
-                    <div className="h-3 w-3 rounded-full bg-gray-200 dark:bg-gray-700" />
-                    <div className="flex-1 space-y-2">
-                      <div className="h-4 w-48 rounded bg-gray-200 dark:bg-gray-700" />
-                      <div className="h-3 w-24 rounded bg-gray-200 dark:bg-gray-700" />
-                    </div>
-                    <div className="h-3 w-16 rounded bg-gray-200 dark:bg-gray-700" />
-                  </div>
-                ))}
+              /* Skeleton rows (matches the table's own column count) */
+              <div className="overflow-x-auto">
+                <table className="w-full border-collapse">
+                  <tbody>
+                    {Array.from({ length: 6 }).map((_, i) => (
+                      <tr key={i} className={`border-b ${borderColor}`}>
+                        <td className="py-4 px-2" colSpan={showWhoColumn ? 7 : 6}>
+                          <div className="h-4 w-full max-w-md rounded bg-gray-200 dark:bg-gray-700 animate-pulse" />
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             ) : logs.length === 0 ? (
               /* Empty state (matches analytics empty) */
@@ -347,65 +350,82 @@ function ActivityContent() {
                 </p>
               </div>
             ) : (
-              /* Activity rows */
-              <div className="space-y-1">
-                {logs.map((log, idx) => (
-                  <div
-                    key={log.id}
-                    className={`flex items-start gap-4 px-4 py-3.5 rounded-xl transition-colors
-                      ${idx % 2 === 0 ? 'bg-gray-50 dark:bg-gray-800/30' : ''}
-                      hover:bg-gray-100 dark:hover:bg-gray-800/60`}
-                  >
-                    {/* Status dot */}
-                    <div className="mt-1.5 flex-shrink-0">
-                      <div className={`h-2.5 w-2.5 rounded-full ${STATUS_DOT[log.status] || 'bg-gray-400'}`} />
-                    </div>
-
-                    {/* Content */}
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className={`text-sm font-medium ${textPrimary}`}>
-                          {friendlyAction(log.action)}
-                        </span>
-                        <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-semibold ${CATEGORY_COLORS[log.category] || CATEGORY_COLORS.general}`}>
-                          {log.category}
-                        </span>
-                        {log.source !== 'portal' && (
-                          <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] ${theme === 'dark' ? 'bg-white/10 text-gray-400' : 'bg-gray-200 text-gray-500'}`}>
-                            {log.source}
+              /* Activity table */
+              <div className="overflow-x-auto">
+                <table className="w-full border-collapse">
+                  <thead>
+                    <tr className={`text-xs font-semibold ${textSecondary} border-b-2 ${borderColor} bg-opacity-50`}>
+                      <th className="py-4 px-2 text-left w-6"><span className="sr-only">Status</span></th>
+                      <th className="py-4 px-2 text-left">Action</th>
+                      <th className="py-4 px-2 text-left hidden sm:table-cell">Category</th>
+                      {showWhoColumn && <th className="py-4 px-2 text-left">Who</th>}
+                      <th className="py-4 px-2 text-left hidden lg:table-cell">Details</th>
+                      <th className="py-4 px-2 text-left hidden md:table-cell">Device</th>
+                      <th className="py-4 px-2 text-right">Timestamp</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {logs.map((log, idx) => (
+                      <tr
+                        key={log.id}
+                        className={`border-b ${borderColor} hover:bg-opacity-50 ${idx % 2 === 0 ? (theme === 'dark' ? 'bg-gray-900 bg-opacity-30' : 'bg-gray-50 bg-opacity-50') : ''}`}
+                      >
+                        <td className="py-3 px-2">
+                          <div className={`h-2.5 w-2.5 rounded-full ${STATUS_DOT[log.status] || 'bg-gray-400'}`} title={log.status} />
+                        </td>
+                        <td className="py-3 px-2">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className={`text-sm font-medium ${textPrimary}`}>{friendlyAction(log.action)}</span>
+                            <span className={`sm:hidden inline-block px-2 py-0.5 rounded-full text-[10px] font-semibold ${CATEGORY_COLORS[log.category] || CATEGORY_COLORS.general}`}>
+                              {log.category}
+                            </span>
+                            {log.source !== 'portal' && (
+                              <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] ${theme === 'dark' ? 'bg-white/10 text-gray-400' : 'bg-gray-200 text-gray-500'}`}>
+                                {log.source}
+                              </span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="py-3 px-2 hidden sm:table-cell">
+                          <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-semibold ${CATEGORY_COLORS[log.category] || CATEGORY_COLORS.general}`}>
+                            {log.category}
                           </span>
+                        </td>
+                        {showWhoColumn && (
+                          <td className="py-3 px-2">
+                            {(log.userName || log.userEmail) ? (
+                              <div className={`flex items-center gap-1.5 text-sm ${textPrimary}`}>
+                                <UserIcon className={`h-3.5 w-3.5 flex-shrink-0 ${textSecondary}`} />
+                                <div className="min-w-0">
+                                  <div className="truncate">{log.userName || 'Unnamed user'}</div>
+                                  {log.userEmail && <div className={`text-xs truncate ${textSecondary}`}>{log.userEmail}</div>}
+                                </div>
+                              </div>
+                            ) : (
+                              <span className={`text-xs ${textSecondary}`}>—</span>
+                            )}
+                          </td>
                         )}
-                      </div>
-                      {/* Who — only worth a line when it's not implicitly "you" (team scope, or a failed login with no account resolved) */}
-                      {(scope === 'team' || !log.userId) && (log.userName || log.userEmail) && (
-                        <p className={`text-xs mt-0.5 flex items-center gap-1 ${textSecondary}`}>
-                          <UserIcon className="h-3 w-3 flex-shrink-0" />
-                          <span className="truncate">
-                            {log.userName || 'Unnamed user'}
-                            {log.userEmail ? ` · ${log.userEmail}` : ''}
+                        <td className={`py-3 px-2 text-xs hidden lg:table-cell ${textSecondary}`}>
+                          {log.resourceType
+                            ? `${log.resourceType}${log.resourceId ? ` · ${log.resourceId.slice(0, 8)}…` : ''}`
+                            : '—'}
+                        </td>
+                        <td className={`py-3 px-2 text-xs hidden md:table-cell ${textSecondary}`}>
+                          <span className="flex items-center gap-1.5 whitespace-nowrap">
+                            {log.deviceType && DEVICE_ICONS[log.deviceType]}
+                            {log.device || log.deviceType || '—'}
                           </span>
-                        </p>
-                      )}
-                      {log.resourceType && (
-                        <p className={`text-xs mt-0.5 ${textSecondary}`}>
-                          {log.resourceType}
-                          {log.resourceId ? ` · ${log.resourceId.slice(0, 8)}…` : ''}
-                        </p>
-                      )}
-                    </div>
-
-                    {/* Meta (device + timestamp) */}
-                    <div className="flex flex-col items-end gap-1 flex-shrink-0">
-                      <span className={`text-xs whitespace-nowrap ${textPrimary}`} title={relativeTime(log.createdAt)}>
-                        {fullDate(log.createdAt)}
-                      </span>
-                      <span className={`flex items-center gap-1 text-[11px] whitespace-nowrap ${textSecondary}`}>
-                        {log.deviceType && DEVICE_ICONS[log.deviceType]}
-                        {log.device || (log.deviceType ? log.deviceType : null)}
-                      </span>
-                    </div>
-                  </div>
-                ))}
+                        </td>
+                        <td className="py-3 px-2 text-right">
+                          <span className={`text-xs whitespace-nowrap ${textPrimary}`} title={relativeTime(log.createdAt)}>
+                            {fullDate(log.createdAt)}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             )}
 
