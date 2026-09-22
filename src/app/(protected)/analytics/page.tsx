@@ -81,6 +81,21 @@ interface RawProductItem {
   costPrice?: number;
 }
 
+interface ShopValuation {
+  shopId: string;
+  shopName: string;
+  units: number;
+  retailValue: number;
+  costValue: number | null;
+}
+
+interface InventoryValuation {
+  totalUnits: number;
+  totalRetailValue: number;
+  totalCostValue: number | null;
+  shops: ShopValuation[];
+}
+
 const CHART_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6'];
 
 const DATE_RANGES = [
@@ -92,8 +107,12 @@ const DATE_RANGES = [
 /* ------------------------------------------------------------------ */
 /*  Helpers                                                           */
 /* ------------------------------------------------------------------ */
+// SalesEntry.totalAmount / Product.price / .costPrice are all stored in
+// MAJOR KES units already (e.g. 1600 means Ksh 1,600, never cents) — this
+// used to divide by 100 as if they were cents, quietly showing every real
+// figure 100x too small once any actual data reached this page.
 function formatCurrency(amount: number) {
-  return (amount / 100).toLocaleString('en-KE', {
+  return amount.toLocaleString('en-KE', {
     style: 'currency',
     currency: 'KES',
     minimumFractionDigits: 0,
@@ -208,6 +227,12 @@ export default function AnalyticsPage() {
     worstDay: 0,
   });
 
+  // Org-wide stock on hand and its value, per shop — admins only, and
+  // deliberately independent of dateRange/currentShop (see the API route's
+  // own doc comment: a snapshot, not a range).
+  const [inventory, setInventory] = useState<InventoryValuation | null>(null);
+  const [inventoryLoading, setInventoryLoading] = useState(true);
+
   const gridStroke = theme === 'dark' ? '#374151' : '#e5e7eb';
   const axisStroke = theme === 'dark' ? '#9ca3af' : '#6b7280';
 
@@ -222,18 +247,22 @@ export default function AnalyticsPage() {
       return;
     }
 
-    if ((authUser?.role === 'admin' || authUser?.role === 'super_admin') && !currentShop) {
-      setShopName('Platform Analytics');
-      setLoading(false);
-      return;
-    }
+    const isAdmin = authUser?.role === 'admin' || authUser?.role === 'super_admin';
+    // Admin + "All Shops" (currentShop === null) used to stop here entirely —
+    // set a "Platform Analytics" label and never actually fetch anything, so
+    // every card stayed at zero no matter which date range was picked. The
+    // API now aggregates across every shop in the org when shopId is omitted,
+    // so this case fetches too instead of short-circuiting.
+    if (isAdmin && !currentShop) setShopName('Platform Analytics');
 
     const fetchAnalytics = async () => {
       try {
         const shopId = currentShop?.id;
-        if (!shopId) { setLoading(false); return; }
+        if (!shopId && !isAdmin) { setLoading(false); return; }
 
-        const url = `/api/portal/analytics?shopId=${shopId}&range=${dateRange}`;
+        const url = shopId
+          ? `/api/portal/analytics?shopId=${shopId}&range=${dateRange}`
+          : `/api/portal/analytics?range=${dateRange}`;
         const response = await fetch(url, {
           headers: { Authorization: `Bearer ${token}` },
           cache: 'no-store',
@@ -305,7 +334,35 @@ export default function AnalyticsPage() {
     fetchAnalytics();
   }, [mounted, currentShop, token, dateRange, authUser?.role, _hasHydrated]);
 
+  // Inventory value — admin-only, fetched once per session rather than on
+  // every dateRange/currentShop change (it's a snapshot, not scoped to
+  // either — see the route's own doc comment).
+  useEffect(() => {
+    if (!mounted || !_hasHydrated || !token) return;
+    const isAdmin = authUser?.role === 'admin' || authUser?.role === 'super_admin';
+    if (!isAdmin) { setInventoryLoading(false); return; }
+
+    (async () => {
+      setInventoryLoading(true);
+      try {
+        const response = await fetch('/api/portal/analytics/inventory', {
+          headers: { Authorization: `Bearer ${token}` },
+          cache: 'no-store',
+        });
+        const data = await response.json();
+        if (response.ok && data.success) {
+          setInventory(data.data);
+        }
+      } catch (error) {
+        console.error('Failed to fetch inventory value:', error);
+      } finally {
+        setInventoryLoading(false);
+      }
+    })();
+  }, [mounted, _hasHydrated, token, authUser?.role]);
+
   /* ---- derived ---- */
+  const isAdmin = authUser?.role === 'admin' || authUser?.role === 'super_admin';
   const filteredProducts = useMemo(() => {
     if (!searchTerm.trim()) return topProducts;
     return topProducts.filter(p =>
@@ -317,10 +374,10 @@ export default function AnalyticsPage() {
     () =>
       salesData.map(item => ({
         date: new Date(item.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-        sales: Math.round(item.sales / 100),
-        profit: Math.round(item.profit / 100),
+        sales: Math.round(item.sales),
+        profit: Math.round(item.profit),
         transactions: item.transactions,
-        avgValue: Math.round(item.avgTransactionValue / 100),
+        avgValue: Math.round(item.avgTransactionValue),
       })),
     [salesData],
   );
@@ -330,8 +387,8 @@ export default function AnalyticsPage() {
       topProducts.slice(0, 5).map(p => ({
         id: p.id,
         name: p.name.length > 15 ? p.name.substring(0, 14) + '…' : p.name,
-        sales: Math.round(p.totalSales / 100),
-        profit: Math.round(p.profit / 100),
+        sales: Math.round(p.totalSales),
+        profit: Math.round(p.profit),
         quantity: p.quantity,
         margin: p.profitMargin.toFixed(1),
       })),
@@ -342,7 +399,7 @@ export default function AnalyticsPage() {
     () =>
       topProducts.slice(0, 5).map(p => ({
         name: p.name.length > 12 ? p.name.substring(0, 11) + '…' : p.name,
-        value: Math.round(p.totalSales / 100),
+        value: Math.round(p.totalSales),
         id: p.id,
       })),
     [topProducts],
@@ -457,6 +514,78 @@ export default function AnalyticsPage() {
             iconBg="bg-purple-100 dark:bg-purple-900/50"
           />
         </div>
+
+        {/* ============================================ */}
+        {/*  INVENTORY VALUE — admins only, org-wide,     */}
+        {/*  independent of the date range / shop filter  */}
+        {/* ============================================ */}
+        {isAdmin && (
+          <Card>
+            <CardHeader>
+              <div className="flex items-center gap-2">
+                <Package className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+                <div>
+                  <CardTitle>Inventory</CardTitle>
+                  <CardDescription>Stock on hand and its value, across every shop</CardDescription>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {inventoryLoading ? (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {Array.from({ length: 2 }).map((_, i) => (
+                    <div key={i} className="h-16 rounded-lg bg-gray-100 dark:bg-gray-800 animate-pulse" />
+                  ))}
+                </div>
+              ) : !inventory || inventory.shops.length === 0 ? (
+                <p className="text-sm text-gray-500 dark:text-gray-400 py-4 text-center">No active shops with stock yet.</p>
+              ) : (
+                <div className="space-y-5">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Total items</p>
+                      <p className="mt-1 text-2xl font-bold text-gray-900 dark:text-white">{inventory.totalUnits.toLocaleString('en-KE')}</p>
+                      <p className="text-xs text-gray-500 dark:text-gray-400">units across all shops</p>
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Total value</p>
+                      <p className="mt-1 text-2xl font-bold text-gray-900 dark:text-white">{formatCurrency(inventory.totalRetailValue)}</p>
+                      <p className="text-xs text-gray-500 dark:text-gray-400">
+                        at selling price{inventory.totalCostValue != null ? ` · ${formatCurrency(inventory.totalCostValue)} at cost` : ''}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="border-t border-gray-200 dark:border-gray-700 pt-4 space-y-3">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">By shop</p>
+                    {inventory.shops.map(shop => {
+                      const maxValue = Math.max(...inventory.shops.map(s => s.retailValue), 1);
+                      const pct = inventory.totalRetailValue > 0 ? (shop.retailValue / inventory.totalRetailValue) * 100 : 0;
+                      return (
+                        <div key={shop.shopId}>
+                          <div className="flex items-center justify-between text-sm">
+                            <span className="font-medium text-gray-900 dark:text-white truncate">{shop.shopName}</span>
+                            <span className="font-semibold text-gray-900 dark:text-white">{formatCurrency(shop.retailValue)}</span>
+                          </div>
+                          <p className="text-xs text-gray-500 dark:text-gray-400">
+                            {shop.units.toLocaleString('en-KE')} unit{shop.units === 1 ? '' : 's'}
+                            {inventory.totalRetailValue > 0 ? ` · ${pct.toFixed(0)}% of value` : ''}
+                          </p>
+                          <div className="mt-1.5 h-1.5 w-full rounded-full bg-gray-100 dark:bg-gray-800 overflow-hidden">
+                            <div
+                              className="h-full rounded-full bg-blue-500"
+                              style={{ width: `${Math.min(100, (shop.retailValue / maxValue) * 100)}%` }}
+                            />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        )}
 
         {/* ============================================ */}
         {/*  CHARTS                                      */}
