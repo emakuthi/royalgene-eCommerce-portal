@@ -12,7 +12,7 @@ import { toast } from 'sonner';
 import {
   Activity, RefreshCw, ChevronLeft, ChevronRight,
   Monitor, Smartphone, Tablet, Globe, Clock,
-  ShieldCheck, ShieldAlert,
+  ShieldCheck, ShieldAlert, User as UserIcon,
 } from 'lucide-react';
 import { FeatureGate } from '@/components/entitlements/FeatureGate';
 import { FeatureCode } from '@/lib/entitlements/feature-codes';
@@ -29,7 +29,13 @@ interface ActivityLog {
   resourceType?: string;
   resourceId?: string;
   shopId?: string;
+  userId?: string;
+  /** Display name of the person who did this — null if they've since been removed. */
+  userName?: string | null;
+  userEmail?: string | null;
   deviceType?: string;
+  /** The actual device (e.g. "Pixel 7 (android)") — only populated for logins so far; null elsewhere. */
+  device?: string | null;
   status: string;
   details?: Record<string, unknown>;
   createdAt: string;
@@ -85,6 +91,12 @@ function friendlyAction(action: string): string {
   const map: Record<string, string> = {
     'auth.login':         'Logged in',
     'auth.login_failed':  'Failed login attempt',
+    'auth.signup':        'Created workspace',
+    // Pre-fix duplicate rows (Android used to log this client-side alongside
+    // the server's own 'auth.login', see LoginViewModel.kt) — cosmetic only,
+    // so old rows still read sensibly; nothing logs bare "login" anymore.
+    'login':               'Logged in',
+    'logout':              'Logged out',
     'product.create':     'Created a product',
     'product.update':     'Updated a product',
     'product.delete':     'Deleted a product',
@@ -125,7 +137,8 @@ function fullDate(iso: string): string {
 /*  Page Content                                                       */
 /* ------------------------------------------------------------------ */
 function ActivityContent() {
-  const { token } = useHydratedAuth();
+  const { token, user } = useHydratedAuth();
+  const authRole = user?.role;
   const { currentShop, _hasHydrated } = usePortalStore();
   const { theme } = useTheme();
 
@@ -134,6 +147,13 @@ function ActivityContent() {
   const [pagination, setPagination] = useState<Pagination>({ page: 1, limit: 20, total: 0, totalPages: 0, hasMore: false });
   const [loading, setLoading] = useState(true);
   const [filterCategory, setFilterCategory] = useState('');
+  // Irrelevant for a non-admin (the server always self-scopes them regardless
+  // of this value) — only meaningful once `isAdmin` below is true.
+  const [scope, setScope] = useState<'self' | 'team'>('team');
+
+  // Admins/super_admins default to seeing the whole team's activity, not
+  // just their own — see GET /api/mobile/activity's own scope doc.
+  const isAdmin = authRole === 'admin' || authRole === 'super_admin';
 
   const textPrimary   = theme === 'dark' ? 'text-white' : 'text-gray-900';
   const textSecondary = theme === 'dark' ? 'text-gray-400' : 'text-gray-500';
@@ -148,6 +168,7 @@ function ActivityContent() {
     try {
       const params = new URLSearchParams({ page: String(page), limit: '20' });
       if (filterCategory) params.set('category', filterCategory);
+      if (isAdmin && scope === 'self') params.set('scope', 'self');
 
       const res = await fetch(`/api/mobile/activity?${params}`, {
         headers: { Authorization: `Bearer ${token}` },
@@ -165,7 +186,7 @@ function ActivityContent() {
     } finally {
       setLoading(false);
     }
-  }, [token, filterCategory]);
+  }, [token, filterCategory, isAdmin, scope]);
 
   useEffect(() => {
     if (mounted && token && _hasHydrated) void fetchLogs(1);
@@ -193,14 +214,40 @@ function ActivityContent() {
       {/* ── Portal Header (sticky, same as other pages) ── */}
       <PortalHeader
         backHref="/dashboard"
-        title="Activity"
-        description={currentShop ? `Activity log for ${currentShop.name}` : 'Your recent actions and history'}
+        title={isAdmin && scope === 'team' ? 'Team Activity' : 'Activity'}
+        description={
+          isAdmin && scope === 'team'
+            ? 'Who did what, from which device, across your whole team'
+            : currentShop ? `Activity log for ${currentShop.name}` : 'Your recent actions and history'
+        }
         breadcrumbs={[{ label: 'Portal', href: '/portal' }, { label: 'Activity' }]}
         actions={
-          <Button variant="outline" onClick={() => fetchLogs(pagination.page)} disabled={loading} className={`flex items-center gap-2 ${textPrimary}`}>
-            <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-            <span className="hidden sm:inline text-sm">Refresh</span>
-          </Button>
+          <div className="flex items-center gap-2">
+            {isAdmin && (
+              <div className="flex items-center gap-1 rounded-lg bg-gray-100 dark:bg-gray-800 p-1">
+                <Button
+                  variant={scope === 'team' ? 'default' : 'ghost'}
+                  size="sm"
+                  onClick={() => setScope('team')}
+                  className={scope === 'team' ? '' : 'text-gray-600 dark:text-gray-300'}
+                >
+                  Team
+                </Button>
+                <Button
+                  variant={scope === 'self' ? 'default' : 'ghost'}
+                  size="sm"
+                  onClick={() => setScope('self')}
+                  className={scope === 'self' ? '' : 'text-gray-600 dark:text-gray-300'}
+                >
+                  Just me
+                </Button>
+              </div>
+            )}
+            <Button variant="outline" onClick={() => fetchLogs(pagination.page)} disabled={loading} className={`flex items-center gap-2 ${textPrimary}`}>
+              <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+              <span className="hidden sm:inline text-sm">Refresh</span>
+            </Button>
+          </div>
         }
       />
 
@@ -271,7 +318,7 @@ function ActivityContent() {
               <Activity className="h-5 w-5 text-blue-600 dark:text-blue-400" />
               <div>
                 <CardTitle>Recent Activity</CardTitle>
-                <CardDescription>Your actions across all channels</CardDescription>
+                <CardDescription>{isAdmin && scope === 'team' ? "Everyone's actions across all channels" : 'Your actions across all channels'}</CardDescription>
               </div>
             </div>
           </CardHeader>
@@ -329,6 +376,16 @@ function ActivityContent() {
                           </span>
                         )}
                       </div>
+                      {/* Who — only worth a line when it's not implicitly "you" (team scope, or a failed login with no account resolved) */}
+                      {(scope === 'team' || !log.userId) && (log.userName || log.userEmail) && (
+                        <p className={`text-xs mt-0.5 flex items-center gap-1 ${textSecondary}`}>
+                          <UserIcon className="h-3 w-3 flex-shrink-0" />
+                          <span className="truncate">
+                            {log.userName || 'Unnamed user'}
+                            {log.userEmail ? ` · ${log.userEmail}` : ''}
+                          </span>
+                        </p>
+                      )}
                       {log.resourceType && (
                         <p className={`text-xs mt-0.5 ${textSecondary}`}>
                           {log.resourceType}
@@ -337,13 +394,14 @@ function ActivityContent() {
                       )}
                     </div>
 
-                    {/* Meta (device + time) */}
-                    <div className="flex items-center gap-3 flex-shrink-0">
-                      {log.deviceType && (
-                        <span className={textSecondary}>{DEVICE_ICONS[log.deviceType]}</span>
-                      )}
-                      <span className={`text-xs whitespace-nowrap ${textSecondary}`} title={fullDate(log.createdAt)}>
-                        {relativeTime(log.createdAt)}
+                    {/* Meta (device + timestamp) */}
+                    <div className="flex flex-col items-end gap-1 flex-shrink-0">
+                      <span className={`text-xs whitespace-nowrap ${textPrimary}`} title={relativeTime(log.createdAt)}>
+                        {fullDate(log.createdAt)}
+                      </span>
+                      <span className={`flex items-center gap-1 text-[11px] whitespace-nowrap ${textSecondary}`}>
+                        {log.deviceType && DEVICE_ICONS[log.deviceType]}
+                        {log.device || (log.deviceType ? log.deviceType : null)}
                       </span>
                     </div>
                   </div>

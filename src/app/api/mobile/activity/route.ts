@@ -64,6 +64,7 @@ export async function POST(request: NextRequest) {
         userId: payload.userId,
         userEmail: payload.email as string | undefined,
         userRole: payload.role,
+        organizationId: payload.organizationId,
         source: 'mobile',
         ipAddress: ip,
         userAgent: ua,
@@ -108,13 +109,35 @@ export async function GET(request: NextRequest) {
     const offset = (page - 1) * limit;
     const category = searchParams.get('category');
 
+    // Admins/super_admins default to their whole team's activity (who logged
+    // in, from where, doing what) — not just their own. `?scope=self` opts
+    // back into the personal view. Everyone else always gets their own only.
+    const isAdmin = payload.role === 'admin' || payload.role === 'super_admin';
+    const wantsTeamScope = isAdmin && !!payload.organizationId && searchParams.get('scope') !== 'self';
+
+    let orgUserIds: string[] | null = null;
+    if (wantsTeamScope) {
+      const { data: orgUsers, error: orgUsersError } = await supabaseAdmin
+        .from('User')
+        .select('id')
+        .eq('organizationId', payload.organizationId);
+      if (orgUsersError) {
+        logger.error('Mobile activity GET: failed to resolve org members', { error: orgUsersError.message, organizationId: payload.organizationId });
+        return jsonResponse({ success: false, error: 'Failed to fetch activity' }, 500);
+      }
+      orgUserIds = (orgUsers ?? []).map((u: { id: string }) => u.id);
+    }
+
     let query = supabaseAdmin
       .from('activity_logs')
       .select('*', { count: 'exact' })
-      .eq('user_id', payload.userId)
       .order('created_at', { ascending: false })
       .range(offset, offset + limit - 1);
 
+    // `.in()` with an empty array matches nothing (not "no filter") — correct
+    // here too: an org with zero resolvable members should show zero rows,
+    // not fall through to every row in the table.
+    query = orgUserIds ? query.in('user_id', orgUserIds) : query.eq('user_id', payload.userId);
     if (category) query = query.eq('category', category);
 
     const { data, error, count } = await query;
@@ -124,20 +147,43 @@ export async function GET(request: NextRequest) {
       return jsonResponse({ success: false, error: 'Failed to fetch activity' }, 500);
     }
 
-    const logs = (data || []).map((row: Record<string, unknown>) => ({
-      id: row.id,
-      action: row.action,
-      category: row.category,
-      source: row.source,
-      endpoint: row.endpoint,
-      resourceType: row.resource_type,
-      resourceId: row.resource_id,
-      shopId: row.shop_id,
-      deviceType: row.device_type,
-      status: row.status,
-      details: row.details,
-      createdAt: row.created_at,
-    }));
+    const rows = (data || []) as Array<Record<string, unknown>>;
+
+    // Names aren't stored on activity_logs itself (only the email snapshot
+    // is) — batch-resolve just the actors on THIS page, not the whole org.
+    const actorIds = [...new Set(rows.map((r) => r.user_id).filter((v): v is string => typeof v === 'string'))];
+    const nameByUserId = new Map<string, string | null>();
+    if (actorIds.length > 0) {
+      const { data: actors } = await supabaseAdmin.from('User').select('id, name').in('id', actorIds);
+      for (const a of (actors ?? []) as Array<{ id: string; name: string | null }>) nameByUserId.set(a.id, a.name);
+    }
+
+    const logs = rows.map((row) => {
+      const details = (row.details ?? {}) as Record<string, unknown>;
+      const deviceName = typeof details.deviceName === 'string' && details.deviceName.trim() ? details.deviceName : null;
+      const platform = typeof details.platform === 'string' ? details.platform : null;
+      return {
+        id: row.id,
+        action: row.action,
+        category: row.category,
+        source: row.source,
+        endpoint: row.endpoint,
+        resourceType: row.resource_type,
+        resourceId: row.resource_id,
+        shopId: row.shop_id,
+        userId: row.user_id,
+        userName: typeof row.user_id === 'string' ? nameByUserId.get(row.user_id) ?? null : null,
+        userEmail: row.user_email,
+        deviceType: row.device_type,
+        // The actual device (e.g. "Pixel 7"), when this event captured one — only
+        // populated for logins going forward; falls back to null everywhere else,
+        // and the UI falls back to the generic deviceType icon in that case.
+        device: deviceName ? (platform ? `${deviceName} (${platform})` : deviceName) : null,
+        status: row.status,
+        details: row.details,
+        createdAt: row.created_at,
+      };
+    });
 
     const totalPages = count ? Math.ceil(count / limit) : 0;
 
@@ -145,6 +191,7 @@ export async function GET(request: NextRequest) {
       success: true,
       data: {
         logs,
+        scope: wantsTeamScope ? 'team' : 'self',
         pagination: { page, limit, total: count || 0, totalPages, hasMore: page < totalPages },
       },
     }, 200);

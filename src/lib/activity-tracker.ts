@@ -35,6 +35,8 @@ export interface ActivityEvent {
   userId?: string | null;
   userEmail?: string | null;
   userRole?: string | null;
+  /** Tenant scope — lets an admin's "team activity" view filter with a single indexed column instead of joining every org member. Null for a platform/system event or a failed-login attempt where no account was resolved. */
+  organizationId?: string | null;
 
   /** Action identifier — use dot-notation: e.g. 'product.create', 'auth.login' */
   action: string;
@@ -110,6 +112,7 @@ export async function trackActivity(event: ActivityEvent): Promise<string | null
       user_id: event.userId || null,
       user_email: event.userEmail || null,
       user_role: event.userRole || null,
+      organization_id: event.organizationId || null,
       action: event.action,
       category: event.category || 'general',
       source: event.source || 'web',
@@ -152,7 +155,7 @@ export async function trackActivity(event: ActivityEvent): Promise<string | null
  */
 export function trackFromRequest(
   request: NextRequest,
-  payload: { userId?: string; email?: string; role?: string; shopId?: string | null } | null,
+  payload: { userId?: string; email?: string; role?: string; shopId?: string | null; organizationId?: string | null } | null,
   event: Omit<ActivityEvent, 'userId' | 'userEmail' | 'userRole' | 'ipAddress' | 'userAgent' | 'deviceType' | 'source' | 'endpoint' | 'httpMethod'>
 ): Promise<string | null> {
   const ua = request.headers.get('user-agent');
@@ -163,6 +166,7 @@ export function trackFromRequest(
     userId: payload?.userId,
     userEmail: payload?.email,
     userRole: payload?.role,
+    organizationId: event.organizationId ?? payload?.organizationId,
     shopId: event.shopId ?? payload?.shopId,
     source: detectSource(url.pathname),
     endpoint: url.pathname,
