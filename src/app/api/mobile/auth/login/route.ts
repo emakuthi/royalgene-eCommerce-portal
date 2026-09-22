@@ -51,6 +51,18 @@ export async function POST(request: NextRequest) {
 
     if (matched.length === 0) {
       logger.warn('Mobile login failed: no account / bad password', { email: normalizedEmail, endpoint: '/api/mobile/auth/login' });
+      // No account resolved, so there's no userId/organizationId to attach —
+      // still worth a row (by email) so an admin's activity log surfaces
+      // bad-credential attempts against their org, not just successful ones.
+      void trackActivity({
+        userEmail: normalizedEmail,
+        action: 'auth.login_failed', category: 'auth', source: 'mobile',
+        endpoint: '/api/mobile/auth/login', httpMethod: 'POST',
+        ipAddress: extractClientIp(request), userAgent: request.headers.get('user-agent'),
+        deviceType: detectDeviceType(request.headers.get('user-agent')),
+        status: 'failure', errorMessage: 'Invalid credentials',
+        details: device ? { deviceName: device.deviceName, platform: device.platform } : undefined,
+      });
       return jsonResponse({ success: false, error: 'Invalid credentials', code: 'INVALID_CREDENTIALS' }, 401);
     }
 
@@ -66,17 +78,18 @@ export async function POST(request: NextRequest) {
       }, 409);
     }
 
-    const user = matched[0] as { id: string; email: string; role: string };
+    const user = matched[0] as { id: string; email: string; role: string; organizationId: string | null };
 
     const result = await buildMobileAuthResponse(user.id, device);
     if (!result.ok) {
       void trackActivity({
-        userId: user.id, userEmail: user.email, userRole: user.role,
+        userId: user.id, userEmail: user.email, userRole: user.role, organizationId: user.organizationId,
         action: 'auth.login_failed', category: 'auth', source: 'mobile',
         endpoint: '/api/mobile/auth/login', httpMethod: 'POST',
         ipAddress: extractClientIp(request), userAgent: request.headers.get('user-agent'),
         deviceType: detectDeviceType(request.headers.get('user-agent')),
         status: 'failure', errorMessage: result.error,
+        details: device ? { deviceName: device.deviceName, platform: device.platform } : undefined,
       });
       const code = result.error.toLowerCase().includes('disabled') ? 'MOBILE_ACCESS_DISABLED' : 'FORBIDDEN';
       return jsonResponse({ success: false, error: result.error, code }, 403);
@@ -84,14 +97,20 @@ export async function POST(request: NextRequest) {
 
     const duration = Date.now() - startTime;
     void trackActivity({
-      userId: user.id, userEmail: result.data.user.email, userRole: result.data.user.role,
+      userId: user.id, userEmail: result.data.user.email, userRole: result.data.user.role, organizationId: user.organizationId,
       action: 'auth.login', category: 'auth', source: 'mobile',
       endpoint: '/api/mobile/auth/login', httpMethod: 'POST',
       shopId: result.data.shop?.id ?? undefined,
       ipAddress: extractClientIp(request), userAgent: request.headers.get('user-agent'),
       deviceType: detectDeviceType(request.headers.get('user-agent')),
       status: 'success', durationMs: duration,
-      details: { shopCount: result.data.shops?.length ?? (result.data.shop ? 1 : 0) },
+      // deviceName/platform: what DeviceInfoProvider captured on the Android
+      // side (see device-registry.server.ts) — the only place this login's
+      // actual device (not just "mobile") is available at all.
+      details: {
+        shopCount: result.data.shops?.length ?? (result.data.shop ? 1 : 0),
+        ...(device ? { deviceName: device.deviceName, platform: device.platform } : {}),
+      },
     });
 
     logger.info('Mobile login successful', {

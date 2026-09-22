@@ -59,6 +59,7 @@ export async function POST(request: NextRequest) {
       userId,
       userEmail: identity.email,
       userRole: result.data.user.role,
+      organizationId: result.data.organization?.id ?? null,
       action: isNewUser ? 'auth.signup' : 'auth.login',
       category: 'auth',
       source: 'mobile',
@@ -68,7 +69,7 @@ export async function POST(request: NextRequest) {
       userAgent: request.headers.get('user-agent'),
       deviceType: detectDeviceType(request.headers.get('user-agent')),
       status: 'success',
-      details: { provider: 'google', isNewUser },
+      details: { provider: 'google', isNewUser, ...(device ? { deviceName: device.deviceName, platform: device.platform } : {}) },
     });
 
     return jsonResponse(
