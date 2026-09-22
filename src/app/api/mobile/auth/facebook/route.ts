@@ -76,7 +76,7 @@ export async function POST(request: NextRequest) {
       httpMethod: 'POST',
       ipAddress: extractClientIp(request),
       userAgent: request.headers.get('user-agent'),
-      deviceType: detectDeviceType(request.headers.get('user-agent')),
+      deviceType: detectDeviceType(request.headers.get('user-agent'), 'mobile'),
       status: 'success',
       details: { provider: 'facebook', isNewUser, ...(device ? { deviceName: device.deviceName, platform: device.platform } : {}) },
     });
