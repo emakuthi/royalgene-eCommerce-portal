@@ -72,8 +72,19 @@ export interface ActivityLog extends ActivityEvent {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-/** Detect device type from user-agent string */
-export function detectDeviceType(ua: string | null | undefined): 'desktop' | 'mobile' | 'tablet' | 'api' {
+/**
+ * Detect device type from a user-agent string — except when the caller
+ * already knows this hit `/api/mobile/*` (`source: 'mobile'`), which is a
+ * far stronger signal than UA sniffing: the Android client sends no custom
+ * User-Agent at all, just OkHttp's bare default ("okhttp/4.x"), which
+ * matches none of the regexes below and used to silently fall through to
+ * "desktop" — every single mobile-app event, mislabeled. A request hitting
+ * that route prefix IS the app, full stop, so it short-circuits straight
+ * to 'mobile' rather than trusting a user-agent that was never designed to
+ * identify it.
+ */
+export function detectDeviceType(ua: string | null | undefined, source?: ActivitySource): 'desktop' | 'mobile' | 'tablet' | 'api' {
+  if (source === 'mobile') return 'mobile';
   if (!ua) return 'api';
   const lower = ua.toLowerCase();
   if (/tablet|ipad|playbook|silk/i.test(lower)) return 'tablet';
@@ -160,6 +171,7 @@ export function trackFromRequest(
 ): Promise<string | null> {
   const ua = request.headers.get('user-agent');
   const url = new URL(request.url);
+  const source = detectSource(url.pathname);
 
   return trackActivity({
     ...event,
@@ -168,12 +180,12 @@ export function trackFromRequest(
     userRole: payload?.role,
     organizationId: event.organizationId ?? payload?.organizationId,
     shopId: event.shopId ?? payload?.shopId,
-    source: detectSource(url.pathname),
+    source,
     endpoint: url.pathname,
     httpMethod: request.method,
     ipAddress: extractClientIp(request),
     userAgent: ua,
-    deviceType: detectDeviceType(ua),
+    deviceType: detectDeviceType(ua, source),
   });
 }
 
@@ -211,15 +223,16 @@ export function withActivityTracking(
     } catch (err) {
       // Track the failure, then re-throw
       const ua = request.headers.get('user-agent');
+      const source = opts?.source ?? detectSource(endpoint);
       void trackActivity({
         action,
         category,
-        source: opts?.source ?? detectSource(endpoint),
+        source,
         endpoint,
         httpMethod: request.method,
         ipAddress: extractClientIp(request),
         userAgent: ua,
-        deviceType: detectDeviceType(ua),
+        deviceType: detectDeviceType(ua, source),
         status: 'failure',
         errorMessage: err instanceof Error ? err.message : String(err),
         durationMs: Date.now() - startTime,
@@ -235,6 +248,7 @@ export function withActivityTracking(
         const body = (await cloned.json()) as Record<string, unknown>;
         const status: ActivityStatus = (response as Response).status < 400 ? 'success' : 'failure';
         const ua = request.headers.get('user-agent');
+        const source = opts?.source ?? detectSource(endpoint);
 
         let resourceInfo: { resourceType?: string; resourceId?: string; details?: Record<string, unknown> } = {};
         if (opts?.extractResource) {
@@ -244,12 +258,12 @@ export function withActivityTracking(
         void trackActivity({
           action,
           category,
-          source: opts?.source ?? detectSource(endpoint),
+          source,
           endpoint,
           httpMethod: request.method,
           ipAddress: extractClientIp(request),
           userAgent: ua,
-          deviceType: detectDeviceType(ua),
+          deviceType: detectDeviceType(ua, source),
           status,
           errorMessage: status === 'failure' ? (typeof body.error === 'string' ? body.error : null) : null,
           durationMs,

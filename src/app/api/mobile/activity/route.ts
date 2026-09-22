@@ -53,7 +53,7 @@ export async function POST(request: NextRequest) {
 
     const ua = request.headers.get('user-agent');
     const ip = extractClientIp(request);
-    const device = detectDeviceType(ua);
+    const device = detectDeviceType(ua, 'mobile');
 
     const results: Array<{ action: string; id: string | null }> = [];
 

@@ -59,7 +59,7 @@ export async function POST(request: NextRequest) {
         action: 'auth.login_failed', category: 'auth', source: 'mobile',
         endpoint: '/api/mobile/auth/login', httpMethod: 'POST',
         ipAddress: extractClientIp(request), userAgent: request.headers.get('user-agent'),
-        deviceType: detectDeviceType(request.headers.get('user-agent')),
+        deviceType: detectDeviceType(request.headers.get('user-agent'), 'mobile'),
         status: 'failure', errorMessage: 'Invalid credentials',
         details: device ? { deviceName: device.deviceName, platform: device.platform } : undefined,
       });
@@ -87,7 +87,7 @@ export async function POST(request: NextRequest) {
         action: 'auth.login_failed', category: 'auth', source: 'mobile',
         endpoint: '/api/mobile/auth/login', httpMethod: 'POST',
         ipAddress: extractClientIp(request), userAgent: request.headers.get('user-agent'),
-        deviceType: detectDeviceType(request.headers.get('user-agent')),
+        deviceType: detectDeviceType(request.headers.get('user-agent'), 'mobile'),
         status: 'failure', errorMessage: result.error,
         details: device ? { deviceName: device.deviceName, platform: device.platform } : undefined,
       });
@@ -102,7 +102,7 @@ export async function POST(request: NextRequest) {
       endpoint: '/api/mobile/auth/login', httpMethod: 'POST',
       shopId: result.data.shop?.id ?? undefined,
       ipAddress: extractClientIp(request), userAgent: request.headers.get('user-agent'),
-      deviceType: detectDeviceType(request.headers.get('user-agent')),
+      deviceType: detectDeviceType(request.headers.get('user-agent'), 'mobile'),
       status: 'success', durationMs: duration,
       // deviceName/platform: what DeviceInfoProvider captured on the Android
       // side (see device-registry.server.ts) — the only place this login's
