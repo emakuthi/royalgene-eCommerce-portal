@@ -25,3 +25,12 @@ export async function deleteProduct(token: string | null | undefined, id: string
   const json = await res.json().catch(() => ({}));
   return { ok: res.ok, status: res.status, json };
 }
+export async function bulkDeleteProducts(token: string | null | undefined, productIds: string[]) {
+  const res = await fetch('/api/portal/products/bulk-delete', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: token ? `Bearer ${token}` : '' },
+    body: JSON.stringify({ productIds }),
+  });
+  const json = await res.json().catch(() => ({}));
+  return { ok: res.ok, status: res.status, json };
+}

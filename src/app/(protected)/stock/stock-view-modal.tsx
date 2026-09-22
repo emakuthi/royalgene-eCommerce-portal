@@ -110,12 +110,12 @@ export default ({
               </div>
 
               <div className="mt-4">
-                <p className="text-sm text-gray-600">Sizes</p>
+                <p className="text-sm text-gray-600 dark:text-gray-400">Sizes</p>
                 <div className="flex flex-wrap gap-2 mt-2">
                   {(viewForm.sizes || []).map(s => (
-                    <div key={s} className="inline-flex items-center gap-2 bg-gray-100 rounded-full px-2 py-1 text-xs">
+                    <div key={s} className="inline-flex items-center gap-2 bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-full px-2 py-1 text-xs">
                       <span>{s}</span>
-                      <button type="button" className="p-1 rounded-full hover:bg-gray-200" onClick={() => setViewForm({ ...viewForm, sizes: viewForm.sizes.filter(x => x !== s) })}><X className="w-3 h-3" /></button>
+                      <button type="button" className="p-1 rounded-full hover:bg-gray-200 dark:hover:bg-gray-600" onClick={() => setViewForm({ ...viewForm, sizes: viewForm.sizes.filter(x => x !== s) })}><X className="w-3 h-3" /></button>
                     </div>
                   ))}
                 </div>
@@ -125,12 +125,12 @@ export default ({
               </div>
 
               <div className="mt-4">
-                <p className="text-sm text-gray-600">Colors</p>
+                <p className="text-sm text-gray-600 dark:text-gray-400">Colors</p>
                 <div className="flex flex-wrap gap-2 mt-2">
                   {(viewForm.colors || []).map(c => (
-                    <div key={c} className="inline-flex items-center gap-2 bg-gray-100 rounded-full px-2 py-1 text-xs">
+                    <div key={c} className="inline-flex items-center gap-2 bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-full px-2 py-1 text-xs">
                       <span>{c}</span>
-                      <button type="button" className="p-1 rounded-full hover:bg-gray-200" onClick={() => setViewForm({ ...viewForm, colors: viewForm.colors.filter(x => x !== c) })}><X className="w-3 h-3" /></button>
+                      <button type="button" className="p-1 rounded-full hover:bg-gray-200 dark:hover:bg-gray-600" onClick={() => setViewForm({ ...viewForm, colors: viewForm.colors.filter(x => x !== c) })}><X className="w-3 h-3" /></button>
                     </div>
                   ))}
                 </div>

@@ -8,7 +8,8 @@ import { Input } from '@/components/ui/input';
 import { useHydratedAuth } from '@/lib/hooks';
 import { usePortalStore } from '@/lib/store';
 import { toast } from 'sonner';
-import { Search, Eye, ArrowRightLeft, MoreHorizontal, RefreshCw, Grid3x3 } from 'lucide-react';
+import { Search, Eye, ArrowRightLeft, MoreHorizontal, RefreshCw, Grid3x3, Trash2, X } from 'lucide-react';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -82,6 +83,14 @@ function StockManagementContent() {
   const [activeTab, setActiveTab] = useState<'current' | 'all'>('current');
   const [allStocks, setAllStocks] = useState<ApiShopStock[]>([]);
   const [loadingAll, setLoadingAll] = useState(false);
+  // Bulk selection/delete (admins only — see isAdmin below). Keyed by Product.id,
+  // not ShopStock.id: a bulk delete removes the PRODUCT from every shop (same
+  // as the existing single-delete's admin path), and the "All Products" tab
+  // can show the same product across several shop rows, which should count
+  // and select as one.
+  const [selectedProductIds, setSelectedProductIds] = useState<Set<string>>(new Set());
+  const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
+  const [bulkDeleting, setBulkDeleting] = useState(false);
   // Local editable form for the view modal (product + stock fields)
   const [viewForm, setViewForm] = useState<ViewFormType>({
     name: '',
@@ -207,6 +216,10 @@ function StockManagementContent() {
     fetchAllStocks();
   }, [mounted, token, authUser?.role, _hasHydrated, activeTab]);
 
+  // A selection made on one tab shouldn't silently carry over (and confuse a
+  // "N selected" count) once the visible rows change out from under it.
+  useEffect(() => { setSelectedProductIds(new Set()); }, [activeTab]);
+
   // Derived metrics used by the new UI
   const metrics = useMemo(() => {
     const totalProducts = stocks.length;
@@ -226,6 +239,67 @@ function StockManagementContent() {
     (stock.product?.name || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
     (stock.product?.sku || '').toLowerCase().includes(searchQuery.toLowerCase())
   );
+
+  // Deletion is admin-only (same rule as the mobile app's bulk delete) —
+  // the single-item delete button stays visible to everyone and lets the
+  // server enforce it, but bulk delete has no such per-row confirmation
+  // step to lean on, so it's worth gating the controls themselves too.
+  const isAdmin = authUser?.role === 'admin' || authUser?.role === 'super_admin';
+  // Every currently-visible product id, deduplicated — the "All Products" tab
+  // can show the same product across several shop rows.
+  const selectableProductIds = useMemo(
+    () => Array.from(new Set(filteredStocks.map(s => getProductFromRow(s)?.id).filter((id): id is string => Boolean(id)))),
+    [filteredStocks]
+  );
+  const allVisibleSelected = selectableProductIds.length > 0 && selectableProductIds.every(id => selectedProductIds.has(id));
+  const someVisibleSelected = selectableProductIds.some(id => selectedProductIds.has(id));
+
+  const toggleSelectAllVisible = () => {
+    // Toggle, not a one-way "select all": once everything visible is already
+    // selected, clicking it again clears the selection instead of just
+    // reassigning the same set (which would look like it did nothing).
+    setSelectedProductIds(allVisibleSelected ? new Set() : new Set(selectableProductIds));
+  };
+  const toggleOneSelected = (productId: string) => {
+    setSelectedProductIds(prev => {
+      const next = new Set(prev);
+      if (next.has(productId)) next.delete(productId); else next.add(productId);
+      return next;
+    });
+  };
+  // Names for the confirmation dialog — looked up from whichever list (either
+  // tab) actually has the row, since a selection can in principle span both.
+  const selectedProductNames = useMemo(() => {
+    const byId = new Map<string, string>();
+    for (const s of [...stocks, ...allStocks]) {
+      const p = getProductFromRow(s);
+      if (p?.id && selectedProductIds.has(p.id) && !byId.has(p.id)) byId.set(p.id, p.name || 'Unknown product');
+    }
+    return Array.from(selectedProductIds).map(id => byId.get(id) || 'Unknown product');
+  }, [selectedProductIds, stocks, allStocks]);
+
+  const confirmBulkDeleteAction = async () => {
+    setConfirmBulkDelete(false);
+    setBulkDeleting(true);
+    try {
+      const ids = Array.from(selectedProductIds);
+      const res = await stockApi.bulkDeleteProducts(token, ids);
+      if (!res.ok || !res.json.success) {
+        toast.error(res.json.error || 'Failed to delete products');
+        return;
+      }
+      const removedIds = new Set<string>([...(res.json.data?.deleted ?? []), ...(res.json.data?.archived ?? [])]);
+      setStocks(prev => prev.filter(s => !removedIds.has(getProductFromRow(s)?.id ?? '')));
+      setAllStocks(prev => prev.filter(s => !removedIds.has(getProductFromRow(s)?.id ?? '')));
+      setSelectedProductIds(new Set());
+      toast.success(res.json.message || `${removedIds.size} removed`);
+    } catch (err) {
+      console.error('Bulk delete error', err);
+      toast.error('Failed to delete products');
+    } finally {
+      setBulkDeleting(false);
+    }
+  };
 
   // Theme-aware classes for table and text
   const { theme } = useTheme();
@@ -430,6 +504,28 @@ function StockManagementContent() {
             </div>
           </div>
 
+          {/* Bulk selection toolbar — admins only, appears once something is selected */}
+          {isAdmin && selectedProductIds.size > 0 && (
+            <div className="flex items-center justify-between mb-4 px-4 py-2.5 rounded-lg bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800">
+              <span className={`text-sm font-medium ${textPrimary}`}>{selectedProductIds.size} selected</span>
+              <div className="flex items-center gap-2">
+                <Button variant="ghost" size="sm" onClick={() => setSelectedProductIds(new Set())} className="gap-1.5">
+                  <X className="h-3.5 w-3.5" />Clear
+                </Button>
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  onClick={() => setConfirmBulkDelete(true)}
+                  disabled={bulkDeleting}
+                  className="gap-1.5"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                  {bulkDeleting ? 'Deleting…' : 'Delete selected'}
+                </Button>
+              </div>
+            </div>
+          )}
+
           {/* Loading state for All Products tab */}
           {activeTab === 'all' && loadingAll && (
             <div className="flex justify-center py-10">
@@ -441,6 +537,25 @@ function StockManagementContent() {
           {!(activeTab === 'all' && loadingAll) && (
           <>
           <div className="block md:hidden space-y-3">
+            {isAdmin && filteredStocks.length > 0 && (
+              // Deliberately NOT one clickable wrapper around the checkbox: MUI's
+              // Checkbox already fires its own onChange on a direct tap, and a
+              // wrapping onClick would fire too (bubbling), double-toggling it
+              // back off on the same tap. The checkbox and the label text each
+              // get their own, non-overlapping click target instead.
+              <div className="flex items-center gap-1.5 text-xs font-medium">
+                <Checkbox
+                  checked={allVisibleSelected}
+                  indeterminate={!allVisibleSelected && someVisibleSelected}
+                  size="small"
+                  className="-ml-2"
+                  onChange={toggleSelectAllVisible}
+                />
+                <button type="button" onClick={toggleSelectAllVisible} className={textSecondary}>
+                  {allVisibleSelected ? 'Deselect all' : 'Select all'}
+                </button>
+              </div>
+            )}
             {filteredStocks.length === 0 && (
               <div className={`text-center py-8 ${muted}`}>{stocks.length === 0 ? 'No stock items found' : 'No matching items'}</div>
             )}
@@ -449,13 +564,30 @@ function StockManagementContent() {
               const productWithCost = stock.product as (Product & { costPrice?: number }) | undefined;
               const sellPrice = Number(productWithCost?.price ?? 0);
               const costPrice = Number(productWithCost?.costPrice ?? sellPrice);
+              const cardProductId = getProductFromRow(stock)?.id;
+              const cardSelected = Boolean(cardProductId && selectedProductIds.has(cardProductId));
               return (
-                <div key={stock.id} className={`rounded-xl border ${tableBorder} ${tableBg} p-4 flex flex-col gap-3 shadow-sm`}>
+                <div
+                  key={stock.id}
+                  className={`rounded-xl border ${tableBorder} p-4 flex flex-col gap-3 shadow-sm ${cardSelected ? (theme === 'dark' ? 'bg-purple-900/10 border-purple-700' : 'bg-purple-50 border-purple-300') : tableBg}`}
+                >
                   {/* Header row */}
                   <div className="flex items-start justify-between gap-2">
-                    <div>
-                      <p className={`font-semibold text-sm ${textPrimary}`}>{stock.product?.name || 'Unknown'}</p>
-                      <p className={`text-xs ${muted}`}>{stock.shopName ?? shopName}</p>
+                    <div className="flex items-start gap-2">
+                      {isAdmin && (
+                        <Checkbox
+                          checked={cardSelected}
+                          onChange={() => cardProductId && toggleOneSelected(cardProductId)}
+                          disabled={!cardProductId}
+                          size="small"
+                          aria-label={`Select ${stock.product?.name || 'product'}`}
+                          className="-ml-2 -mt-1"
+                        />
+                      )}
+                      <div>
+                        <p className={`font-semibold text-sm ${textPrimary}`}>{stock.product?.name || 'Unknown'}</p>
+                        <p className={`text-xs ${muted}`}>{stock.shopName ?? shopName}</p>
+                      </div>
                     </div>
                     <div className="flex items-center gap-2">
                       <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${isLow ? (theme === 'dark' ? 'bg-amber-900 text-amber-300' : 'bg-amber-100 text-amber-800') : (theme === 'dark' ? 'bg-emerald-900 text-emerald-300' : 'bg-emerald-100 text-emerald-800')}`}>
@@ -525,6 +657,17 @@ function StockManagementContent() {
             <table className="w-full text-sm">
               <thead className={`text-left text-xs ${muted} border-b ${tableBorder}`}>
                 <tr>
+                  {isAdmin && (
+                    <th className="py-3 px-2 w-10">
+                      <Checkbox
+                        checked={allVisibleSelected}
+                        indeterminate={!allVisibleSelected && someVisibleSelected}
+                        onChange={toggleSelectAllVisible}
+                        size="small"
+                        aria-label={allVisibleSelected ? 'Deselect all' : 'Select all'}
+                      />
+                    </th>
+                  )}
                   <th className="py-3 px-4">Product</th>
                   <th className="py-3 px-4">Shop</th>
                   <th className="py-3 px-4 text-center">Current Stock</th>
@@ -546,9 +689,21 @@ function StockManagementContent() {
                   const productWithCost = stock.product as (Product & { costPrice?: number }) | undefined;
                   const sellPrice = Number(productWithCost?.price ?? 0);
                   const costPrice = Number(productWithCost?.costPrice ?? sellPrice);
+                  const rowProductId = getProductFromRow(stock)?.id;
 
                   return (
-                    <tr key={stock.id} className={`border-b ${tableBorder}`}>
+                    <tr key={stock.id} className={`border-b ${tableBorder} ${rowProductId && selectedProductIds.has(rowProductId) ? (theme === 'dark' ? 'bg-purple-900/10' : 'bg-purple-50') : ''}`}>
+                      {isAdmin && (
+                        <td className="py-3 px-2">
+                          <Checkbox
+                            checked={Boolean(rowProductId && selectedProductIds.has(rowProductId))}
+                            onChange={() => rowProductId && toggleOneSelected(rowProductId)}
+                            disabled={!rowProductId}
+                            size="small"
+                            aria-label={`Select ${stock.product?.name || 'product'}`}
+                          />
+                        </td>
+                      )}
                       <td className="py-3 px-4">
                         <div className={`font-medium ${textPrimary}`}>{stock.product?.name || 'Unknown'}</div>
                       </td>
@@ -683,6 +838,30 @@ function StockManagementContent() {
         <DialogActions sx={{ px: 3, pb: 2, gap: 1 }}>
           <MuiButton onClick={() => setDeleteStockTarget(null)} variant="outlined" size="small" disabled={viewDeleting}>Cancel</MuiButton>
           <MuiButton onClick={() => void confirmDeleteFromView()} variant="contained" size="small" disabled={viewDeleting} sx={{ bgcolor: '#ef4444', '&:hover': { bgcolor: '#dc2626' } }}>{viewDeleting ? 'Deleting…' : 'Delete'}</MuiButton>
+        </DialogActions>
+      </Dialog>
+
+      {/* Bulk Delete Confirmation Modal */}
+      <Dialog open={confirmBulkDelete} onClose={() => !bulkDeleting && setConfirmBulkDelete(false)} maxWidth="xs" fullWidth PaperProps={{ sx: { borderRadius: 3, p: 1 } }}>
+        <DialogTitle sx={{ fontWeight: 700 }}>
+          🗑️ {selectedProductIds.size === 1 ? 'Delete this product?' : `Delete ${selectedProductIds.size} products?`}
+        </DialogTitle>
+        <DialogContent>
+          <ul className="list-disc pl-5 text-sm space-y-0.5 mb-2">
+            {selectedProductNames.slice(0, 5).map((name, i) => <li key={i} className="truncate">{name}</li>)}
+          </ul>
+          {selectedProductNames.length > 5 && (
+            <p className={`text-xs ${muted} mb-2`}>…and {selectedProductNames.length - 5} more</p>
+          )}
+          <DialogContentText>
+            This removes {selectedProductIds.size === 1 ? 'it' : 'them'} from every shop, along with the stock counts.
+            A product that already has sales will be archived instead, so your sales history stays intact.
+            This can’t be undone.
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2, gap: 1 }}>
+          <MuiButton onClick={() => setConfirmBulkDelete(false)} variant="outlined" size="small" disabled={bulkDeleting}>Cancel</MuiButton>
+          <MuiButton onClick={() => void confirmBulkDeleteAction()} variant="contained" size="small" disabled={bulkDeleting} sx={{ bgcolor: '#ef4444', '&:hover': { bgcolor: '#dc2626' } }}>{bulkDeleting ? 'Deleting…' : 'Delete'}</MuiButton>
         </DialogActions>
       </Dialog>
 
