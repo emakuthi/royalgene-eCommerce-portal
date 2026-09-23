@@ -220,31 +220,73 @@ function StockManagementContent() {
   // "N selected" count) once the visible rows change out from under it.
   useEffect(() => { setSelectedProductIds(new Set()); }, [activeTab]);
 
-  // Derived metrics used by the new UI
-  const metrics = useMemo(() => {
-    const totalProducts = stocks.length;
-    // Compute total stock value (price stored in major units)
-    const stockValue = stocks.reduce((sum, s: ShopStock & { product?: Product }) => {
-      const price = Number(s.product?.price ?? 0);
-      const qty = Number(s.quantity || 0);
-      return sum + price * qty;
-    }, 0);
-    const lowStock = stocks.filter((s: ShopStock & { product?: Product }) => s.quantity <= s.lowStockThreshold).length;
-    const outOfStock = stocks.filter((s: ShopStock & { product?: Product }) => s.quantity === 0).length;
-
-    return { totalProducts, stockValue, lowStock, outOfStock };
-  }, [stocks]);
-
-  const filteredStocks = (activeTab === 'current' ? stocks : allStocks).filter(stock =>
-    (stock.product?.name || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-    (stock.product?.sku || '').toLowerCase().includes(searchQuery.toLowerCase())
-  );
-
   // Deletion is admin-only (same rule as the mobile app's bulk delete) —
   // the single-item delete button stays visible to everyone and lets the
   // server enforce it, but bulk delete has no such per-row confirmation
   // step to lean on, so it's worth gating the controls themselves too.
   const isAdmin = authUser?.role === 'admin' || authUser?.role === 'super_admin';
+
+  // Accurate, variant-aware stock value — the same source the Android app's
+  // and the web Analytics page's own Inventory card already use (see
+  // GET /api/portal/analytics/inventory). Admin-only (that route is), fetched
+  // once and reused for both tabs below, rather than recomputed from a flat
+  // `quantity × product.price` here, which silently ignored a variant cell's
+  // own price override and — separately — was always scoped to the CURRENT
+  // shop's `stocks`, never updating when switching to the "All Products" tab.
+  const [inventoryValue, setInventoryValue] = useState<{ totalUnits: number; totalRetailValue: number; shops: Array<{ shopId: string; units: number; retailValue: number }> } | null>(null);
+  useEffect(() => {
+    if (!mounted || !_hasHydrated || !token || !isAdmin) return;
+    (async () => {
+      try {
+        const res = await fetch('/api/portal/analytics/inventory', {
+          headers: { Authorization: `Bearer ${token}` },
+          cache: 'no-store',
+        });
+        const json = await res.json();
+        if (res.ok && json.success) setInventoryValue(json.data);
+      } catch (err) {
+        console.error('Failed to fetch inventory value:', err);
+      }
+    })();
+  }, [mounted, _hasHydrated, token, isAdmin]);
+
+  // Derived metrics used by the new UI — scoped to whichever tab is active,
+  // so switching to "All Products" actually changes these numbers instead of
+  // silently staying locked to the current shop's own stock.
+  const metrics = useMemo(() => {
+    const rows = activeTab === 'current' ? stocks : allStocks;
+    // Total UNITS in stock (not distinct products) — matches the Android
+    // Analytics screen's own Inventory card ("Total items"). quantity is
+    // already the correctly rolled-up total for a variant product (kept in
+    // sync by a DB trigger), so this needs no per-cell awareness the way
+    // stockValue below does.
+    const totalItems = rows.reduce((sum, s: ShopStock & { product?: Product }) => sum + (Number(s.quantity) || 0), 0);
+    const lowStock = rows.filter((s: ShopStock & { product?: Product }) => s.quantity <= s.lowStockThreshold).length;
+    const outOfStock = rows.filter((s: ShopStock & { product?: Product }) => s.quantity === 0).length;
+
+    let stockValue: number;
+    if (inventoryValue) {
+      stockValue = activeTab === 'current' && currentShop
+        ? (inventoryValue.shops.find(s => s.shopId === currentShop.id)?.retailValue ?? 0)
+        : inventoryValue.totalRetailValue;
+    } else {
+      // Fallback for a non-admin (that endpoint is admin-only) or while it's
+      // still loading — the same flat calculation as before, imprecise for a
+      // variant product's own per-cell price but otherwise reasonable.
+      stockValue = rows.reduce((sum, s: ShopStock & { product?: Product }) => {
+        const price = Number(s.product?.price ?? 0);
+        const qty = Number(s.quantity || 0);
+        return sum + price * qty;
+      }, 0);
+    }
+
+    return { totalItems, stockValue, lowStock, outOfStock };
+  }, [stocks, allStocks, activeTab, inventoryValue, currentShop]);
+
+  const filteredStocks = (activeTab === 'current' ? stocks : allStocks).filter(stock =>
+    (stock.product?.name || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+    (stock.product?.sku || '').toLowerCase().includes(searchQuery.toLowerCase())
+  );
   // Every currently-visible product id, deduplicated — the "All Products" tab
   // can show the same product across several shop rows.
   const selectableProductIds = useMemo(
@@ -446,9 +488,9 @@ function StockManagementContent() {
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <Card className="p-4">
             <CardContent>
-              <p className="text-sm text-gray-500">Total Products</p>
-              <h2 className="text-2xl font-bold">{metrics.totalProducts}</h2>
-              <p className="text-xs text-gray-400">Active products</p>
+              <p className="text-sm text-gray-500">Total Items</p>
+              <h2 className="text-2xl font-bold">{metrics.totalItems.toLocaleString('en-KE')}</h2>
+              <p className="text-xs text-gray-400">{activeTab === 'current' ? 'Units in this shop' : 'Units across all shops'}</p>
             </CardContent>
           </Card>
 
