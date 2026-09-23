@@ -42,6 +42,7 @@ export async function GET(
       .from('SalesEntry')
       .select('*')
       .eq('shopId', shopId)
+      .is('deletedAt', null)
       .gte('createdAt', startDate.toISOString());
 
     if (salesError) {

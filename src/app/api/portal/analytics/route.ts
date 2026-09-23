@@ -114,6 +114,7 @@ export async function GET(request: NextRequest) {
       .from('SalesEntry')
       .select('id, productId, quantity, totalAmount, costPrice, createdAt')
       .in('shopId', shopIds)
+      .is('deletedAt', null)
       .gte('createdAt', startDate.toISOString())
       .lte('createdAt', now.toISOString());
 

@@ -72,6 +72,7 @@ export async function GET(request: NextRequest) {
       .from('SalesEntry')
       .select('*, ProfitMargin(*)')
       .eq('shopId', shopId)
+      .is('deletedAt', null)
       .gte('createdAt', todayStart.toISOString())
       .lt('createdAt', new Date(todayStart.getTime() + 24 * 60 * 60 * 1000).toISOString());
 
@@ -80,6 +81,7 @@ export async function GET(request: NextRequest) {
       .from('SalesEntry')
       .select('*, ProfitMargin(*)')
       .eq('shopId', shopId)
+      .is('deletedAt', null)
       .gte('createdAt', monthStart.toISOString())
       .lte('createdAt', now.toISOString());
 

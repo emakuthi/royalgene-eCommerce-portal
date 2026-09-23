@@ -46,6 +46,7 @@ export async function GET(request: NextRequest) {
       .from('SalesEntry')
       .select('*', { count: 'exact' })
       .in('shopId', shopIds)
+      .is('deletedAt', null)
       .order('createdAt', { ascending: false });
 
     if (startDate) query = query.gte('createdAt', startDate);

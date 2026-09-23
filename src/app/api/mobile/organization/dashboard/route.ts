@@ -55,6 +55,7 @@ export async function GET(request: NextRequest) {
       .from('SalesEntry')
       .select('*')
       .in('shopId', shopIds)
+      .is('deletedAt', null)
       .gte('createdAt', startDate.toISOString());
 
     if (salesError) {
