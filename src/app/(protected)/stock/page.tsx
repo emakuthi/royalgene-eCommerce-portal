@@ -40,6 +40,17 @@ const getProductFromRow = (row: ApiShopStock): Product | undefined => {
   return (row.product ?? row.Product) as Product | undefined;
 };
 
+/** Status badge for one stock row — 0 always reads as "out of stock", even if lowStockThreshold is also 0. */
+function stockStatusBadge(quantity: number, lowStockThreshold: number, isDark: boolean): { label: string; className: string } {
+  if (quantity === 0) {
+    return { label: 'out of stock', className: isDark ? 'bg-red-900 text-red-300' : 'bg-red-100 text-red-800' };
+  }
+  if (quantity <= lowStockThreshold) {
+    return { label: 'low', className: isDark ? 'bg-amber-900 text-amber-300' : 'bg-amber-100 text-amber-800' };
+  }
+  return { label: 'in stock', className: isDark ? 'bg-emerald-900 text-emerald-300' : 'bg-emerald-100 text-emerald-800' };
+}
+
 type ViewFormType = {
   name: string;
   sku: string;
@@ -612,7 +623,7 @@ function StockManagementContent() {
               <div className={`text-center py-8 ${muted}`}>{stocks.length === 0 ? 'No stock items found' : 'No matching items'}</div>
             )}
             {filteredStocks.map((stock) => {
-              const isLow = stock.quantity <= stock.lowStockThreshold;
+              const status = stockStatusBadge(stock.quantity, stock.lowStockThreshold, theme === 'dark');
               const productWithCost = stock.product as (Product & { costPrice?: number }) | undefined;
               const sellPrice = Number(productWithCost?.price ?? 0);
               const costPrice = Number(productWithCost?.costPrice ?? sellPrice);
@@ -642,8 +653,8 @@ function StockManagementContent() {
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
-                      <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${isLow ? (theme === 'dark' ? 'bg-amber-900 text-amber-300' : 'bg-amber-100 text-amber-800') : (theme === 'dark' ? 'bg-emerald-900 text-emerald-300' : 'bg-emerald-100 text-emerald-800')}`}>
-                        {isLow ? 'low' : 'in stock'}
+                      <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${status.className}`}>
+                        {status.label}
                       </span>
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
@@ -736,7 +747,7 @@ function StockManagementContent() {
                 {filteredStocks.map(stock => {
                   const available = stock.quantity; // placeholder: available = quantity - reserved (if reserved existed)
                   const reserved = 0;
-                  const isLow = stock.quantity <= stock.lowStockThreshold;
+                  const status = stockStatusBadge(stock.quantity, stock.lowStockThreshold, theme === 'dark');
                   // price values are stored in major units (KES), no conversion needed
                   const productWithCost = stock.product as (Product & { costPrice?: number }) | undefined;
                   const sellPrice = Number(productWithCost?.price ?? 0);
@@ -765,7 +776,7 @@ function StockManagementContent() {
                       <td className="py-3 px-4 text-center">{reserved}</td>
                       <td className="py-3 px-4 text-center">{stock.lowStockThreshold}</td>
                       <td className="py-3 px-4 text-center">
-                        <span className={`px-2 py-1 rounded-full text-xs ${isLow ? (theme === 'dark' ? 'bg-amber-900 text-amber-300' : 'bg-amber-100 text-amber-800') : (theme === 'dark' ? 'bg-emerald-900 text-emerald-300' : 'bg-emerald-100 text-emerald-800')}`}>{isLow ? 'low' : 'in stock'}</span>
+                        <span className={`px-2 py-1 rounded-full text-xs ${status.className}`}>{status.label}</span>
                       </td>
                       <td className="py-3 px-4 text-center">
                         <div className="font-semibold">{formatKESMajor(costPrice)}</div>
