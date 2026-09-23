@@ -179,10 +179,15 @@ function StockManagementContent() {
     fetchAllShopStocks();
   }, [mounted, currentShop, token, authUser?.role, _hasHydrated]);
 
-  // Fetch all stocks for the "All Products" tab
+  // Fetch all stocks for the "All Products" tab — and also whenever the
+  // GLOBAL shop selector itself is set to "All Shops" (currentShop === null),
+  // regardless of which local tab is active: the KPI cards below need this
+  // org-wide data to reflect that choice even while sitting on "Current
+  // Stock" (which itself silently falls back to the first shop in that case).
   useEffect(() => {
     if (!mounted || !token || !_hasHydrated) return;
-    if (activeTab !== 'all') return; // Only fetch when tab is active
+    const isAdminRole = authUser?.role === 'admin' || authUser?.role === 'super_admin';
+    if (activeTab !== 'all' && !(isAdminRole && !currentShop)) return;
 
     const fetchAllStocks = async () => {
       setLoadingAll(true);
@@ -214,7 +219,7 @@ function StockManagementContent() {
     };
 
     fetchAllStocks();
-  }, [mounted, token, authUser?.role, _hasHydrated, activeTab]);
+  }, [mounted, token, authUser?.role, _hasHydrated, activeTab, currentShop]);
 
   // A selection made on one tab shouldn't silently carry over (and confuse a
   // "N selected" count) once the visible rows change out from under it.
@@ -252,9 +257,14 @@ function StockManagementContent() {
 
   // Derived metrics used by the new UI — scoped to whichever tab is active,
   // so switching to "All Products" actually changes these numbers instead of
-  // silently staying locked to the current shop's own stock.
+  // silently staying locked to the current shop's own stock. Also switches to
+  // the org-wide data whenever the GLOBAL shop selector is "All Shops"
+  // (currentShop === null), even while sitting on the "Current Stock" tab —
+  // that tab's own table falls back to showing just the first shop in that
+  // case, but the KPI cards shouldn't silently follow it into one shop's
+  // numbers when the user picked "All Shops" up top.
   const metrics = useMemo(() => {
-    const rows = activeTab === 'current' ? stocks : allStocks;
+    const rows = (activeTab === 'current' && currentShop) ? stocks : allStocks;
     // Total UNITS in stock (not distinct products) — matches the Android
     // Analytics screen's own Inventory card ("Total items"). quantity is
     // already the correctly rolled-up total for a variant product (kept in
