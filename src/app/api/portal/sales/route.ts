@@ -423,6 +423,7 @@ export async function GET(request: NextRequest) {
     let query = supabaseAdmin
       .from('SalesEntry')
       .select('*, ProfitMargin(*), product:Product(name, price, costPrice)')
+      .is('deletedAt', null)
       .order('createdAt', { ascending: false })
       .range(offset, offset + limit - 1);
 

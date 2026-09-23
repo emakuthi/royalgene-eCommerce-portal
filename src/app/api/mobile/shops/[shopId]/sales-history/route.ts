@@ -30,6 +30,7 @@ export async function GET(
       .from('SalesEntry')
       .select('*', { count: 'exact' })
       .eq('shopId', shopId)
+      .is('deletedAt', null)
       .order('createdAt', { ascending: false });
 
     if (startDate) {

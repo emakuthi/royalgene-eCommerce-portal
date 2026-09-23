@@ -3,6 +3,54 @@ import { requireTenantUser } from '@/lib/authorize';
 import { supabaseAdmin } from '@/lib/supabase-client';
 import logger from '@/lib/logger';
 import { jsonResponse, optionsResponse } from '@/lib/apiResponse';
+import { trackFromRequest } from '@/lib/activity-tracker';
+import { deleteSalesInOrg } from '@/lib/sale-delete.server';
+
+/**
+ * DELETE /api/portal/sales/[id]
+ * Delete one sale line item — admins only. See POST /api/portal/sales/bulk-delete
+ * for the multi-select form (this is just that with a single id).
+ */
+export async function DELETE(request: NextRequest, context: unknown) {
+  try {
+    const resolvedContext = await Promise.resolve(context as unknown);
+    let saleId: string | undefined;
+    if (resolvedContext && typeof resolvedContext === 'object') {
+      const params = (resolvedContext as Record<string, unknown>)['params'];
+      if (params && typeof params === 'object') {
+        const idVal = (params as Record<string, unknown>)['id'];
+        if (typeof idVal === 'string') saleId = idVal;
+      }
+    }
+    if (!saleId) return jsonResponse({ success: false, error: 'Missing sale id' }, 400);
+
+    const auth = requireTenantUser(request);
+    if (auth instanceof NextResponse) return auth;
+    const payload = auth;
+
+    if (payload.role !== 'admin' && payload.role !== 'super_admin') {
+      return jsonResponse({ success: false, error: 'Only workspace admins can delete sales.' }, 403);
+    }
+
+    const { data: portalUser } = await supabaseAdmin.from('PortalUser').select('id').eq('userId', payload.userId).maybeSingle();
+    const outcome = await deleteSalesInOrg(payload.organizationId as string, [saleId], portalUser?.id ?? null);
+
+    if (outcome.notFound.length > 0) {
+      return jsonResponse({ success: false, error: 'Sale not found' }, 404);
+    }
+    if (outcome.failed.length > 0) {
+      return jsonResponse({ success: false, error: outcome.failed[0].error || 'Failed to delete sale' }, 500);
+    }
+
+    void trackFromRequest(request, payload, { action: 'sale.delete', category: 'sale', resourceType: 'SalesEntry', resourceId: saleId });
+    logger.info('Sale deleted', { saleId, userId: payload.userId });
+
+    return jsonResponse({ success: true, message: 'Sale deleted' }, 200);
+  } catch (error) {
+    logger.error('Sale delete error', { error: error instanceof Error ? error.message : String(error) });
+    return jsonResponse({ success: false, error: 'Internal server error' }, 500);
+  }
+}
 
 // Use `unknown` for the context and perform a type-safe normalization below.
 export async function PATCH(request: NextRequest, context: unknown) {
@@ -35,6 +83,7 @@ export async function PATCH(request: NextRequest, context: unknown) {
       .from('SalesEntry')
       .select('*')
       .eq('id', saleId)
+      .is('deletedAt', null)
       .single();
 
     if (saleErr || !existingSale) {
@@ -169,7 +218,7 @@ export async function PATCH(request: NextRequest, context: unknown) {
 }
 
 export function OPTIONS() {
-  return optionsResponse('PATCH,OPTIONS');
+  return optionsResponse('PATCH,DELETE,OPTIONS');
 }
 
 function cryptoRandomId() {

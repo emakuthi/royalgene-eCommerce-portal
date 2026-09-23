@@ -4,6 +4,7 @@ import logger from '@/lib/logger';
 import { jsonResponse } from '@/lib/apiResponse';
 import { verifyMobileShopAccess } from '@/lib/mobile-shop-auth';
 import { canViewCostData } from '@/lib/cost-visibility.server';
+import { deleteSalesInOrg } from '@/lib/sale-delete.server';
 
 /**
  * GET /api/mobile/shops/[shopId]/sales/[saleId]
@@ -23,6 +24,7 @@ export async function GET(
       .select('*')
       .eq('id', saleId)
       .eq('shopId', shopId)
+      .is('deletedAt', null)
       .single();
 
     if (saleError || !sale) {
@@ -160,6 +162,7 @@ export async function PATCH(
       .select('*')
       .eq('id', saleId)
       .eq('shopId', shopId)
+      .is('deletedAt', null)
       .single();
 
     if (saleErr || !existingSale) {
@@ -224,6 +227,44 @@ export async function PATCH(
 }
 
 /**
+ * DELETE /api/mobile/shops/[shopId]/sales/[saleId]
+ * Delete one sale line item — admins only. See POST /api/mobile/sales/bulk-delete
+ * for the multi-select form (this is just that with a single id).
+ */
+export async function DELETE(
+  request: NextRequest,
+  context: { params: Promise<{ shopId: string; saleId: string }> }
+) {
+  try {
+    const { shopId, saleId } = await context.params;
+    const auth = await verifyMobileShopAccess(request, shopId);
+    if (auth instanceof Response) return auth;
+
+    if (!auth.isAdmin) {
+      return jsonResponse({ success: false, error: 'Only workspace admins can delete sales.', code: 'FORBIDDEN' }, 403);
+    }
+    if (!auth.payload.organizationId) {
+      return jsonResponse({ success: false, error: 'Platform accounts cannot access tenant business data.', code: 'PLATFORM_NO_TENANT_DATA' }, 403);
+    }
+
+    const outcome = await deleteSalesInOrg(auth.payload.organizationId, [saleId], auth.portalUserId);
+
+    if (outcome.notFound.length > 0) {
+      return jsonResponse({ success: false, error: 'Sale not found', code: 'NOT_FOUND' }, 404);
+    }
+    if (outcome.failed.length > 0) {
+      return jsonResponse({ success: false, error: outcome.failed[0].error || 'Failed to delete sale', code: 'INTERNAL_ERROR' }, 500);
+    }
+
+    logger.info('Mobile sale deleted', { userId: auth.payload.userId, shopId, saleId });
+    return jsonResponse({ success: true, message: 'Sale deleted' }, 200);
+  } catch (error) {
+    logger.error('Mobile sale delete error', { error: error instanceof Error ? error.message : String(error) });
+    return jsonResponse({ success: false, error: 'Internal server error', code: 'INTERNAL_ERROR' }, 500);
+  }
+}
+
+/**
  * OPTIONS handler for CORS
  */
 export async function OPTIONS(_request: NextRequest) {
@@ -231,7 +272,7 @@ export async function OPTIONS(_request: NextRequest) {
     status: 200,
     headers: {
       'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, PATCH, OPTIONS',
+      'Access-Control-Allow-Methods': 'GET, PATCH, DELETE, OPTIONS',
       'Access-Control-Allow-Headers': 'Content-Type, Authorization',
     },
   });

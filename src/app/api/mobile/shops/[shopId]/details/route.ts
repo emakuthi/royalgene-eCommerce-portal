@@ -46,6 +46,7 @@ export async function GET(
       .from('SalesEntry')
       .select('totalAmount')
       .eq('shopId', shopId)
+      .is('deletedAt', null)
       .gte('createdAt', `${today}T00:00:00Z`)
       .lt('createdAt', `${today}T23:59:59Z`);
 

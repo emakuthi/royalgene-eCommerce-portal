@@ -35,6 +35,7 @@ export async function GET(
       .from('SalesEntry')
       .select('*')
       .eq('shopId', shopId)
+      .is('deletedAt', null)
       .order('createdAt', { ascending: true });
 
     if (startDate) {

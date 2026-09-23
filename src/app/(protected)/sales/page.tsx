@@ -8,12 +8,19 @@ import { useHydratedAuth } from '@/lib/hooks';
 import { usePortalStore } from '@/lib/store';
 import { toast } from 'sonner';
 import Link from 'next/link';
-import { Eye, Plus, ShoppingCart, DollarSign, TrendingUp, Download, Sliders, Package } from 'lucide-react';
+import { Eye, Plus, ShoppingCart, DollarSign, TrendingUp, Download, Sliders, Package, Trash2, X, ArchiveRestore } from 'lucide-react';
 import PortalHeader from '@/components/portal/PortalHeader';
 import { computePrefillForm } from '@/lib/sales-prefill';
 import StatCard from '@/components/ui/stat-card';
 import { useTheme } from '@/lib/theme-context';
 import { useRouter } from 'next/navigation';
+import { Checkbox } from '@/components/ui/checkbox';
+import Dialog from '@mui/material/Dialog';
+import DialogTitle from '@mui/material/DialogTitle';
+import DialogContent from '@mui/material/DialogContent';
+import DialogContentText from '@mui/material/DialogContentText';
+import DialogActions from '@mui/material/DialogActions';
+import MuiButton from '@mui/material/Button';
 
 function formatCurrency(amount: number) {
   return amount.toFixed(2);
@@ -26,7 +33,7 @@ function SalesEntryContent() {
   const textPrimary = theme === 'dark' ? 'text-white' : 'text-gray-900';
   const textSecondary = theme === 'dark' ? 'text-gray-300' : 'text-gray-600';
   const borderColor = theme === 'dark' ? 'border-gray-800' : 'border-gray-200';
-   const { token } = useHydratedAuth();
+   const { token, user: authUser } = useHydratedAuth();
    const { currentShop, _hasHydrated } = usePortalStore();
    const [mounted, setMounted] = useState(false);
    const [sales, setSales] = useState<SalesRow[]>([]);
@@ -34,6 +41,13 @@ function SalesEntryContent() {
    const [prevMonthSales, setPrevMonthSales] = useState(0);
    const [prevMonthRevenue, setPrevMonthRevenue] = useState(0);
    const router = useRouter();
+   const isAdmin = authUser?.role === 'admin' || authUser?.role === 'super_admin';
+   // Bulk selection/delete — admin-only. Each id is one SalesEntry row (one
+   // product/variant line); deleting removes it from this shop's stock
+   // history and gives its quantity back to stock — see sale-delete.server.ts.
+   const [selectedSaleIds, setSelectedSaleIds] = useState<Set<string>>(new Set());
+   const [confirmDeleteSales, setConfirmDeleteSales] = useState(false);
+   const [deletingSales, setDeletingSales] = useState(false);
   // Pagination for the recent sales listing
   const [page, setPage] = useState(0);
   const limit = 10;
@@ -234,6 +248,40 @@ function SalesEntryContent() {
     return () => { canceled = true; };
   }, [page, mounted, token, currentShop, offset, _hasHydrated]);
 
+  const toggleSaleSelected = (id: string) => {
+    setSelectedSaleIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const confirmDeleteSalesAction = async () => {
+    setConfirmDeleteSales(false);
+    setDeletingSales(true);
+    try {
+      const res = await fetch('/api/portal/sales/bulk-delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: token ? `Bearer ${token}` : '' },
+        body: JSON.stringify({ saleIds: Array.from(selectedSaleIds) }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || !json.success) {
+        toast.error(json.error || 'Failed to delete sales');
+        return;
+      }
+      const gone = new Set<string>([...(json.data?.deleted ?? []), ...(json.data?.notFound ?? [])]);
+      setSales(prev => prev.filter(s => !gone.has(s.id)));
+      setSelectedSaleIds(new Set());
+      toast.success(json.message || `${gone.size} removed`);
+    } catch (err) {
+      console.error('Bulk delete sales error', err);
+      toast.error('Failed to delete sales');
+    } finally {
+      setDeletingSales(false);
+    }
+  };
+
   const stats = useMemo(() => {
     const totalSales = sales.length;
     const totalRevenue = sales.reduce((sum, s) => sum + (s.totalAmount || 0), 0);
@@ -272,6 +320,14 @@ function SalesEntryContent() {
         breadcrumbs={[{ label: 'Portal', href: '/portal' }, { label: 'Sales' }]}
         actions={(
           <div className="flex items-center gap-3">
+            {isAdmin && (
+              <Link href="/sales/trash">
+                <Button variant="outline" className={`flex items-center gap-2 ${textPrimary}`}>
+                  <ArchiveRestore className="h-4 w-4" />
+                  <span className="text-sm">Trash</span>
+                </Button>
+              </Link>
+            )}
             <Button variant="outline" className={`flex items-center gap-2 ${textPrimary}`}>
               <Download className="h-4 w-4" />
               <span className="text-sm">Export</span>
@@ -320,13 +376,41 @@ function SalesEntryContent() {
        <div className="px-2 sm:px-2 pb-6 w-full">
         <Card>
          <CardHeader>
-           <CardTitle className="text-xl">Recent Sales</CardTitle>
+           <div className="flex items-center justify-between">
+             <CardTitle className="text-xl">Recent Sales</CardTitle>
+             {isAdmin && selectedSaleIds.size > 0 && (
+               <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800">
+                 <span className={`text-sm font-medium ${textPrimary}`}>{selectedSaleIds.size} selected</span>
+                 <Button variant="ghost" size="sm" onClick={() => setSelectedSaleIds(new Set())} className="gap-1.5">
+                   <X className="h-3.5 w-3.5" />Clear
+                 </Button>
+                 <Button variant="destructive" size="sm" onClick={() => setConfirmDeleteSales(true)} disabled={deletingSales} className="gap-1.5">
+                   <Trash2 className="h-3.5 w-3.5" />
+                   {deletingSales ? 'Deleting…' : 'Delete'}
+                 </Button>
+               </div>
+             )}
+           </div>
          </CardHeader>
          <CardContent>
            <div className="overflow-x-auto">
              <table className="w-full border-collapse">
                <thead>
                  <tr className={`text-xs font-semibold ${textSecondary} border-b-2 ${borderColor} bg-opacity-50`}>
+                  {isAdmin && (
+                    <th className="py-4 px-2 w-10">
+                      <Checkbox
+                        checked={sales.length > 0 && sales.every(s => selectedSaleIds.has(s.id))}
+                        indeterminate={sales.some(s => selectedSaleIds.has(s.id)) && !sales.every(s => selectedSaleIds.has(s.id))}
+                        onChange={() => {
+                          const allSelected = sales.length > 0 && sales.every(s => selectedSaleIds.has(s.id));
+                          setSelectedSaleIds(allSelected ? new Set() : new Set(sales.map(s => s.id)));
+                        }}
+                        size="small"
+                        aria-label="Select all"
+                      />
+                    </th>
+                  )}
                   <th className="py-4 px-2 text-left">Date</th>
                   <th className="py-4 px-2 text-left hidden lg:table-cell">ID</th>
                   <th className="py-4 px-2 text-left">Product</th>
@@ -348,8 +432,14 @@ function SalesEntryContent() {
                   const margin = s.totalAmount > 0 ? ((totalProfit / s.totalAmount) * 100).toFixed(1) : '0.0';
                   const costPrice = s.costPrice || 0;
 
+                  const isSelected = selectedSaleIds.has(s.id);
                   return (
-                    <tr key={s.id} className={`border-b ${borderColor} hover:bg-opacity-50 ${idx % 2 === 0 ? (theme === 'dark' ? 'bg-gray-900 bg-opacity-30' : 'bg-gray-50 bg-opacity-50') : ''}`}>
+                    <tr key={s.id} className={`border-b ${borderColor} hover:bg-opacity-50 ${isSelected ? (theme === 'dark' ? 'bg-purple-900/10' : 'bg-purple-50') : idx % 2 === 0 ? (theme === 'dark' ? 'bg-gray-900 bg-opacity-30' : 'bg-gray-50 bg-opacity-50') : ''}`}>
+                      {isAdmin && (
+                        <td className="py-3 px-2">
+                          <Checkbox checked={isSelected} onChange={() => toggleSaleSelected(s.id)} size="small" aria-label={`Select sale for ${s.product?.name || 'product'}`} />
+                        </td>
+                      )}
                       <td className={`py-3 px-2 text-sm ${textPrimary}`}>{new Date(s.createdAt).toLocaleDateString()} <span className={`${textSecondary} text-xs`}>{new Date(s.createdAt).toLocaleTimeString()}</span></td>
                       <td className={`py-3 px-2 text-xs text-gray-400 font-mono hidden lg:table-cell`}>{s.id.slice(0, 8)}...</td>
                       <td className={`py-3 px-2 text-sm font-medium ${textPrimary}`}>{s.product?.name || 'Unknown'}</td>
@@ -429,6 +519,30 @@ function SalesEntryContent() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Bulk Delete Sales Confirmation */}
+      <Dialog open={confirmDeleteSales} onClose={() => !deletingSales && setConfirmDeleteSales(false)} maxWidth="xs" fullWidth PaperProps={{ sx: { borderRadius: 3, p: 1 } }}>
+        <DialogTitle sx={{ fontWeight: 700 }}>
+          🗑️ {selectedSaleIds.size === 1 ? 'Delete this sale?' : `Delete ${selectedSaleIds.size} sales?`}
+        </DialogTitle>
+        <DialogContent>
+          <ul className="list-disc pl-5 text-sm space-y-0.5 mb-2">
+            {sales.filter(s => selectedSaleIds.has(s.id)).slice(0, 5).map(s => (
+              <li key={s.id} className="truncate">{s.product?.name || 'Unknown'} — {formatCurrency(s.totalAmount)}</li>
+            ))}
+          </ul>
+          {selectedSaleIds.size > 5 && (
+            <p className={`text-xs ${textSecondary} mb-2`}>…and {selectedSaleIds.size - 5} more</p>
+          )}
+          <DialogContentText>
+            The units sold will be added back to stock. Deleted sales are recoverable from Trash for 90 days, then removed for good. A sale that already has a tax invoice on file can’t be deleted.
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2, gap: 1 }}>
+          <MuiButton onClick={() => setConfirmDeleteSales(false)} variant="outlined" size="small" disabled={deletingSales}>Cancel</MuiButton>
+          <MuiButton onClick={() => void confirmDeleteSalesAction()} variant="contained" size="small" disabled={deletingSales} sx={{ bgcolor: '#ef4444', '&:hover': { bgcolor: '#dc2626' } }}>{deletingSales ? 'Deleting…' : 'Delete'}</MuiButton>
+        </DialogActions>
+      </Dialog>
      </div>
    );
  }

@@ -35,6 +35,7 @@ function chainable(table: string) {
   q.eq = (col: string, val: unknown) => { inFilters[col] = val; return q; };
   q.gte = () => q;
   q.lte = () => q;
+  q.is = () => q;
   q.in = (col: string, vals: string[]) => { inFilters[col] = vals; return q; };
   q.maybeSingle = async () => {
     if (table === 'Shop') return { data: shops.find(s => s.id === inFilters.id) ?? null };
