@@ -47,6 +47,7 @@ function baseTables(): MockTables {
     Shop: [],
     SalesEntry: [],
     TenantFileUpload: [],
+    OrgEntitlementOverride: [],
   };
 }
 
@@ -142,6 +143,31 @@ describe('entitlement-service', () => {
     ];
     const { getTenantEntitlementSummary } = await import('../entitlement-service.server');
     const summary = await getTenantEntitlementSummary(ORG_STARTER);
-    expect(summary.limits.STORAGE_GB).toMatchObject({ limit: 2, usage: 1, remaining: 1 });
+    expect(summary.limits.STORAGE_GB).toMatchObject({ limit: 2, usage: 1, remaining: 1, isOverridden: false });
+  });
+
+  it('a per-tenant OrgEntitlementOverride row wins over the plan default and is flagged isOverridden', async () => {
+    mockTables.OrgEntitlementOverride = [{ organizationId: ORG_STARTER, code: 'PRODUCTS', limitValue: 10, enabled: true }];
+    const { getLimit, getTenantEntitlementSummary } = await import('../entitlement-service.server');
+
+    // Plan default for ORG_STARTER's PRODUCTS is 2 — the override raises it to 10.
+    expect(await getLimit(ORG_STARTER, 'PRODUCTS' as never)).toBe(10);
+
+    const summary = await getTenantEntitlementSummary(ORG_STARTER);
+    expect(summary.limits.PRODUCTS).toMatchObject({ limit: 10, usage: 2, isOverridden: true });
+    // USERS has no override row — still reads from the plan and reports isOverridden: false.
+    expect(summary.limits.USERS).toMatchObject({ limit: 3, isOverridden: false });
+  });
+
+  it('an explicit unlimited override (limitValue: null) beats a finite plan limit', async () => {
+    mockTables.OrgEntitlementOverride = [{ organizationId: ORG_STARTER, code: 'PRODUCTS', limitValue: null, enabled: true }];
+    const { getLimit } = await import('../entitlement-service.server');
+    expect(await getLimit(ORG_STARTER, 'PRODUCTS' as never)).toBeNull();
+  });
+
+  it('an override never resurrects a restricted (trial-lapsed) org', async () => {
+    mockTables.OrgEntitlementOverride = [{ organizationId: ORG_TRIAL_LAPSED, code: 'PRODUCTS', limitValue: 100, enabled: true }];
+    const { getLimit } = await import('../entitlement-service.server');
+    expect(await getLimit(ORG_TRIAL_LAPSED, 'PRODUCTS' as never)).toBe(0);
   });
 });

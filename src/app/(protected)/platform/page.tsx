@@ -39,6 +39,7 @@ import {
 } from '@/lib/platform';
 import { DomainManager } from '@/components/domain/DomainManager';
 import { TenantUsersPanel } from './tenant-users-panel';
+import { TenantUsagePanel } from './tenant-usage-panel';
 import type { DomainState } from '@/lib/domains';
 import type { Organization, PlatformPlan } from '@/lib/types';
 
@@ -1019,6 +1020,17 @@ function PlatformAdminConsole() {
                   onRefresh={refreshManageDomain}
                   onRemove={removeManageDomain}
                 />
+              </div>
+
+              {/* Usage & quotas */}
+              <div>
+                <Label>Usage &amp; quotas</Label>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 mb-2">
+                  This tenant&apos;s live usage against its plan. Override storage, products, or team-seat
+                  quotas independently of the plan for this one tenant — e.g. a negotiated deal or a
+                  temporary bump.
+                </p>
+                <TenantUsagePanel token={token} orgId={manageOrg.id} />
               </div>
 
               {/* People & logins */}

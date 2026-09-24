@@ -90,12 +90,34 @@ export async function hasFeature(organizationId: string, feature: FeatureCodeVal
   return Boolean(data?.enabled);
 }
 
-/** Returns the plan's configured limit for a code — `null` means unlimited. Restricted/no-plan orgs get 0 (blocks new creation, never blocks reads). */
-export async function getLimit(organizationId: string, limitCode: LimitCodeValue): Promise<number | null> {
+export interface LimitWithSource {
+  value: number | null;
+  isOverridden: boolean;
+}
+
+/**
+ * Resolves a limit code's effective value plus whether it came from a
+ * per-tenant override. A super-admin-set `OrgEntitlementOverride` row always
+ * wins over the plan default (even when its `limitValue` is NULL, i.e. an
+ * explicit unlimited override) — but never resurrects a legacy/restricted
+ * org, since those short-circuits guard billing state, not quota shopping.
+ */
+export async function getLimitWithSource(organizationId: string, limitCode: LimitCodeValue): Promise<LimitWithSource> {
   const ctx = await getActiveSubscription(organizationId);
-  if (!ctx) return 0;
-  if (ctx.isLegacyUnlimited) return null;
-  if (ctx.isRestricted || !ctx.plan) return 0;
+  if (!ctx) return { value: 0, isOverridden: false };
+  if (ctx.isLegacyUnlimited) return { value: null, isOverridden: false };
+  if (ctx.isRestricted || !ctx.plan) return { value: 0, isOverridden: false };
+
+  const { data: override } = await supabaseAdmin
+    .from('OrgEntitlementOverride')
+    .select('limitValue')
+    .eq('organizationId', organizationId)
+    .eq('code', limitCode)
+    .maybeSingle();
+
+  if (override) {
+    return { value: override.limitValue === null || override.limitValue === undefined ? null : Number(override.limitValue), isOverridden: true };
+  }
 
   const { data } = await supabaseAdmin
     .from('PlanEntitlement')
@@ -104,8 +126,13 @@ export async function getLimit(organizationId: string, limitCode: LimitCodeValue
     .eq('code', limitCode)
     .maybeSingle();
 
-  if (!data) return 0;
-  return data.limitValue === null || data.limitValue === undefined ? null : Number(data.limitValue);
+  if (!data) return { value: 0, isOverridden: false };
+  return { value: data.limitValue === null || data.limitValue === undefined ? null : Number(data.limitValue), isOverridden: false };
+}
+
+/** Returns the plan's configured limit for a code — `null` means unlimited. Restricted/no-plan orgs get 0 (blocks new creation, never blocks reads). */
+export async function getLimit(organizationId: string, limitCode: LimitCodeValue): Promise<number | null> {
+  return (await getLimitWithSource(organizationId, limitCode)).value;
 }
 
 function startOfCurrentMonthIso(): string {
@@ -178,7 +205,7 @@ export interface TenantEntitlementSummary {
     currentPeriodEnd: string | null;
   };
   features: Partial<Record<FeatureCodeValue, boolean>>;
-  limits: Partial<Record<LimitCodeValue, { limit: number | null; usage: number; remaining: number | null }>>;
+  limits: Partial<Record<LimitCodeValue, { limit: number | null; usage: number; remaining: number | null; isOverridden: boolean }>>;
 }
 
 const LIMIT_CODE_TO_RESOURCE: Partial<Record<LimitCodeValue, ResourceTypeValue>> = {
@@ -208,22 +235,27 @@ export async function getTenantEntitlementSummary(organizationId: string): Promi
     }),
   );
 
-  const limits: Partial<Record<LimitCodeValue, { limit: number | null; usage: number; remaining: number | null }>> = {};
+  const limits: Partial<Record<LimitCodeValue, { limit: number | null; usage: number; remaining: number | null; isOverridden: boolean }>> = {};
   await Promise.all(
     WIRED_LIMIT_CODES.map(async (code) => {
       if (code === LimitCode.STORAGE_GB) {
         // Bytes-based, not a row-count resource — doesn't fit the
         // ResourceType/canCreate model the other limits use.
-        const limitGB = ctx.isLegacyUnlimited ? null : await getLimit(organizationId, LimitCode.STORAGE_GB);
+        const { value: limitGB, isOverridden } = ctx.isLegacyUnlimited
+          ? { value: null, isOverridden: false }
+          : await getLimitWithSource(organizationId, LimitCode.STORAGE_GB);
         const usageGB = await getStorageUsageGB(organizationId);
         const remaining = limitGB === null ? null : Math.max(Math.round((limitGB - usageGB) * 100) / 100, 0);
-        limits[code] = { limit: limitGB, usage: usageGB, remaining };
+        limits[code] = { limit: limitGB, usage: usageGB, remaining, isOverridden };
         return;
       }
       const resource = LIMIT_CODE_TO_RESOURCE[code];
       if (!resource) return;
-      const result = await canCreate(organizationId, resource);
-      limits[code] = { limit: result.limit, usage: result.currentUsage, remaining: result.remaining };
+      const [result, { isOverridden }] = await Promise.all([
+        canCreate(organizationId, resource),
+        getLimitWithSource(organizationId, code),
+      ]);
+      limits[code] = { limit: result.limit, usage: result.currentUsage, remaining: result.remaining, isOverridden };
     }),
   );
 

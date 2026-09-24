@@ -2,7 +2,7 @@
 
 import { useEntitlement } from '@/hooks/useEntitlement';
 import { LimitCode, type LimitCodeValue } from '@/lib/entitlements/feature-codes';
-import { UsageMeter } from './UsageMeter';
+import { UsageGauge } from './UsageGauge';
 
 const LIMIT_LABELS: Partial<Record<LimitCodeValue, string>> = {
   [LimitCode.USERS]: 'Team members',
@@ -16,7 +16,7 @@ const LIMIT_UNITS: Partial<Record<LimitCodeValue, string>> = {
   [LimitCode.STORAGE_GB]: 'GB',
 };
 
-/** Every wired UsageMeter for the caller's own org, in one composite — used by the Settings Billing tab. */
+/** Every wired UsageGauge for the caller's own org, in one composite — used by the Settings Billing tab. */
 export function UsageSummary() {
   const { loading, limits } = useEntitlement();
 
@@ -29,10 +29,19 @@ export function UsageSummary() {
   }
 
   return (
-    <div className="grid sm:grid-cols-2 gap-4">
+    <div className="grid sm:grid-cols-3 gap-6">
       {codes.map((code) => {
         const entry = limits[code]!;
-        return <UsageMeter key={code} label={LIMIT_LABELS[code]!} usage={entry.usage} limit={entry.limit} unit={LIMIT_UNITS[code]} />;
+        return (
+          <UsageGauge
+            key={code}
+            label={LIMIT_LABELS[code]!}
+            usage={entry.usage}
+            limit={entry.limit}
+            unit={LIMIT_UNITS[code]}
+            isOverridden={entry.isOverridden}
+          />
+        );
       })}
     </div>
   );
