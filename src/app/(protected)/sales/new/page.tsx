@@ -10,6 +10,7 @@ import { useHydratedAuth } from '@/lib/hooks';
 import { usePortalStore } from '@/lib/store';
 import { toast } from 'sonner';
 import PortalHeader from '@/components/portal/PortalHeader';
+import { ImageLightbox } from '@/components/image-lightbox';
 import { computePrefillForm } from '@/lib/sales-prefill';
 import type { Product } from '@/lib/types';
 import { useTheme } from '@/lib/theme-context';
@@ -68,6 +69,7 @@ export default function NewSalePage() {
   });
 
   // string-backed inputs (allow typing partial values like "1.", "", "0.0")
+  const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null);
   const [quantityInput, setQuantityInput] = useState(String(formData.quantity || 1));
   const [unitPriceInput, setUnitPriceInput] = useState((formData.unitPrice || 0).toFixed(2));
   const [discountInput, setDiscountInput] = useState(String(formData.discount || 0));
@@ -432,7 +434,8 @@ export default function NewSalePage() {
                                   <img
                                     src={publicImages[0]}
                                     alt={selectedProduct.name}
-                                    className="w-24 h-24 rounded-lg object-cover border border-gray-200 dark:border-gray-600 flex-shrink-0 shadow-sm"
+                                    onClick={() => setPreviewImageUrl(publicImages[0])}
+                                    className="w-24 h-24 rounded-lg object-cover border border-gray-200 dark:border-gray-600 flex-shrink-0 shadow-sm cursor-zoom-in"
                                     onError={(e) => { (e.target as HTMLImageElement).src = ''; (e.target as HTMLImageElement).className = 'hidden'; }}
                                   />
                                 ) : (
@@ -449,7 +452,8 @@ export default function NewSalePage() {
                                         key={i}
                                         src={url}
                                         alt={`${selectedProduct.name} ${i + 2}`}
-                                        className="w-12 h-12 rounded-md object-cover border border-gray-200 dark:border-gray-600 shadow-sm"
+                                        onClick={() => setPreviewImageUrl(url)}
+                                        className="w-12 h-12 rounded-md object-cover border border-gray-200 dark:border-gray-600 shadow-sm cursor-zoom-in"
                                         onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
                                       />
                                     ))}
@@ -609,6 +613,8 @@ export default function NewSalePage() {
           </div>
         </div>
       </div>
+
+      <ImageLightbox src={previewImageUrl} alt="Product" onClose={() => setPreviewImageUrl(null)} />
     </div>
   );
 }
