@@ -3,6 +3,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import Image from 'next/image';
 import { useAuthStore } from '@/lib/store';
+import { ImageLightbox } from '@/components/image-lightbox';
 import { Plus as PlusIcon, ImagePlus } from 'lucide-react';
 
 // Material UI imports
@@ -86,6 +87,7 @@ export const ProductForm: React.FC<Props> = ({ editingProduct = null, onSaved, o
   const [skuExists, setSkuExists] = useState<boolean | null>(null);
   const skuCheckTimeout = useRef<number | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
 
   useEffect(() => {
     return () => {
@@ -305,7 +307,13 @@ export const ProductForm: React.FC<Props> = ({ editingProduct = null, onSaved, o
                       <Box key={index}>
                         <Box sx={{ position: 'relative', width: { xs: 80, sm: 96 }, height: { xs: 80, sm: 96 }, borderRadius: 1, overflow: 'hidden', border: 1, borderColor: 'divider', bgcolor: 'background.default' }}>
                           {image && (image.startsWith('http') || image.startsWith('data:')) ? (
-                            <Image src={image} alt={`Product ${index + 1}`} fill className="object-cover" />
+                            <Image
+                              src={image}
+                              alt={`Product ${index + 1}`}
+                              fill
+                              className="object-cover cursor-zoom-in"
+                              onClick={() => setPreviewUrl(image)}
+                            />
                           ) : (
                             <Box sx={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, color: 'text.secondary' }}>No image</Box>
                           )}
@@ -443,6 +451,8 @@ export const ProductForm: React.FC<Props> = ({ editingProduct = null, onSaved, o
           <MUIButton variant="contained" onClick={() => { void handleSubmit(); }} disabled={submitting} sx={{ bgcolor: '#ff4d8b', color: 'white', '&:hover': { bgcolor: '#ff2d6f' } }}>{submitting ? 'Saving...' : editingProduct ? 'Update Product' : 'Add Product'}</MUIButton>
         </Box>
       </Paper>
+
+      <ImageLightbox src={previewUrl} alt="Product" onClose={() => setPreviewUrl(null)} />
     </Box>
   );
 };

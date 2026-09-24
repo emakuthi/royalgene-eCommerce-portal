@@ -5,6 +5,7 @@ import { uploadProductImage } from '@/lib/image-utils';
 import { useAuthStore } from '@/lib/store';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { ImageLightbox } from '@/components/image-lightbox';
 import { X, Upload, Loader2 } from 'lucide-react';
 
 interface ImageUploadProps {
@@ -22,6 +23,7 @@ export function ImageUpload({
 }: ImageUploadProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   // Grab the JWT so it can be forwarded to the portal upload API
   const { token } = useAuthStore();
@@ -155,7 +157,8 @@ export function ImageUpload({
               <img
                 src={url}
                 alt="Product"
-                className="h-24 w-24 rounded-lg object-cover border border-gray-200"
+                onClick={() => setPreviewUrl(url)}
+                className="h-24 w-24 rounded-lg object-cover border border-gray-200 cursor-zoom-in"
               />
               {onRemove && (
                 <button
@@ -170,6 +173,8 @@ export function ImageUpload({
           ))}
         </div>
       )}
+
+      <ImageLightbox src={previewUrl} alt="Product" onClose={() => setPreviewUrl(null)} />
     </div>
   );
 }

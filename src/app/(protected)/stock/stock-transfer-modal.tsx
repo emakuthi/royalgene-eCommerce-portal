@@ -7,6 +7,7 @@ import { ArrowRightLeft, X } from 'lucide-react';
 import type { Shop, ShopStock, Product } from '@/lib/types';
 import { FeatureGate } from '@/components/entitlements/FeatureGate';
 import { FeatureCode } from '@/lib/entitlements/feature-codes';
+import { ImageLightbox } from '@/components/image-lightbox';
 
 type ApiShopStock = ShopStock & { Product?: Product; product?: Product; shopName?: string };
 
@@ -34,6 +35,7 @@ export default function StockTransferModal({
   const [notes, setNotes] = useState('');
   const [loading, setLoading] = useState(false);
   const [loadingShops, setLoadingShops] = useState(false);
+  const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
@@ -138,7 +140,8 @@ export default function StockTransferModal({
               <img
                 src={(prod as Product).images[0]}
                 alt={prod.name}
-                className="h-12 w-12 rounded-md object-cover border"
+                onClick={() => setPreviewImageUrl((prod as Product).images[0])}
+                className="h-12 w-12 rounded-md object-cover border cursor-zoom-in"
               />
             )}
             <div>
@@ -223,6 +226,8 @@ export default function StockTransferModal({
         </FeatureGate>
         </div>
       </div>
+
+      <ImageLightbox src={previewImageUrl} alt={prod?.name ?? 'Product'} onClose={() => setPreviewImageUrl(null)} />
     </div>
   );
 }
