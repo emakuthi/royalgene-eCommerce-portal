@@ -12,11 +12,11 @@ export interface EntitlementState {
   plan: UsageSnapshot['plan'];
   subscriptionStatus: string | null;
   hasFeature: (code: FeatureCodeValue) => boolean;
-  getLimit: (code: LimitCodeValue) => { limit: number | null; usage: number; remaining: number | null } | undefined;
+  getLimit: (code: LimitCodeValue) => { limit: number | null; usage: number; remaining: number | null; isOverridden: boolean } | undefined;
   refresh: () => void;
 }
 
-/** Loads the caller's feature/usage snapshot once per session — every FeatureGate/UsageMeter on the page shares this one fetch. */
+/** Loads the caller's feature/usage snapshot once per session — every FeatureGate/UsageGauge on the page shares this one fetch. */
 export function useEntitlement(): EntitlementState {
   const { token, user } = useHydratedAuth();
   // super_admin has no organizationId — the backend entitlement routes 400

@@ -55,7 +55,7 @@ export function getBillingSubscription(token?: string | null) {
 }
 
 export interface UsageSnapshot {
-  limits: Partial<Record<LimitCodeValue, { limit: number | null; usage: number; remaining: number | null }>>;
+  limits: Partial<Record<LimitCodeValue, { limit: number | null; usage: number; remaining: number | null; isOverridden: boolean }>>;
   plan: { id: string; code: string | null; name: string; tier: string } | null;
   subscription: { status: string; trialEnd: string | null; currentPeriodEnd: string | null };
 }

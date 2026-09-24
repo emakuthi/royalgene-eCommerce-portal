@@ -112,6 +112,17 @@ export interface PlanEntitlement {
   updatedAt: string;
 }
 
+export interface OrgEntitlementOverride {
+  id: string;
+  organizationId: string;
+  code: string;
+  limitValue?: number | null;
+  enabled: boolean;
+  createdBy?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export type SubscriptionStatus = 'trialing' | 'active' | 'past_due' | 'suspended' | 'cancelled' | 'expired';
 
 export interface TenantSubscription {

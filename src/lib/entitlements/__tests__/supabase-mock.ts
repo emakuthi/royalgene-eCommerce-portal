@@ -11,6 +11,9 @@ function isSameIdentity(a: Record<string, unknown>, b: Record<string, unknown>):
   if ('planId' in b && 'code' in b) {
     return a.planId === b.planId && a.code === b.code;
   }
+  if ('organizationId' in b && 'code' in b) {
+    return a.organizationId === b.organizationId && a.code === b.code;
+  }
   return false;
 }
 

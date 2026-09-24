@@ -194,6 +194,48 @@ export function updatePlanEntitlements(
   });
 }
 
+export interface OrgEntitlementOverrideRow {
+  id: string;
+  organizationId: string;
+  code: string;
+  limitValue: number | null;
+  enabled: boolean;
+}
+
+export interface EffectiveLimit {
+  limit: number | null;
+  usage: number;
+  remaining: number | null;
+  isOverridden: boolean;
+}
+
+export interface OrgEntitlementsResponse {
+  overrides: OrgEntitlementOverrideRow[];
+  effective: Partial<Record<string, EffectiveLimit>>;
+}
+
+export function getOrgEntitlementOverrides(token: string | null | undefined, organizationId: string) {
+  return request<OrgEntitlementsResponse>(`/api/platform/organizations/${encodeURIComponent(organizationId)}/entitlements`, token);
+}
+
+export function updateOrgEntitlementOverrides(
+  token: string | null | undefined,
+  organizationId: string,
+  patches: { code: string; limitValue: number | null }[],
+) {
+  return request<OrgEntitlementOverrideRow[]>(`/api/platform/organizations/${encodeURIComponent(organizationId)}/entitlements`, token, {
+    method: 'PATCH',
+    body: JSON.stringify({ patches }),
+  });
+}
+
+export function resetOrgEntitlementOverride(token: string | null | undefined, organizationId: string, code: string) {
+  return request<void>(`/api/platform/organizations/${encodeURIComponent(organizationId)}/entitlements`, token, {
+    method: 'DELETE',
+    body: JSON.stringify({ code }),
+  });
+}
+
 export function getOrganizationSubscription(token: string | null | undefined, organizationId: string) {
   return request<unknown>(`/api/platform/organizations/${encodeURIComponent(organizationId)}/subscription`, token);
 }
