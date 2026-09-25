@@ -46,6 +46,7 @@ function SessionBridgeInner() {
         email: typeof claims.email === 'string' ? claims.email : '',
         name: searchParams.get('name') || '',
         role: (typeof claims.role === 'string' ? claims.role : 'admin') as 'admin' | 'portal_user' | 'customer' | 'super_admin',
+        organizationId: typeof claims.organizationId === 'string' ? claims.organizationId : null,
         password: '',
         twoFactorEnabled: false,
         createdAt: new Date().toISOString(),

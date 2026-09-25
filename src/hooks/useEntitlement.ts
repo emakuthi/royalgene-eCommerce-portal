@@ -1,7 +1,8 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import { useHydratedAuth } from '@/lib/hooks';
+import { decodeJwt } from '@/lib/auth.client';
 import { getBillingFeatures, getBillingUsage, type FeaturesSnapshot, type UsageSnapshot } from '@/lib/billing';
 import type { FeatureCodeValue, LimitCodeValue } from '@/lib/entitlements/feature-codes';
 
@@ -19,12 +20,21 @@ export interface EntitlementState {
 /** Loads the caller's feature/usage snapshot once per session — every FeatureGate/UsageGauge on the page shares this one fetch. */
 export function useEntitlement(): EntitlementState {
   const { token, user } = useHydratedAuth();
+  // Fallback for sessions whose persisted `user` predates organizationId
+  // being included in the login/session-bridge response (fixed 2026-09-25,
+  // but existing localStorage state stays stale until the user re-logs in)
+  // — the JWT itself has always carried organizationId, so decode it rather
+  // than force everyone to sign out.
+  const tokenOrganizationId = useMemo(() => {
+    const claims = token ? decodeJwt(token) : null;
+    return typeof claims?.organizationId === 'string' ? claims.organizationId : null;
+  }, [token]);
   // super_admin has no organizationId — the backend entitlement routes 400
   // on that (there's nothing to check a plan against) and every backend
   // feature check in the API routes already skips itself for this case.
   // The frontend gate must bypass the same way, or a platform admin would
   // get locked out of pages the backend would actually let them use.
-  const isPlatformStaff = user?.role === 'super_admin' || !user?.organizationId;
+  const isPlatformStaff = user?.role === 'super_admin' || !(user?.organizationId || tokenOrganizationId);
   const [loading, setLoading] = useState(!isPlatformStaff);
   const [features, setFeatures] = useState<FeaturesSnapshot['features']>({});
   const [limits, setLimits] = useState<UsageSnapshot['limits']>({});
