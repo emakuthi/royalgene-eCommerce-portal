@@ -34,7 +34,7 @@ export async function createShop<T = unknown>(token?: string | null, payload?: {
     return { ok: false, status: 401, success: false, error: 'Unauthorized' };
   }
   try {
-    const res = await fetch('/api/admin/shops', {
+    const res = await fetch('/api/portal/shops', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -116,24 +116,13 @@ export async function updateShop<T = unknown>(token?: string | null, id?: string
   }
 
   try {
-    // Try admin endpoint first
-    let res = await fetch(`/api/admin/shops/${encodeURIComponent(id)}`, {
+    const res = await fetch(`/api/portal/shops/${encodeURIComponent(id)}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
       body: JSON.stringify(payload),
     });
 
-    let json = await res.json().catch(() => ({}));
-
-    if (!res.ok && (res.status === 401 || res.status === 403)) {
-      // fallback to portal endpoint
-      res = await fetch(`/api/portal/shops/${encodeURIComponent(id)}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify(payload),
-      });
-      json = await res.json().catch(() => ({}));
-    }
+    const json = await res.json().catch(() => ({}));
 
     return {
       ok: res.ok,
