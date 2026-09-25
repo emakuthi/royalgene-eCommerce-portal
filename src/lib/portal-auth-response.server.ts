@@ -4,7 +4,7 @@ import { signAuthToken } from './auth.server';
 
 export interface PortalAuthPayload {
   token: string;
-  user: { id: string; email: string; name: string; role: string };
+  user: { id: string; email: string; name: string; role: string; organizationId: string | null };
   portalUser: Record<string, unknown> | null;
   shop: Record<string, unknown> | null;
   organization: {
@@ -70,7 +70,7 @@ export async function buildPortalAuthResponse(userId: string): Promise<{ ok: tru
     ok: true,
     data: {
       token,
-      user: { id: user.id, email: user.email, name: user.name, role: user.role },
+      user: { id: user.id, email: user.email, name: user.name, role: user.role, organizationId: user.organizationId ?? null },
       portalUser,
       shop,
       organization,

@@ -109,7 +109,7 @@ export async function POST(request: NextRequest) {
       duration: Date.now() - startTime
     });
 
-    return jsonResponse({ success: true, data: { user: { id: user.id, email: user.email, name: user.name, role: user.role }, portalUser, shop, token } }, 200);
+    return jsonResponse({ success: true, data: { user: { id: user.id, email: user.email, name: user.name, role: user.role, organizationId: user.organizationId ?? null }, portalUser, shop, token } }, 200);
   } catch (error) {
     logger.error('Portal login error', {
       error: error instanceof Error ? error.message : String(error),
