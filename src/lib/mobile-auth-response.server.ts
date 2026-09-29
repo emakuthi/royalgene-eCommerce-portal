@@ -2,6 +2,7 @@ import 'server-only';
 import { supabaseAdmin } from './supabase-client';
 import { signAuthToken } from './auth.server';
 import { registerDevice, type DeviceInfo } from './device-registry.server';
+import { getAllowAllMobileLogins } from './platform-settings.server';
 
 function formatShop(s: Record<string, unknown>) {
   const phoneVal = s['phone'];
@@ -62,11 +63,20 @@ export async function buildMobileAuthResponse(
   const { data: portalUsers } = await supabaseAdmin.from('PortalUser').select('*, Shop(*)').eq('userId', user.id);
   const portalUser = portalUsers && portalUsers.length > 0 ? portalUsers[0] : null;
 
-  if (!isAdmin && !portalUser) {
-    return { ok: false, error: 'This account is not authorized for mobile app access' };
-  }
-  if (!isAdmin && portalUser && (portalUser as Record<string, unknown>).mobileAccess === false) {
-    return { ok: false, error: 'Mobile access has been disabled for this account. Contact your administrator.' };
+  // Platform kill-switch (super_admin-controlled in /platform): when on, the
+  // per-user mobile-access gate below is bypassed so any user with a valid,
+  // active workspace can sign in — intended for a testing/beta phase. The
+  // workspace-status guards further down still apply. Defaults to false
+  // (gate enforced).
+  const bypassGate = await getAllowAllMobileLogins();
+
+  if (!bypassGate) {
+    if (!isAdmin && !portalUser) {
+      return { ok: false, error: 'This account is not authorized for mobile app access' };
+    }
+    if (!isAdmin && portalUser && (portalUser as Record<string, unknown>).mobileAccess === false) {
+      return { ok: false, error: 'Mobile access has been disabled for this account. Contact your administrator.' };
+    }
   }
 
   // A suspended / closed workspace must not hand out a usable session — every
@@ -132,7 +142,11 @@ export async function buildMobileAuthResponse(
   // explicit exclusion here, an admin with no shopId (which a super_admin
   // always is) would fall through to an unfiltered Shop query and get back
   // every active shop across every tenant in the database.
-  if (isAdmin && !shopId && user.organizationId) {
+  // Admins always get the full org shop list. A gate-bypassed user (testing
+  // switch on) who has no shop assignment also gets it, so their session is
+  // usable instead of landing on an empty "no shops" screen. Still scoped to
+  // their own organizationId — never a cross-tenant query.
+  if ((isAdmin || bypassGate) && !shopId && user.organizationId) {
     const shopsQuery = supabaseAdmin.from('Shop').select('id, name, location, phone, address').eq('isActive', true).eq('organizationId', user.organizationId).order('name', { ascending: true });
     const { data: shops } = await shopsQuery;
     allShops = (shops as Array<Record<string, unknown>>) ?? [];
