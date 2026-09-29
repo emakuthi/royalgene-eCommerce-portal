@@ -28,6 +28,7 @@ import {
   restorePlatformOrganization,
   setPlatformOrgDomain,
   setPlatformSelfSignupEnabled,
+  setPlatformAllowAllMobileLogins,
   syncPlatformPlanBilling,
   updatePlanEntitlements,
   updatePlatformOrganization,
@@ -112,6 +113,8 @@ function PlatformAdminConsole() {
   const [organizations, setOrganizations] = useState<OrganizationWithCounts[]>([]);
   const [selfSignupEnabled, setSelfSignupEnabledState] = useState(true);
   const [signupToggleBusy, setSignupToggleBusy] = useState(false);
+  const [allowAllMobileLogins, setAllowAllMobileLoginsState] = useState(false);
+  const [mobileGateToggleBusy, setMobileGateToggleBusy] = useState(false);
   const [orgBusyId, setOrgBusyId] = useState<string | null>(null);
   const [plans, setPlans] = useState<PlatformPlan[]>([]);
   const [planDialogOpen, setPlanDialogOpen] = useState(false);
@@ -172,7 +175,10 @@ function PlatformAdminConsole() {
     if (overviewRes.success && overviewRes.data) setOverview(overviewRes.data);
     if (capacityRes.success && capacityRes.data) setCapacity(capacityRes.data);
     if (orgsRes.success && orgsRes.data) setOrganizations(orgsRes.data);
-    if (settingsRes.success && settingsRes.data) setSelfSignupEnabledState(settingsRes.data.selfSignupEnabled);
+    if (settingsRes.success && settingsRes.data) {
+      setSelfSignupEnabledState(settingsRes.data.selfSignupEnabled);
+      setAllowAllMobileLoginsState(Boolean(settingsRes.data.allowAllMobileLogins));
+    }
     if (plansRes.success && plansRes.data) setPlans(plansRes.data);
     if (!overviewRes.success || !capacityRes.success || !orgsRes.success || !settingsRes.success || !plansRes.success) {
       toast.error('Failed to load some platform data');
@@ -192,6 +198,18 @@ function PlatformAdminConsole() {
       toast.error(res.error || 'Failed to update setting');
     }
     setSignupToggleBusy(false);
+  };
+
+  const toggleAllowAllMobileLogins = async (next: boolean) => {
+    setMobileGateToggleBusy(true);
+    const res = await setPlatformAllowAllMobileLogins(token, next);
+    if (res.success) {
+      setAllowAllMobileLoginsState(next);
+      toast.success(next ? 'Mobile access gate bypassed' : 'Mobile access gate enforced');
+    } else {
+      toast.error(res.error || 'Failed to update setting');
+    }
+    setMobileGateToggleBusy(false);
   };
 
   const updateOrgStatus = async (org: OrganizationWithCounts, status: Organization['status']) => {
@@ -541,6 +559,23 @@ function PlatformAdminConsole() {
               </p>
             </div>
             <Toggle checked={selfSignupEnabled} onChange={toggleSelfSignup} disabled={signupToggleBusy || loading} />
+          </div>
+        </Section>
+
+        {/* Mobile access gate bypass (testing) */}
+        <Section title="Mobile Access Gate" description="Whether the mobile app enforces the per-user access gate (workspace membership + mobile access). Turn OFF the gate only for a testing/beta phase.">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-gray-900 dark:text-white">
+                {allowAllMobileLogins ? 'Mobile access gate is BYPASSED' : 'Mobile access gate is enforced'}
+              </p>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                {allowAllMobileLogins
+                  ? 'Any user with an active workspace can sign into the mobile app, even without mobile access granted. Suspended/closed workspaces are still blocked. Leave OFF in production.'
+                  : 'Only admins and users explicitly granted mobile access can sign into the mobile app.'}
+              </p>
+            </div>
+            <Toggle checked={allowAllMobileLogins} onChange={toggleAllowAllMobileLogins} disabled={mobileGateToggleBusy || loading} />
           </div>
         </Section>
 
