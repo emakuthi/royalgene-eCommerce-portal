@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="ClaudeCodeEditorTabs">
+    <option name="activeSessionId" value="d1a6d3dd-64f0-4ca0-9e59-597045ea4374" />
+    <option name="openSessionIds">
+      <list>
+        <option value="b326d0f4-1d3a-4624-9bc0-d25e07a7580f" />
+        <option value="e0d2bf18-6686-4486-9778-43861984cdb2" />
+        <option value="d1a6d3dd-64f0-4ca0-9e59-597045ea4374" />
+      </list>
+    </option>
+    <option name="sessionPaths">
+      <map>
+        <entry key="b326d0f4-1d3a-4624-9bc0-d25e07a7580f" value="/sessions/new" />
+        <entry key="d1a6d3dd-64f0-4ca0-9e59-597045ea4374" value="/sessions/new" />
+        <entry key="e0d2bf18-6686-4486-9778-43861984cdb2" value="/sessions/1f39c16d-a95b-472e-bd55-c98625aa02c4" />
+      </map>
+    </option>
+    <option name="sessionTitles">
+      <map>
+        <entry key="b326d0f4-1d3a-4624-9bc0-d25e07a7580f" value="Claude Code" />
+        <entry key="d1a6d3dd-64f0-4ca0-9e59-597045ea4374" value="Claude Code" />
+        <entry key="e0d2bf18-6686-4486-9778-43861984cdb2" value="Where will i get the link to share with testers" />
+      </map>
+    </option>
+  </component>
+</project>

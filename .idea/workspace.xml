@@ -1,0 +1,120 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="AutoImportSettings">
+    <option name="autoReloadType" value="SELECTIVE" />
+  </component>
+  <component name="ChangeListManager">
+    <list default="true" id="53124f75-4f6d-41b9-86f2-d9f8d085fd7c" name="Changes" comment="">
+      <change beforePath="$PROJECT_DIR$/src/app/(protected)/platform/page.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/src/app/(protected)/platform/page.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/app/api/platform/settings/route.ts" beforeDir="false" afterPath="$PROJECT_DIR$/src/app/api/platform/settings/route.ts" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/lib/mobile-auth-response.server.ts" beforeDir="false" afterPath="$PROJECT_DIR$/src/lib/mobile-auth-response.server.ts" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/lib/platform-settings.server.ts" beforeDir="false" afterPath="$PROJECT_DIR$/src/lib/platform-settings.server.ts" afterDir="false" />
+    </list>
+    <option name="SHOW_DIALOG" value="false" />
+    <option name="HIGHLIGHT_CONFLICTS" value="true" />
+    <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
+    <option name="LAST_RESOLUTION" value="IGNORE" />
+  </component>
+  <component name="CopilotPersistence">
+    <persistenceIdMap>
+      <entry key="_/Users/elvismakuthi/Public/WebstormProjects/royalgene-web/royalgene-eCommerce-portal" value="3I3TK1d7GHjwHtIY2BAqmFDLAzv" />
+    </persistenceIdMap>
+  </component>
+  <component name="Git.Settings">
+    <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
+  </component>
+  <component name="GitHubPullRequestSearchHistory">{
+  &quot;lastFilter&quot;: {
+    &quot;state&quot;: &quot;OPEN&quot;,
+    &quot;assignee&quot;: &quot;emakuthi&quot;
+  }
+}</component>
+  <component name="GithubPullRequestsUISettings">{
+  &quot;selectedUrlAndAccountId&quot;: {
+    &quot;url&quot;: &quot;https://github.com/emakuthi/royalgene-eCommerce-portal.git&quot;,
+    &quot;accountId&quot;: &quot;17251b1d-3092-4316-85d9-21d948d6a52a&quot;
+  }
+}</component>
+  <component name="ProjectColorInfo">{
+  &quot;associatedIndex&quot;: 5,
+  &quot;fromUser&quot;: false
+}</component>
+  <component name="ProjectId" id="3I3TJxuIVjfTMdfu4QPnEuJDjH5" />
+  <component name="ProjectSessionTemplates">
+    <option name="panelTemplate">
+      <template>
+        <option name="modeId" value="Agent" />
+        <option name="model">
+          <model>
+            <option name="modelProviderName" value="OpenAI" />
+            <option name="modelType" value="byok_id" />
+            <option name="modelValue" value="gpt-4o-2024-08-06" />
+          </model>
+        </option>
+        <option name="targetType" value="BACKGROUND" />
+        <option name="worktreeMode" value="WORKSPACE" />
+      </template>
+    </option>
+  </component>
+  <component name="ProjectViewState">
+    <option name="hideEmptyMiddlePackages" value="true" />
+    <option name="showLibraryContents" value="true" />
+  </component>
+  <component name="PropertiesComponent"><![CDATA[{
+  "keyToString": {
+    "ModuleVcsDetector.initialDetectionPerformed": "true",
+    "RunOnceActivity.ShowReadmeOnStart": "true",
+    "RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252": "true",
+    "RunOnceActivity.git.unshallow": "true",
+    "RunOnceActivity.typescript.service.memoryLimit.init": "true",
+    "codeWithMe.voiceChat.enabledByDefault": "false",
+    "copilot.chat.legacySessionMetadata.migrated": "true",
+    "git-widget-placeholder": "feat/mobile-access-gate-toggle",
+    "kotlin-language-version-configured": "true",
+    "last_opened_file_path": "/Users/elvismakuthi/Public/WebstormProjects/royalgene-web/royalgene-eCommerce-portal/public",
+    "node.js.detected.package.eslint": "true",
+    "node.js.detected.package.tslint": "true",
+    "node.js.selected.package.eslint": "(autodetect)",
+    "node.js.selected.package.tslint": "(autodetect)",
+    "nodejs_package_manager_path": "npm",
+    "ts.external.directory.path": "/Applications/IntelliJ IDEA.app/Contents/plugins/javascript-plugin/jsLanguageServicesImpl/external"
+  }
+}]]></component>
+  <component name="RecentsManager">
+    <key name="CopyFile.RECENT_KEYS">
+      <recent name="$PROJECT_DIR$/public" />
+    </key>
+  </component>
+  <component name="RunManager">
+    <configuration default="true" type="JetRunConfigurationType">
+      <module name="royalgene-eCommerce-portal" />
+      <method v="2">
+        <option name="Make" enabled="true" />
+      </method>
+    </configuration>
+  </component>
+  <component name="ScaScanState">
+    <option name="scaScanTmpDirName" value="aik-sca-scan-1790579847231" />
+  </component>
+  <component name="SharedIndexes">
+    <attachedChunks>
+      <set>
+        <option value="bundled-jdk-30f59d01ecdd-37e91769500f-intellij.indexing.shared.core-IU-261.26222.65" />
+        <option value="bundled-js-predefined-d6986cc7102b-31caf2ab9e3c-JavaScript-IU-261.26222.65" />
+      </set>
+    </attachedChunks>
+  </component>
+  <component name="TaskManager">
+    <task active="true" id="Default" summary="Default task">
+      <changelist id="53124f75-4f6d-41b9-86f2-d9f8d085fd7c" name="Changes" comment="" />
+      <created>1786992184347</created>
+      <option name="number" value="Default" />
+      <option name="presentableId" value="Default" />
+      <updated>1786992184347</updated>
+    </task>
+    <servers />
+  </component>
+  <component name="TypeScriptGeneratedFilesManager">
+    <option name="version" value="3" />
+  </component>
+</project>
