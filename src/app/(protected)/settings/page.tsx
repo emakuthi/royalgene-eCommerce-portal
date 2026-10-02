@@ -64,6 +64,7 @@ import {
   getQuickBooksStatus, getQuickBooksAuthorizationUrl, disconnectQuickBooks, type QuickBooksStatus,
 } from '@/lib/integrations';
 import PermissionsTab from '@/components/settings/PermissionsTab';
+import CurrencyRatesPanel from '@/components/settings/CurrencyRatesPanel';
 
 // ── Tab config ────────────────────────────────────────────────────────────────
 const TABS = [
@@ -1128,6 +1129,10 @@ export default function PortalSettingsPage() {
                   </Button>
                 </div>
               </fieldset>
+            </Section>
+
+            <Section title="Exchange Rates" description="Live rates from Frankfurter (auto-synced daily), with per-workspace manual overrides. Used for converting amounts between currencies.">
+              <CurrencyRatesPanel canEdit={isBillingAdmin} />
             </Section>
           </>
         )}
