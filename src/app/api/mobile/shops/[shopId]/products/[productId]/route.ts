@@ -7,6 +7,7 @@ import { deleteUploadedFiles } from '@/lib/storage-usage.server';
 import { canViewCostData } from '@/lib/cost-visibility.server';
 import { hasCapability } from '@/lib/permissions.server';
 import { deleteProductsInOrg } from '@/lib/product-delete.server';
+import { trackActivity } from '@/lib/activity-tracker';
 
 /**
  * GET /api/mobile/shops/[shopId]/products/[productId]
@@ -268,6 +269,19 @@ export async function PUT(
       }
     }
 
+    // Snapshot old scalar values so we can record a before→after edit in the
+    // product history timeline (buildProductHistory reads these from activity_logs).
+    const auditFields = ['name', 'description', 'price', 'costPrice', 'brand', 'sku', 'category', 'featured', 'trending'];
+    const changedAuditKeys = auditFields.filter((k) => Object.prototype.hasOwnProperty.call(productUpdates, k));
+    let oldProductForAudit: Record<string, unknown> | null = null;
+    if (changedAuditKeys.length > 0) {
+      oldProductForAudit = (await supabaseAdmin
+        .from('Product')
+        .select(auditFields.join(', '))
+        .eq('id', resolvedProductId)
+        .maybeSingle()).data as Record<string, unknown> | null;
+    }
+
     if (Object.keys(productUpdates).length > 0) {
       // If images is being replaced, capture what's disappearing so the
       // corresponding files can be cleaned up from Storage afterward.
@@ -321,6 +335,26 @@ export async function PUT(
 
       if (removedImageUrls.length > 0) {
         void deleteUploadedFiles(removedImageUrls, auth.payload.organizationId);
+      }
+
+      // Record the field edit for the product history timeline (scalars only).
+      if (changedAuditKeys.length > 0 && oldProductForAudit) {
+        const changes = changedAuditKeys
+          .map((k) => ({ field: k, from: oldProductForAudit?.[k] ?? null, to: productUpdates[k] ?? null }))
+          .filter((c) => String(c.from ?? '') !== String(c.to ?? ''));
+        if (changes.length > 0) {
+          void trackActivity({
+            userId: auth.payload.userId,
+            organizationId: auth.payload.organizationId,
+            action: 'product.update',
+            category: 'product',
+            source: 'mobile',
+            resourceType: 'product',
+            resourceId: resolvedProductId,
+            shopId,
+            details: { changes },
+          });
+        }
       }
     }
 

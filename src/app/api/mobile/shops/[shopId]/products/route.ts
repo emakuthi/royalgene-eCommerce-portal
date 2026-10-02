@@ -7,6 +7,7 @@ import { createProductForShop } from '@/lib/portal-products';
 import { isValidClientId } from '@/lib/sync/syncable-entities';
 import { canViewCostData } from '@/lib/cost-visibility.server';
 import { hasCapability } from '@/lib/permissions.server';
+import { trackActivity } from '@/lib/activity-tracker';
 /**
  * GET /api/mobile/shops/[shopId]/products
  * Get available products in a shop with current stock levels
@@ -287,6 +288,22 @@ export async function POST(
       shopStockId: result.id,
       endpoint: `/api/mobile/shops/${shopId}/products`,
     });
+
+    // Record creation for the product history timeline ("Created by …").
+    const createdProductId = (product?.id ?? result.productId) as string | undefined;
+    if (createdProductId) {
+      void trackActivity({
+        userId: auth.payload.userId,
+        organizationId: auth.payload.organizationId,
+        action: 'product.create',
+        category: 'product',
+        source: 'mobile',
+        resourceType: 'product',
+        resourceId: createdProductId,
+        shopId,
+        details: { name: product?.name ?? productData.name, initialQuantity: result.quantity ?? stockData.quantity },
+      });
+    }
 
     return jsonResponse(
       {

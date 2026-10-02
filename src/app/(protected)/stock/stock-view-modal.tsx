@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ImageUpload } from '@/components/image-upload';
 import { X } from 'lucide-react';
+import ProductHistoryModal from './product-history-modal';
 import type { Product, ShopStock } from '@/lib/types';
 type ApiShopStock = ShopStock & { Product?: Product; product?: Product; shopName?: string };
 type ViewFormType = {
@@ -46,6 +47,8 @@ export default ({
   saving: boolean;
   deleting: boolean;
 }) => {
+  const [historyOpen, setHistoryOpen] = React.useState(false);
+
   if (!open) return null;
 
   const prod = (stock.product ?? stock.Product) as Product | undefined;
@@ -90,6 +93,7 @@ export default ({
               <p className="text-sm text-muted-foreground">SKU: {viewForm.sku}</p>
             </div>
             <div className="flex gap-2">
+              <Button type="button" variant="outline" onClick={() => setHistoryOpen(true)}>History</Button>
               <Button type="button" variant="ghost" onClick={onClose}>Close</Button>
             </div>
           </div>
@@ -177,6 +181,13 @@ export default ({
           </div>
         </div>
       </div>
+
+      <ProductHistoryModal
+        productId={prod?.id}
+        productName={viewForm.name || prod?.name}
+        open={historyOpen}
+        onClose={() => setHistoryOpen(false)}
+      />
     </div>
   );
 }

@@ -155,11 +155,16 @@ export async function POST(request: NextRequest) {
       // (debug) internal supabase error info is no longer returned to clients
     }
 
-    // Track product creation activity
-    const createdId = createdObj?.id ? String(createdObj.id) : undefined;
+    // Track product creation activity. resourceType/resourceId are normalised to
+    // the Product id (lowercase 'product') so buildProductHistory can find it —
+    // createProductForShop returns the ShopStock row with the Product nested.
+    const nestedProduct = createdObj?.Product as Record<string, unknown> | undefined;
+    const createdProductId = nestedProduct?.id
+      ? String(nestedProduct.id)
+      : (createdObj?.productId ? String(createdObj.productId) : undefined);
     void trackFromRequest(request, payload, {
       action: 'product.create', category: 'product',
-      resourceType: 'Product', resourceId: createdId,
+      resourceType: 'product', resourceId: createdProductId,
       shopId,
       details: { sku: productData.sku, name: productData.name, fallback: !!createdObj?.inMemoryFallback },
     });
@@ -454,6 +459,18 @@ export async function PUT(request: NextRequest) {
       removedImageUrls = oldImages.filter((url) => !newImages.includes(url));
     }
 
+    // Snapshot old scalar values for the product-history edit audit.
+    const auditFields = ['name', 'description', 'price', 'costPrice', 'brand', 'sku', 'featured', 'trending'];
+    const changedAuditKeys = auditFields.filter((k) => Object.prototype.hasOwnProperty.call(updates, k));
+    let oldProductForAudit: Record<string, unknown> | null = null;
+    if (changedAuditKeys.length > 0) {
+      oldProductForAudit = (await supabaseAdmin
+        .from('Product')
+        .select(auditFields.join(', '))
+        .eq('id', productId)
+        .maybeSingle()).data as Record<string, unknown> | null;
+    }
+
     updates.updatedAt = new Date().toISOString();
 
     const { data: updated, error: updateError } = await supabaseAdmin
@@ -472,11 +489,14 @@ export async function PUT(request: NextRequest) {
       void deleteUploadedFiles(removedImageUrls, payload.organizationId);
     }
 
-    // Track product update
+    // Track product update with before→after changes for the history timeline.
+    const changes = changedAuditKeys
+      .map((k) => ({ field: k, from: oldProductForAudit?.[k] ?? null, to: updates[k] ?? null }))
+      .filter((c) => String(c.from ?? '') !== String(c.to ?? ''));
     void trackFromRequest(request, payload, {
       action: 'product.update', category: 'product',
-      resourceType: 'Product', resourceId: productId,
-      details: { updatedFields: Object.keys(updates).filter(k => k !== 'updatedAt') },
+      resourceType: 'product', resourceId: productId,
+      details: { changes, updatedFields: Object.keys(updates).filter(k => k !== 'updatedAt') },
     });
 
     return jsonResponse({ success: true, data: updated }, 200);
