@@ -34,6 +34,10 @@ export interface Organization {
   customDomainStatus?: 'pending' | 'verified' | 'misconfigured' | null;
   /** KRA PIN for eTIMS-format invoice generation — an identifier, not a secret. */
   kraPin?: string | null;
+  /** Per-tenant base currency (ISO 4217, e.g. 'KES', 'USD'). All amounts are stored & entered in this currency. Default 'KES'. */
+  currency?: string | null;
+  /** Owner-set units of base currency per 1 USD — powers the display-only "≈ $" label. Null/<=0 or currency='USD' => no label. */
+  usdRate?: number | null;
   createdBy?: string | null;
   createdAt: string;
   updatedAt: string;
