@@ -18,7 +18,8 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import type { ShopStock, Product } from '@/lib/types';
-import { formatKESMajor } from '@/lib/format';
+import { formatMoneyMajor } from '@/lib/format';
+import { useBranding } from '@/lib/branding-context';
 import StockViewModal from './stock-view-modal';
 import StockTransferModal from './stock-transfer-modal';
 import VariantMatrixModal from './variant-matrix-modal';
@@ -66,6 +67,7 @@ type ViewFormType = {
 
 function StockManagementContent() {
   const { token, user: authUser } = useHydratedAuth();
+  const cur = useBranding().branding.currency;
   const { currentShop, _hasHydrated } = usePortalStore();
   const [mounted, setMounted] = useState(false);
   const [stocks, setStocks] = useState<ApiShopStock[]>([]);
@@ -518,7 +520,7 @@ function StockManagementContent() {
           <Card className="p-4">
             <CardContent>
               <p className="text-sm text-gray-500">Stock Value</p>
-              <h2 className="text-2xl font-bold">{formatKESMajor(metrics.stockValue)}</h2>
+              <h2 className="text-2xl font-bold">{formatMoneyMajor(metrics.stockValue, cur)}</h2>
               <p className="text-xs text-gray-400">Total inventory value</p>
             </CardContent>
           </Card>
@@ -707,8 +709,8 @@ function StockManagementContent() {
 
                   {/* Prices */}
                   <div className={`flex justify-between text-xs ${textSecondary} border-t ${tableBorder} pt-2`}>
-                    <span>Cost: <span className="font-semibold">{formatKESMajor(costPrice)}</span></span>
-                    <span>Sell: <span className="font-semibold">{formatKESMajor(sellPrice)}</span></span>
+                    <span>Cost: <span className="font-semibold">{formatMoneyMajor(costPrice, cur)}</span></span>
+                    <span>Sell: <span className="font-semibold">{formatMoneyMajor(sellPrice, cur)}</span></span>
                   </div>
                 </div>
               );
@@ -779,10 +781,10 @@ function StockManagementContent() {
                         <span className={`px-2 py-1 rounded-full text-xs ${status.className}`}>{status.label}</span>
                       </td>
                       <td className="py-3 px-4 text-center">
-                        <div className="font-semibold">{formatKESMajor(costPrice)}</div>
+                        <div className="font-semibold">{formatMoneyMajor(costPrice, cur)}</div>
                       </td>
                       <td className="py-3 px-4 text-center">
-                        <div className="font-semibold">{formatKESMajor(sellPrice)}</div>
+                        <div className="font-semibold">{formatMoneyMajor(sellPrice, cur)}</div>
                       </td>
                         <td className="py-3 px-4 text-center">
                           <DropdownMenu>

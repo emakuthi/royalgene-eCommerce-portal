@@ -2,10 +2,13 @@
 
 import React from 'react';
 import { Card, CardContent } from '@/components/ui/card';
+import { useBranding } from '@/lib/branding-context';
+import { formatMoneyMajor } from '@/lib/format';
 
 type Product = { name: string; sales: number; quantity: number };
 
 export default function TopProducts({ products }: { products?: Product[] }) {
+  const cur = useBranding().branding.currency;
   return (
     <Card>
       <CardContent>
@@ -21,7 +24,7 @@ export default function TopProducts({ products }: { products?: Product[] }) {
                   <div className="font-medium">{p.name}</div>
                 </div>
                 <div className="text-right">
-                  <div className="font-semibold">KES {p.sales.toLocaleString()}</div>
+                  <div className="font-semibold">{formatMoneyMajor(p.sales, cur)}</div>
                   <div className="text-xs text-green-600">{p.quantity} sold</div>
                 </div>
               </div>

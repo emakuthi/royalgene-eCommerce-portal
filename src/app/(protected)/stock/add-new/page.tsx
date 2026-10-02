@@ -10,6 +10,8 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { useHydratedAuth } from '@/lib/hooks';
+import { useBranding } from '@/lib/branding-context';
+import { formatMoney } from '@/lib/currency';
 import { usePortalStore } from '@/lib/store';
 import { toast } from 'sonner';
 import {
@@ -76,6 +78,7 @@ const CATEGORIES = [
 /* ------------------------------------------------------------------ */
 export default function AddNewProductPage() {
   const { token, user: authUser } = useHydratedAuth();
+  const cur = useBranding().branding.currency;
   const { currentShop, setCurrentShop } = usePortalStore();
   const router = useRouter();
 
@@ -417,7 +420,7 @@ export default function AddNewProductPage() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="space-y-1.5">
                     <Label htmlFor="cost-price">
-                      Cost Price (KES) <span className="text-red-500">*</span>
+                      Cost Price ({cur}) <span className="text-red-500">*</span>
                     </Label>
                     <Input
                       id="cost-price"
@@ -429,7 +432,7 @@ export default function AddNewProductPage() {
                   </div>
                   <div className="space-y-1.5">
                     <Label htmlFor="selling-price">
-                      Selling Price (KES) <span className="text-red-500">*</span>
+                      Selling Price ({cur}) <span className="text-red-500">*</span>
                     </Label>
                     <Input
                       id="selling-price"
@@ -446,7 +449,7 @@ export default function AddNewProductPage() {
                   <div className="flex items-center gap-2 text-sm px-3 py-2 rounded-lg bg-green-50 dark:bg-green-950/40 border border-green-200 dark:border-green-800">
                     <Info className="h-4 w-4 text-green-600 dark:text-green-400 shrink-0" />
                     <span className="text-green-700 dark:text-green-300">
-                      Profit margin: <strong>{margin}%</strong> (KES {(sellNum - costNum).toLocaleString()} per unit)
+                      Profit margin: <strong>{margin}%</strong> ({formatMoney(sellNum - costNum, cur)} per unit)
                     </span>
                   </div>
                 )}
@@ -656,11 +659,11 @@ export default function AddNewProductPage() {
 
                     <div className="flex justify-between">
                       <dt className="text-gray-500 dark:text-gray-400">Cost</dt>
-                      <dd>{costNum ? `KES ${costNum.toLocaleString()}` : '—'}</dd>
+                      <dd>{costNum ? formatMoney(costNum, cur) : '—'}</dd>
                     </div>
                     <div className="flex justify-between">
                       <dt className="text-gray-500 dark:text-gray-400">Price</dt>
-                      <dd>{sellNum ? `KES ${sellNum.toLocaleString()}` : '—'}</dd>
+                      <dd>{sellNum ? formatMoney(sellNum, cur) : '—'}</dd>
                     </div>
                     {margin !== null && (
                       <div className="flex justify-between">

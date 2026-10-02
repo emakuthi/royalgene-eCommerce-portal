@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input';
 import { ImageUpload } from '@/components/image-upload';
 import { X } from 'lucide-react';
 import ProductHistoryModal from './product-history-modal';
+import { useBranding } from '@/lib/branding-context';
 import type { Product, ShopStock } from '@/lib/types';
 type ApiShopStock = ShopStock & { Product?: Product; product?: Product; shopName?: string };
 type ViewFormType = {
@@ -48,6 +49,7 @@ export default ({
   deleting: boolean;
 }) => {
   const [historyOpen, setHistoryOpen] = React.useState(false);
+  const cur = useBranding().branding.currency;
 
   if (!open) return null;
 
@@ -150,11 +152,11 @@ export default ({
 
               <div className="grid grid-cols-2 gap-3 mt-3">
                 <div>
-                  <label className="block text-sm text-gray-600">Cost Price (KES)</label>
+                  <label className="block text-sm text-gray-600">Cost Price ({cur})</label>
                   <Input value={viewForm.costPrice} onChange={(e) => setViewForm({ ...viewForm, costPrice: e.target.value })} />
                 </div>
                 <div>
-                  <label className="block text-sm text-gray-600">Selling Price (KES)</label>
+                  <label className="block text-sm text-gray-600">Selling Price ({cur})</label>
                   <Input value={viewForm.sellingPrice} onChange={(e) => setViewForm({ ...viewForm, sellingPrice: e.target.value })} />
                 </div>
               </div>

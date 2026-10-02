@@ -11,6 +11,10 @@ export interface TenantBranding {
   logoUrl: string | null;
   /** Organization.faviconUrl — small resized data URI, or null for the default set */
   faviconUrl: string | null;
+  /** Organization.currency (ISO 4217) — the tenant's base currency for all money display. */
+  currency: string;
+  /** Organization.usdRate — owner-set units of base currency per 1 USD; null => no "≈ $" label. */
+  usdRate: number | null;
 }
 
 export const BRANDING_DEFAULTS: TenantBranding = {
@@ -18,6 +22,8 @@ export const BRANDING_DEFAULTS: TenantBranding = {
   tagline: 'Management Portal',
   logoUrl: null,
   faviconUrl: null,
+  currency: 'KES',
+  usdRate: null,
 };
 
 /** <link rel="icon"> hrefs shipped by default, restored when a tenant clears its custom favicon. */

@@ -4,6 +4,8 @@ import React, { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { useHydratedAuth } from '@/lib/hooks';
+import { useBranding } from '@/lib/branding-context';
+import { formatMoneyMajor } from '@/lib/format';
 import { formatDistanceToNow } from 'date-fns';
 import Link from 'next/link';
 
@@ -18,6 +20,7 @@ type SaleRow = {
 
 export default function RecentSales({ shopId, limit = 5 }: { shopId?: string; limit?: number }) {
   const { token, user, mounted } = useHydratedAuth();
+  const cur = useBranding().branding.currency;
   const [loading, setLoading] = useState(true);
   const [sales, setSales] = useState<SaleRow[]>([]);
 
@@ -98,10 +101,10 @@ export default function RecentSales({ shopId, limit = 5 }: { shopId?: string; li
               <div className="flex items-center justify-between">
                 <div>
                   <div className="font-medium">{s.product?.name ?? 'Sale'}</div>
-                  <div className="text-sm text-gray-500">{s.quantity ?? 1} × {`KES ${(s.totalAmount / 100).toFixed(2)}`}</div>
+                  <div className="text-sm text-gray-500">{s.quantity ?? 1} × {formatMoneyMajor(s.totalAmount, cur)}</div>
                   <div className="text-xs text-gray-400">{formatDistanceToNow(new Date(s.createdAt), { addSuffix: true })}</div>
                 </div>
-                <div className="text-sm font-semibold">KES {(s.totalAmount / 100).toLocaleString()}</div>
+                <div className="text-sm font-semibold">{formatMoneyMajor(s.totalAmount, cur)}</div>
               </div>
             </div>
           ))}

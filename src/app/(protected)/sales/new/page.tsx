@@ -7,6 +7,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useHydratedAuth } from '@/lib/hooks';
+import { useBranding } from '@/lib/branding-context';
+import { formatMoney } from '@/lib/currency';
 import { usePortalStore } from '@/lib/store';
 import { toast } from 'sonner';
 import PortalHeader from '@/components/portal/PortalHeader';
@@ -34,11 +36,12 @@ type RecentSale = {
   createdAt?: string | null;
 };
 
-function formatCurrency(amount: number) {
-  return `KES ${Number(amount).toFixed(2)}`;
+function formatCurrency(amount: number, currency: string = 'KES') {
+  return formatMoney(Number(amount), currency);
 }
 
 export default function NewSalePage() {
+  const cur = useBranding().branding.currency;
   const searchParams = useSearchParams();
   const router = useRouter();
   const { token } = useHydratedAuth();
@@ -483,7 +486,7 @@ export default function NewSalePage() {
                     <Input type="number" min={1} value={quantityInput} onChange={(e) => setQuantityInput(e.target.value)} onBlur={() => setFormData(prev => ({ ...prev, quantity: parseInt(quantityInput || '1', 10) || 1 }))} />
                   </div>
                   <div>
-                    <Label>Unit Price (KES) *</Label>
+                    <Label>Unit Price ({cur}) *</Label>
                     <Input type="number" step="0.01" value={unitPriceInput} onChange={(e) => setUnitPriceInput(e.target.value)} onBlur={() => setFormData(prev => ({ ...prev, unitPrice: parseFloat(unitPriceInput || '0') || 0 }))} />
                     {errors.unitPrice && <p className="text-sm text-red-600 mt-1">{errors.unitPrice}</p>}
                   </div>
@@ -539,7 +542,7 @@ export default function NewSalePage() {
                 </div>
 
                 <div>
-                  <p className="text-sm">Total: <strong>{formatCurrency(totalAmount)}</strong></p>
+                  <p className="text-sm">Total: <strong>{formatCurrency(totalAmount, cur)}</strong></p>
                 </div>
 
                 <div className="flex gap-3 pt-4">
@@ -574,7 +577,7 @@ export default function NewSalePage() {
                           <div className="text-sm font-medium">{s.productName ?? 'Product'}</div>
                           <div className="text-xs text-gray-500">Qty: {s.quantity} {s.createdAt ? `• ${new Date(s.createdAt).toLocaleString()}` : ''}</div>
                         </div>
-                        <div className="text-sm font-semibold">{formatCurrency(s.totalAmountCents || 0)}</div>
+                        <div className="text-sm font-semibold">{formatCurrency(s.totalAmountCents || 0, cur)}</div>
                       </li>
                     ))}
                   </ul>
@@ -594,7 +597,7 @@ export default function NewSalePage() {
                   </div>
                   <div>
                     <div className="text-xs text-gray-500">Revenue</div>
-                    <div className="text-lg font-semibold">{formatCurrency(salesStats.totalRevenueCents)}</div>
+                    <div className="text-lg font-semibold">{formatCurrency(salesStats.totalRevenueCents, cur)}</div>
                   </div>
                 </div>
                 <div className="mt-4 grid grid-cols-2 gap-4">

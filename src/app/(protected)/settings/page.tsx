@@ -190,10 +190,37 @@ export default function PortalSettingsPage() {
   const avatarInputRef = useRef<HTMLInputElement>(null);
   const logoInputRef = useRef<HTMLInputElement>(null);
   const faviconInputRef = useRef<HTMLInputElement>(null);
-  const { branding: serverBranding, set: setServerBranding } = useBranding();
+  const { branding: serverBranding, set: setServerBranding, refresh: refreshBranding } = useBranding();
   // Local editing buffer for the name/tagline inputs; images save immediately.
   const [branding, setBranding] = useState<TenantBranding>(serverBranding);
   const [brandingBusy, setBrandingBusy] = useState(false);
+
+  // Currency editing (owner-only) — shares the branding context as its carrier.
+  const [curDraft, setCurDraft] = useState<string>(serverBranding.currency || 'KES');
+  const [rateDraft, setRateDraft] = useState<string>(serverBranding.usdRate != null ? String(serverBranding.usdRate) : '');
+  const [curBusy, setCurBusy] = useState(false);
+
+  const handleSaveCurrency = async () => {
+    if (!token) return;
+    setCurBusy(true);
+    try {
+      const rate = curDraft === 'USD' ? null : (rateDraft.trim() === '' ? null : Number(rateDraft));
+      const res = await fetch('/api/portal/settings/currency', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ currency: curDraft, usdRate: rate }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (json?.success) {
+        await refreshBranding();
+        setCurDraft(json.data?.currency ?? curDraft);
+        setRateDraft(json.data?.usdRate != null ? String(json.data.usdRate) : '');
+        setSaved(true);
+      }
+    } finally {
+      setCurBusy(false);
+    }
+  };
 
   const [profileForm, setProfileForm] = useState({ name: '', phone: '' });
   const [pwForm, setPwForm] = useState({ current: '', next: '', confirm: '' });
@@ -1068,6 +1095,38 @@ export default function PortalSettingsPage() {
                   </Button>
                 </div>
               </div>
+              </fieldset>
+            </Section>
+
+            <Section title="Currency" description="The currency your shop's prices, sales, and reports are shown in. This does not convert existing amounts, and subscription billing is always charged in KES.">
+              <fieldset disabled={!isBillingAdmin || curBusy} className="disabled:opacity-60 space-y-4">
+                <FieldRow label="Workspace currency">
+                  <select
+                    value={curDraft}
+                    onChange={(e) => setCurDraft(e.target.value)}
+                    className="w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 py-2 text-sm"
+                  >
+                    {['KES', 'USD', 'EUR', 'GBP', 'NGN', 'TZS', 'UGX', 'ZAR'].map((c) => (
+                      <option key={c} value={c}>{c}</option>
+                    ))}
+                  </select>
+                </FieldRow>
+                {curDraft !== 'USD' && (
+                  <FieldRow label="Approx USD rate" hint={'Optional — shows a "≈ $" estimate next to amounts.'}>
+                    <input
+                      value={rateDraft}
+                      onChange={(e) => setRateDraft(e.target.value)}
+                      inputMode="decimal"
+                      placeholder={`1 USD = ? ${curDraft}`}
+                      className="w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 py-2 text-sm"
+                    />
+                  </FieldRow>
+                )}
+                <div className="pt-1">
+                  <Button type="button" onClick={handleSaveCurrency} disabled={curBusy}>
+                    {curBusy ? 'Saving…' : 'Save Currency'}
+                  </Button>
+                </div>
               </fieldset>
             </Section>
           </>

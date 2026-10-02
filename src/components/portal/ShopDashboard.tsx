@@ -5,10 +5,13 @@ import Link from 'next/link';
 import { Card, CardContent } from '@/components/ui/card';
 import StatCard from '@/components/ui/stat-card';
 import { Button } from '@/components/ui/button';
+import { useBranding } from '@/lib/branding-context';
+import { formatMoneyMajor } from '@/lib/format';
 
 import type { PortalDashboardStats } from '@/lib/types';
 
 export default function ShopDashboard({ stats, loading, shopName, portalUserPosition }: { stats: PortalDashboardStats | null; loading: boolean; shopId?: string; shopName?: string; portalUserPosition?: string }) {
+  const cur = useBranding().branding.currency;
   return (
     <div className="flex flex-col min-h-0 bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800">
       {/* Header */}
@@ -28,10 +31,10 @@ export default function ShopDashboard({ stats, loading, shopName, portalUserPosi
         {/* Stats Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           <Link href="/analytics">
-            <StatCard loading={loading} title="Sales Today" value={loading ? '-' : `KES ${(stats?.salesToday || 0).toLocaleString()}`} subtitle="Today's transactions" icon={<></>} />
+            <StatCard loading={loading} title="Sales Today" value={loading ? '-' : `${formatMoneyMajor(stats?.salesToday || 0, cur)}`} subtitle="Today's transactions" icon={<></>} />
           </Link>
           <Link href="/analytics">
-            <StatCard loading={loading} title="Profit" value={loading ? '-' : `KES ${(stats?.totalProfit || 0).toLocaleString()}`} subtitle="Total profit this month" icon={<></>} />
+            <StatCard loading={loading} title="Profit" value={loading ? '-' : `${formatMoneyMajor(stats?.totalProfit || 0, cur)}`} subtitle="Total profit this month" icon={<></>} />
           </Link>
           <Link href="/analytics">
             <StatCard loading={loading} title="Avg Margin" value={loading ? '-' : `${(stats?.averageMargin ?? 0).toFixed(1)}%`} subtitle="Average profit margin" icon={<></>} />
@@ -118,7 +121,7 @@ export default function ShopDashboard({ stats, loading, shopName, portalUserPosi
                       </p>
                     </div>
                     <div className="text-right font-semibold text-green-600">
-                      KES {product.sales.toLocaleString()}
+                      {formatMoneyMajor(product.sales, cur)}
                     </div>
                   </div>
                 ))}

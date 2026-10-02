@@ -3,15 +3,19 @@ import { supabaseAdmin } from './supabase-client';
 import { BRANDING_DEFAULTS, MAX_BRANDING_DATA_URI_BYTES, type TenantBranding } from './branding';
 import logger from './logger';
 
-const SELECT = 'name, tagline, logoUrl, faviconUrl';
+const SELECT = 'name, tagline, logoUrl, faviconUrl, currency, usdRate';
 
-function rowToBranding(row: { name?: string | null; tagline?: string | null; logoUrl?: string | null; faviconUrl?: string | null } | null): TenantBranding {
+function rowToBranding(row: { name?: string | null; tagline?: string | null; logoUrl?: string | null; faviconUrl?: string | null; currency?: string | null; usdRate?: number | string | null } | null): TenantBranding {
   if (!row) return BRANDING_DEFAULTS;
+  const rawRate = row.usdRate;
+  const usdRate = typeof rawRate === 'number' ? rawRate : rawRate == null ? null : Number(rawRate) || null;
   return {
     companyName: row.name?.trim() || BRANDING_DEFAULTS.companyName,
     tagline: row.tagline?.trim() || BRANDING_DEFAULTS.tagline,
     logoUrl: row.logoUrl || null,
     faviconUrl: row.faviconUrl || null,
+    currency: row.currency?.trim() || BRANDING_DEFAULTS.currency,
+    usdRate,
   };
 }
 

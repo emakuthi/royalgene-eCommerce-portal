@@ -11,7 +11,8 @@ import { useHydratedAuth } from '@/lib/hooks';
 import { toast } from 'sonner';
 import { getShops } from '@/lib/shops';
 import StatCard from '@/components/ui/stat-card';
-import { formatKESMajor } from '@/lib/format';
+import { formatMoneyMajor } from '@/lib/format';
+import { useBranding } from '@/lib/branding-context';
 import MuiDialog from '@mui/material/Dialog';
 import MuiDialogTitle from '@mui/material/DialogTitle';
 import MuiDialogContent from '@mui/material/DialogContent';
@@ -131,6 +132,7 @@ export default function ShopsPage() {
   }, [activeTab]);
 
   function ShopsPageInner() {
+    const cur = useBranding().branding.currency;
     return (
       <>
         <PortalHeader
@@ -161,7 +163,7 @@ export default function ShopsPage() {
           <div className="pt-4 grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
             <StatCard title="Total Shops" value={shops.length} subtitle="Active outlets" icon={<Store className="h-6 w-6 text-emerald-600" />} />
             <StatCard title="With Shopkeepers" value={shops.filter(s => s.shopkeeper).length} subtitle="Assigned managers" icon={<Users className="h-6 w-6 text-purple-600" />} />
-            <StatCard title="Total Revenue" value={formatKESMajor(12381.5)} subtitle="All outlets combined" icon={<span className="text-green-600">KES</span>} />
+            <StatCard title="Total Revenue" value={formatMoneyMajor(12381.5, cur)} subtitle="All outlets combined" icon={<span className="text-green-600 text-sm">{cur}</span>} />
             <StatCard title="Avg Performance" value="85%" subtitle="Target achievement" icon={<TrendingUp className="h-6 w-6 text-blue-600" />} />
           </div>
           {/* Tabs */}
@@ -275,7 +277,7 @@ export default function ShopsPage() {
             {activeTab === 'performance' && (
               <div className="space-y-4">
                 <div className="pt-4 grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-                  <StatCard title="Sales (7d)" value={formatKESMajor(45230.0)} subtitle="Last 7 days" icon={<TrendingUp className="h-6 w-6 text-green-600" />} />
+                  <StatCard title="Sales (7d)" value={formatMoneyMajor(45230.0, cur)} subtitle="Last 7 days" icon={<TrendingUp className="h-6 w-6 text-green-600" />} />
                   <StatCard title="Orders" value={128} subtitle="Last 7 days" icon={<Users className="h-6 w-6 text-blue-600" />} />
                   <StatCard title="Conversion" value="3.2%" subtitle="Store avg" icon={<Store className="h-6 w-6 text-purple-600" />} />
                 </div>

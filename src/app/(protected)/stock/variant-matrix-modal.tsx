@@ -1,4 +1,6 @@
 'use client';
+import { useBranding } from '@/lib/branding-context';
+import { currencySymbol } from '@/lib/currency';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';
@@ -48,6 +50,7 @@ export default function VariantMatrixModal({
   onSaved: (stockId: string, newTotal: number) => void;
 }) {
   const product = (stock.product ?? stock.Product) as Product | undefined;
+  const curSym = currencySymbol(useBranding().branding.currency);
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -335,7 +338,7 @@ export default function VariantMatrixModal({
                                 >
                                   <Tag className="w-3 h-3" />
                                   {override?.price !== undefined
-                                    ? `Ksh ${override.price}`
+                                    ? `${curSym} ${override.price}`
                                     : hasCustomPrice ? 'Custom cost' : 'Same price'}
                                 </button>
                               </div>

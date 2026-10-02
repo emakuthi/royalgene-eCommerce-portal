@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useState, useRef } from 'react';
+import { useBranding } from '@/lib/branding-context';
 import Image from 'next/image';
 import { useAuthStore } from '@/lib/store';
 import { ImageLightbox } from '@/components/image-lightbox';
@@ -63,6 +64,7 @@ function generateSkuFromName(name: string, category?: Category) {
 }
 
 export const ProductForm: React.FC<Props> = ({ editingProduct = null, onSaved, onCancel }) => {
+  const cur = useBranding().branding.currency;
   const { token } = useAuthStore();
 
   // local inputs
@@ -407,7 +409,7 @@ export const ProductForm: React.FC<Props> = ({ editingProduct = null, onSaved, o
                 {/* ── 3. Pricing & Inventory ── */}
                 <Box sx={{ mt: 1 }}>
                   <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(2,1fr)' }, gap: 2 }}>
-                    <TextField id="price" size="small" label="Price (KES)" required fullWidth type="number" value={formData.price} onChange={(e) => setFormData((p) => ({ ...p, price: Number(e.target.value) }))} sx={{ '& .MuiInputBase-root': { height: 40 } }} />
+                    <TextField id="price" size="small" label={`Price (${cur})`} required fullWidth type="number" value={formData.price} onChange={(e) => setFormData((p) => ({ ...p, price: Number(e.target.value) }))} sx={{ '& .MuiInputBase-root': { height: 40 } }} />
                     <TextField id="stock" size="small" label="Stock Quantity" required fullWidth type="number" value={formData.stockQuantity} onChange={(e) => setFormData((p) => ({ ...p, stockQuantity: Number(e.target.value) }))} sx={{ '& .MuiInputBase-root': { height: 40 } }} />
                   </Box>
                 </Box>
