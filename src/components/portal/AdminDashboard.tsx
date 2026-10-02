@@ -16,13 +16,13 @@ export default function AdminDashboard({ stats, loading, currentShopId }: { stat
         <div className="space-y-6 pt-2">
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <Link href="/analytics">
-              <StatCard loading={loading} title="Total Revenue" value={loading ? '-' : `${formatMoneyMajor((stats?.salesThisMonth) || 0, cur)}`} subtitle="Total sales this month" icon={<></>} />
+              <StatCard loading={loading} title="Total Revenue" value={loading ? '-' : `${formatMoneyMajor((stats?.salesThisMonth) || 0, cur)}`} subtitle="Total sales last 30 days" icon={<></>} />
             </Link>
             <Link href="/analytics">
               <StatCard loading={loading} title="Total Sales" value={loading ? '-' : `${Math.round((stats?.totalSales) || 0)}`} subtitle="Total transactions" icon={<></>} />
             </Link>
             <Link href="/analytics">
-              <StatCard loading={loading} title="Total Profit" value={loading ? '-' : `${formatMoneyMajor((stats?.totalProfit) || 0, cur)}`} subtitle="Profit this month" icon={<></>} />
+              <StatCard loading={loading} title="Total Profit" value={loading ? '-' : `${formatMoneyMajor((stats?.totalProfit) || 0, cur)}`} subtitle="Profit last 30 days" icon={<></>} />
             </Link>
             <Link href="/analytics">
               <StatCard loading={loading} title="Low Stock" value={loading ? '-' : stats?.lowStockProducts ?? 0} subtitle="Products need restocking" icon={<></>} />

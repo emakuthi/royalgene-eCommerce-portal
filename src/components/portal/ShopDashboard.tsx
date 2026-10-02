@@ -34,7 +34,7 @@ export default function ShopDashboard({ stats, loading, shopName, portalUserPosi
             <StatCard loading={loading} title="Sales Today" value={loading ? '-' : `${formatMoneyMajor(stats?.salesToday || 0, cur)}`} subtitle="Today's transactions" icon={<></>} />
           </Link>
           <Link href="/analytics">
-            <StatCard loading={loading} title="Profit" value={loading ? '-' : `${formatMoneyMajor(stats?.totalProfit || 0, cur)}`} subtitle="Total profit this month" icon={<></>} />
+            <StatCard loading={loading} title="Profit" value={loading ? '-' : `${formatMoneyMajor(stats?.totalProfit || 0, cur)}`} subtitle="Total profit last 30 days" icon={<></>} />
           </Link>
           <Link href="/analytics">
             <StatCard loading={loading} title="Avg Margin" value={loading ? '-' : `${(stats?.averageMargin ?? 0).toFixed(1)}%`} subtitle="Average profit margin" icon={<></>} />

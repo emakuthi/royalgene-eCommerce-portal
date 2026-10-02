@@ -65,7 +65,11 @@ export async function GET(request: NextRequest) {
     // Get current date and calculate date ranges
     const now = new Date();
     const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    // Rolling 30-day window (not calendar month) so recent sales always count —
+    // a calendar month resets Revenue/Profit/Sales to 0 on the 1st even when
+    // there was plenty of activity a few days earlier. (Field name kept as
+    // monthStart to avoid churn; it now means "30 days ago".)
+    const monthStart = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
 
     // Get today's sales
     const { data: todaysSales } = await supabaseAdmin
