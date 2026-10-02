@@ -27,6 +27,10 @@ export interface MobileAuthPayload {
     /** The tenant's own domain, when verified — the app prefers it as its API host. */
     customDomain: string | null;
     customDomainStatus: string | null;
+    /** Per-tenant base currency (ISO 4217). Defaults to 'KES'. */
+    currency: string;
+    /** Owner-set units of base currency per 1 USD — drives the app's "≈ $" label. Null => none. */
+    usdRate: number | null;
   } | null;
   shop: ReturnType<typeof formatShop> | null;
   shops?: ReturnType<typeof formatShop>[];
@@ -121,12 +125,29 @@ export async function buildMobileAuthResponse(
       .eq('id', user.organizationId)
       .maybeSingle();
     if (orgRow) {
+      // Best-effort currency fetch — kept as a SEPARATE query so that if the
+      // 20261002_01 migration hasn't been run yet (missing columns), it fails
+      // softly to defaults instead of breaking the whole org/login payload.
+      let currency = 'KES';
+      let usdRate: number | null = null;
+      const { data: curRow } = await supabaseAdmin
+        .from('Organization')
+        .select('currency, usdRate')
+        .eq('id', user.organizationId)
+        .maybeSingle();
+      if (curRow) {
+        currency = (curRow as { currency?: string }).currency || 'KES';
+        const r = (curRow as { usdRate?: number | null }).usdRate;
+        usdRate = typeof r === 'number' ? r : (r == null ? null : Number(r) || null);
+      }
       organization = {
         id: orgRow.id,
         name: orgRow.name,
         slug: orgRow.slug,
         customDomain: (orgRow.customDomain as string | null) ?? null,
         customDomainStatus: (orgRow.customDomainStatus as string | null) ?? null,
+        currency,
+        usdRate,
       };
     }
   }
