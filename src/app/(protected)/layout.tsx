@@ -17,6 +17,7 @@ import {
 import {
   Package,
   ShoppingCart,
+  Receipt,
   BarChart3,
   Settings,
   Home,
@@ -454,6 +455,7 @@ export default function ProtectedLayout({ children }: { children: React.ReactNod
         { label: 'Dashboard',       href: '/dashboard',  icon: <Home className="h-5 w-5" /> },
         { label: 'Inventory',       href: '/stock',       icon: <Package className="h-5 w-5" /> },
         { label: 'Sales',           href: '/sales',       icon: <ShoppingCart className="h-5 w-5" /> },
+        { label: 'Expenses',        href: '/expenses',    icon: <Receipt className="h-5 w-5" /> },
         { label: 'Analytics',       href: '/analytics',   icon: <BarChart3 className="h-5 w-5" /> },
         { label: 'Shops',           href: '/shops',       icon: <MapPin className="h-5 w-5" /> },
         { label: 'User Management', href: '/users',       icon: <Users className="h-5 w-5" /> },
