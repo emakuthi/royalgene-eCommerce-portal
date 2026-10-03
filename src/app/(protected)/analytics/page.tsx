@@ -203,7 +203,37 @@ function useTooltipStyle() {
 /* ------------------------------------------------------------------ */
 export default function AnalyticsPage() {
   const { token, user: authUser } = useHydratedAuth();
-  const cur = useBranding().branding.currency;
+  const cur = useBranding().branding.currency; // tenant base
+  // Reporting-currency: display-only conversion of base figures. Does not
+  // change stored data — just how totals are presented.
+  const [reportingCurrency, setReportingCurrency] = useState(cur);
+  const [reportCurrencies, setReportCurrencies] = useState<string[]>([cur]);
+  const [reportRate, setReportRate] = useState(1); // base → reportingCurrency
+
+  useEffect(() => {
+    if (!token) return;
+    (async () => {
+      try {
+        const res = await fetch('/api/currencies/active', { headers: { Authorization: `Bearer ${token}` } });
+        const j = await res.json();
+        if (j?.success && Array.isArray(j.data)) setReportCurrencies(j.data.map((c: { code: string }) => c.code));
+      } catch { /* keep default */ }
+    })();
+  }, [token]);
+
+  useEffect(() => {
+    if (!token || reportingCurrency === cur) { setReportRate(1); return; }
+    (async () => {
+      try {
+        const res = await fetch(`/api/exchange-rates/${cur}/${reportingCurrency}`, { headers: { Authorization: `Bearer ${token}` } });
+        const j = await res.json();
+        setReportRate(j?.success && j.data?.rate ? Number(j.data.rate) : 1);
+      } catch { setReportRate(1); }
+    })();
+  }, [reportingCurrency, cur, token]);
+
+  /** Format a BASE-currency amount in the selected reporting currency (display-only). */
+  const fmt = (base: number) => formatCurrency((base || 0) * reportRate, reportingCurrency);
   const { currentShop, _hasHydrated } = usePortalStore();
   const { theme } = useTheme();
   const tooltipStyle = useTooltipStyle();
@@ -372,12 +402,12 @@ export default function AnalyticsPage() {
     () =>
       salesData.map(item => ({
         date: new Date(item.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-        sales: Math.round(item.sales),
-        profit: Math.round(item.profit),
+        sales: Math.round(item.sales * reportRate),
+        profit: Math.round(item.profit * reportRate),
         transactions: item.transactions,
-        avgValue: Math.round(item.avgTransactionValue),
+        avgValue: Math.round(item.avgTransactionValue * reportRate),
       })),
-    [salesData],
+    [salesData, reportRate],
   );
 
   const productChartData = useMemo(
@@ -435,6 +465,17 @@ export default function AnalyticsPage() {
         description={shopName}
         breadcrumbs={[{ label: 'Portal', href: '/portal' }, { label: 'Analytics' }]}
         actions={
+          <div className="flex items-center gap-2">
+          {reportCurrencies.length > 1 && (
+            <select
+              value={reportingCurrency}
+              onChange={(e) => setReportingCurrency(e.target.value)}
+              title="Reporting currency"
+              className="rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 px-2 py-1.5 text-sm"
+            >
+              {reportCurrencies.map((c) => <option key={c} value={c}>{c}{c === cur ? ' (base)' : ''}</option>)}
+            </select>
+          )}
           <div className="flex items-center gap-1.5 rounded-lg bg-gray-100 dark:bg-gray-800 p-1">
             {DATE_RANGES.map(r => (
               <Button
@@ -453,6 +494,7 @@ export default function AnalyticsPage() {
               </Button>
             ))}
           </div>
+          </div>
         }
       />
 
@@ -469,7 +511,7 @@ export default function AnalyticsPage() {
           <KPICard
             loading={loading}
             title="Total Sales"
-            value={formatCurrency(summary.totalSales, cur)}
+            value={fmt(summary.totalSales)}
             subtitle={
               <span>
                 {summary.totalTransactions} transactions •{' '}
@@ -484,7 +526,7 @@ export default function AnalyticsPage() {
             title="Total Profit"
             value={
               <span className="text-green-600 dark:text-green-400">
-                {formatCurrency(summary.totalProfit, cur)}
+                {fmt(summary.totalProfit)}
               </span>
             }
             subtitle={`${marginPercent.toFixed(1)}% of sales`}
@@ -506,7 +548,7 @@ export default function AnalyticsPage() {
           <KPICard
             loading={loading}
             title="Per Transaction"
-            value={formatCurrency(summary.avgTransactionValue, cur)}
+            value={fmt(summary.avgTransactionValue)}
             subtitle="Average sale value"
             icon={<Activity className="h-5 w-5 text-purple-600" />}
             iconBg="bg-purple-100 dark:bg-purple-900/50"
@@ -547,9 +589,9 @@ export default function AnalyticsPage() {
                     </div>
                     <div>
                       <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Total value</p>
-                      <p className="mt-1 text-2xl font-bold text-gray-900 dark:text-white">{formatCurrency(inventory.totalRetailValue, cur)}</p>
+                      <p className="mt-1 text-2xl font-bold text-gray-900 dark:text-white">{fmt(inventory.totalRetailValue)}</p>
                       <p className="text-xs text-gray-500 dark:text-gray-400">
-                        at selling price{inventory.totalCostValue != null ? ` · ${formatCurrency(inventory.totalCostValue, cur)} at cost` : ''}
+                        at selling price{inventory.totalCostValue != null ? ` · ${fmt(inventory.totalCostValue)} at cost` : ''}
                       </p>
                     </div>
                   </div>
@@ -567,7 +609,7 @@ export default function AnalyticsPage() {
                               <span className="h-2.5 w-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: color }} />
                               {shop.shopName}
                             </span>
-                            <span className="font-semibold text-gray-900 dark:text-white">{formatCurrency(shop.retailValue, cur)}</span>
+                            <span className="font-semibold text-gray-900 dark:text-white">{fmt(shop.retailValue)}</span>
                           </div>
                           <p className="text-xs text-gray-500 dark:text-gray-400 pl-[18px]">
                             {shop.units.toLocaleString('en-KE')} unit{shop.units === 1 ? '' : 's'}
@@ -621,10 +663,10 @@ export default function AnalyticsPage() {
                     <CartesianGrid strokeDasharray="3 3" stroke={gridStroke} />
                     <XAxis dataKey="date" stroke={axisStroke} fontSize={12} tickLine={false} />
                     <YAxis stroke={axisStroke} fontSize={12} tickLine={false} />
-                    <Tooltip contentStyle={tooltipStyle} formatter={(value: number) => formatMoney(Number(value), cur)} />
+                    <Tooltip contentStyle={tooltipStyle} formatter={(value: number) => formatMoney(Number(value) * reportRate, reportingCurrency)} />
                     <Legend />
-                    <Area type="monotone" dataKey="sales" stroke="#3b82f6" strokeWidth={2} fillOpacity={1} fill="url(#gradSales)" name={`Sales (${cur})`} />
-                    <Area type="monotone" dataKey="profit" stroke="#10b981" strokeWidth={2} fillOpacity={1} fill="url(#gradProfit)" name={`Profit (${cur})`} />
+                    <Area type="monotone" dataKey="sales" stroke="#3b82f6" strokeWidth={2} fillOpacity={1} fill="url(#gradSales)" name={`Sales (${reportingCurrency})`} />
+                    <Area type="monotone" dataKey="profit" stroke="#10b981" strokeWidth={2} fillOpacity={1} fill="url(#gradProfit)" name={`Profit (${reportingCurrency})`} />
                   </AreaChart>
                 </ResponsiveContainer>
               </CardContent>
@@ -679,8 +721,8 @@ export default function AnalyticsPage() {
                       <CartesianGrid strokeDasharray="3 3" stroke={gridStroke} />
                       <XAxis dataKey="date" stroke={axisStroke} fontSize={12} tickLine={false} />
                       <YAxis stroke={axisStroke} fontSize={12} tickLine={false} />
-                      <Tooltip contentStyle={tooltipStyle} formatter={(value: number) => formatMoney(Number(value), cur)} />
-                      <Area type="monotone" dataKey="avgValue" stroke="#8b5cf6" strokeWidth={2} fillOpacity={1} fill="url(#gradAvg)" name={`Avg Value (${cur})`} />
+                      <Tooltip contentStyle={tooltipStyle} formatter={(value: number) => formatMoney(Number(value) * reportRate, reportingCurrency)} />
+                      <Area type="monotone" dataKey="avgValue" stroke="#8b5cf6" strokeWidth={2} fillOpacity={1} fill="url(#gradAvg)" name={`Avg Value (${reportingCurrency})`} />
                     </AreaChart>
                   </ResponsiveContainer>
                 </CardContent>
@@ -724,7 +766,7 @@ export default function AnalyticsPage() {
                           <Cell key={`cell-${index}`} fill={CHART_COLORS[index % CHART_COLORS.length]} />
                         ))}
                       </Pie>
-                      <Tooltip contentStyle={tooltipStyle} formatter={(value: number) => formatMoney(Number(value), cur)} />
+                      <Tooltip contentStyle={tooltipStyle} formatter={(value: number) => formatMoney(Number(value) * reportRate, reportingCurrency)} />
                     </PieChart>
                   </ResponsiveContainer>
                 </CardContent>
@@ -749,10 +791,10 @@ export default function AnalyticsPage() {
                       <CartesianGrid strokeDasharray="3 3" stroke={gridStroke} />
                       <XAxis dataKey="name" stroke={axisStroke} fontSize={12} tickLine={false} />
                       <YAxis stroke={axisStroke} fontSize={12} tickLine={false} />
-                      <Tooltip contentStyle={tooltipStyle} formatter={(value: number) => formatMoney(Number(value), cur)} />
+                      <Tooltip contentStyle={tooltipStyle} formatter={(value: number) => formatMoney(Number(value) * reportRate, reportingCurrency)} />
                       <Legend />
-                      <Bar dataKey="sales" fill="#3b82f6" radius={[4, 4, 0, 0]} name={`Sales (${cur})`} />
-                      <Bar dataKey="profit" fill="#10b981" radius={[4, 4, 0, 0]} name={`Profit (${cur})`} />
+                      <Bar dataKey="sales" fill="#3b82f6" radius={[4, 4, 0, 0]} name={`Sales (${reportingCurrency})`} />
+                      <Bar dataKey="profit" fill="#10b981" radius={[4, 4, 0, 0]} name={`Profit (${reportingCurrency})`} />
                     </BarChart>
                   </ResponsiveContainer>
                 )}
@@ -852,10 +894,10 @@ export default function AnalyticsPage() {
                       {/* Financials */}
                       <div className="text-right shrink-0">
                         <p className="font-semibold text-gray-900 dark:text-white">
-                          {formatCurrency(product.profit, cur)}
+                          {fmt(product.profit)}
                         </p>
                         <p className="text-xs text-gray-500 dark:text-gray-400">
-                          of {formatCurrency(product.totalSales, cur)}
+                          of {fmt(product.totalSales)}
                         </p>
                       </div>
                     </div>
