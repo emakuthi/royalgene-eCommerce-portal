@@ -1,6 +1,6 @@
 import 'server-only';
 import { supabaseAdmin } from './supabase-client';
-import { createExpense } from './expenses.server';
+import { createExpense, categoryNameMap } from './expenses.server';
 import logger from './logger';
 
 /**
@@ -28,14 +28,13 @@ export interface RecurringExpense {
   lastGeneratedDate: string | null;
 }
 
-function mapRow(row: Record<string, unknown>): RecurringExpense {
-  const cat = row.ExpenseCategory as { name?: string } | null | undefined;
+function mapRow(row: Record<string, unknown>, categoryName: string | null = null): RecurringExpense {
   return {
     id: row.id as string,
     organizationId: row.organizationId as string,
     shopId: (row.shopId as string) ?? null,
     categoryId: (row.categoryId as string) ?? null,
-    categoryName: cat?.name ?? null,
+    categoryName,
     amount: Number(row.amount) || 0,
     currency: (row.currency as string) || 'KES',
     description: (row.description as string) ?? null,
@@ -64,12 +63,14 @@ export function advanceDate(dateStr: string, frequency: Frequency, interval: num
 export async function listRecurring(organizationId: string): Promise<RecurringExpense[]> {
   const { data } = await supabaseAdmin
     .from('RecurringExpense')
-    .select('*, ExpenseCategory(name)')
+    .select('*')
     .eq('organizationId', organizationId)
     .is('deletedAt', null)
     .order('isActive', { ascending: false })
     .order('nextRunDate', { ascending: true });
-  return ((data as Record<string, unknown>[]) ?? []).map(mapRow);
+  const rows = (data as Record<string, unknown>[]) ?? [];
+  const names = await categoryNameMap(organizationId, rows.map((r) => r.categoryId as string | null));
+  return rows.map((r) => mapRow(r, names.get(r.categoryId as string) ?? null));
 }
 
 export async function createRecurring(
@@ -111,10 +112,12 @@ export async function createRecurring(
   const { data, error } = await supabaseAdmin
     .from('RecurringExpense')
     .insert([row])
-    .select('*, ExpenseCategory(name)')
+    .select('*')
     .maybeSingle();
   if (error || !data) { logger.warn('createRecurring failed', { error: error?.message }); return { ok: false, error: 'Failed to create recurring expense' }; }
-  return { ok: true, recurring: mapRow(data as Record<string, unknown>) };
+  const r = data as Record<string, unknown>;
+  const names = await categoryNameMap(organizationId, [r.categoryId as string | null]);
+  return { ok: true, recurring: mapRow(r, names.get(r.categoryId as string) ?? null) };
 }
 
 export async function updateRecurring(
@@ -134,10 +137,13 @@ export async function updateRecurring(
     .update(updates)
     .eq('id', id)
     .eq('organizationId', organizationId)
-    .select('*, ExpenseCategory(name)')
+    .select('*')
     .maybeSingle();
   if (error) { logger.warn('updateRecurring failed', { error: error.message }); return null; }
-  return data ? mapRow(data as Record<string, unknown>) : null;
+  if (!data) return null;
+  const r = data as Record<string, unknown>;
+  const names = await categoryNameMap(organizationId, [r.categoryId as string | null]);
+  return mapRow(r, names.get(r.categoryId as string) ?? null);
 }
 
 export async function deleteRecurring(id: string, organizationId: string): Promise<boolean> {

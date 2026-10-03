@@ -71,14 +71,13 @@ export async function updateCategory(id: string, organizationId: string, patch: 
   return (data as ExpenseCategory) ?? null;
 }
 
-function mapExpense(row: Record<string, unknown>): Expense {
-  const cat = row.ExpenseCategory as { name?: string } | null | undefined;
+function mapExpense(row: Record<string, unknown>, categoryName: string | null = null): Expense {
   return {
     id: row.id as string,
     organizationId: row.organizationId as string,
     shopId: (row.shopId as string) ?? null,
     categoryId: (row.categoryId as string) ?? null,
-    categoryName: cat?.name ?? null,
+    categoryName,
     amount: Number(row.amount) || 0,
     currency: (row.currency as string) || 'KES',
     exchangeRate: Number(row.exchangeRate) || 1,
@@ -90,13 +89,27 @@ function mapExpense(row: Record<string, unknown>): Expense {
   };
 }
 
+/**
+ * Resolve category names in one query rather than a PostgREST embed
+ * (`ExpenseCategory(name)`). The embed needs a declared FK between Expense and
+ * ExpenseCategory; that FK was never created, so the embed returns PGRST200 and
+ * every create/list silently failed. Looking the names up ourselves is robust
+ * to the schema cache and the missing constraint.
+ */
+export async function categoryNameMap(organizationId: string, ids: (string | null | undefined)[]): Promise<Map<string, string>> {
+  const unique = [...new Set(ids.filter((x): x is string => !!x))];
+  if (unique.length === 0) return new Map();
+  const { data } = await supabaseAdmin.from('ExpenseCategory').select('id, name').eq('organizationId', organizationId).in('id', unique);
+  return new Map(((data as { id: string; name: string }[]) ?? []).map((c) => [c.id, c.name]));
+}
+
 export async function listExpenses(
   organizationId: string,
   opts: { shopId?: string | null; from?: string; to?: string; categoryId?: string } = {},
 ): Promise<Expense[]> {
   let q = supabaseAdmin
     .from('Expense')
-    .select('*, ExpenseCategory(name)')
+    .select('*')
     .eq('organizationId', organizationId)
     .is('deletedAt', null);
   if (opts.shopId) q = q.eq('shopId', opts.shopId);
@@ -104,7 +117,9 @@ export async function listExpenses(
   if (opts.from) q = q.gte('expenseDate', opts.from);
   if (opts.to) q = q.lte('expenseDate', opts.to);
   const { data } = await q.order('expenseDate', { ascending: false }).limit(500);
-  return ((data as Record<string, unknown>[]) ?? []).map(mapExpense);
+  const rows = (data as Record<string, unknown>[]) ?? [];
+  const names = await categoryNameMap(organizationId, rows.map((r) => r.categoryId as string | null));
+  return rows.map((r) => mapExpense(r, names.get(r.categoryId as string) ?? null));
 }
 
 /** Total operating expenses (in base currency) over a window — used for Net Profit. */
@@ -144,9 +159,11 @@ export async function createExpense(
     expenseDate: input.expenseDate || new Date().toISOString().slice(0, 10),
     recordedBy: input.recordedBy ?? null,
   };
-  const { data, error } = await supabaseAdmin.from('Expense').insert([row]).select('*, ExpenseCategory(name)').maybeSingle();
+  const { data, error } = await supabaseAdmin.from('Expense').insert([row]).select('*').maybeSingle();
   if (error || !data) { logger.warn('createExpense failed', { error: error?.message }); return { ok: false, error: 'Failed to record expense' }; }
-  return { ok: true, expense: mapExpense(data as Record<string, unknown>) };
+  const names = await categoryNameMap(organizationId, [(data as Record<string, unknown>).categoryId as string | null]);
+  const r = data as Record<string, unknown>;
+  return { ok: true, expense: mapExpense(r, names.get(r.categoryId as string) ?? null) };
 }
 
 export async function updateExpense(
@@ -183,10 +200,13 @@ export async function updateExpense(
     .update(updates)
     .eq('id', id)
     .eq('organizationId', organizationId)
-    .select('*, ExpenseCategory(name)')
+    .select('*')
     .maybeSingle();
   if (error) { logger.warn('updateExpense failed', { error: error.message }); return null; }
-  return data ? mapExpense(data as Record<string, unknown>) : null;
+  if (!data) return null;
+  const r = data as Record<string, unknown>;
+  const names = await categoryNameMap(organizationId, [r.categoryId as string | null]);
+  return mapExpense(r, names.get(r.categoryId as string) ?? null);
 }
 
 export async function deleteExpense(id: string, organizationId: string): Promise<boolean> {
