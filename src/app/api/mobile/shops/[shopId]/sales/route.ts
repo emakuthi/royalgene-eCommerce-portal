@@ -14,6 +14,8 @@ import { isValidClientId } from '@/lib/sync/syncable-entities';
 import { idempotentInsert } from '@/lib/sync/idempotent-insert.server';
 import { canViewCostData } from '@/lib/cost-visibility.server';
 import { hasCapability } from '@/lib/permissions.server';
+import { getOrgCurrency } from '@/lib/currency.server';
+import { getRate } from '@/lib/exchange-rates.server';
 
 /**
  * POST /api/mobile/shops/[shopId]/sales
@@ -50,6 +52,7 @@ export async function POST(
       size,
       color,
       saleGroupId,
+      currency,
     } = body as {
       productId: string;
       quantity: number;
@@ -63,6 +66,8 @@ export async function POST(
       color?: string;
       /** Shared across every line item recorded in the same checkout — see 20260919_01_sale_group_id.sql. */
       saleGroupId?: string;
+      /** The currency the sale was recorded in (default = tenant base). unitPrice/totalAmount are in THIS currency. */
+      currency?: string;
     };
 
     if (!productId || typeof quantity !== 'number' || typeof unitPrice !== 'number') {
@@ -254,16 +259,35 @@ export async function POST(
       }, 409);
     }
 
-    // Calculate totals
+    // Calculate totals. unitPrice/totalAmount are in the SALE currency; the
+    // product's costPrice is in the tenant BASE currency, so profit must be
+    // computed in base: convert revenue to base, then subtract the base cost.
     const totalAmount = quantity * unitPrice;
+
+    const { currency: baseCurrency } = await getOrgCurrency(sRow['organizationId'] as string);
+    const saleCurrency = typeof currency === 'string' && /^[A-Za-z]{3}$/.test(currency) ? currency.toUpperCase() : baseCurrency;
+    let exchangeRate = 1;
+    if (saleCurrency !== baseCurrency) {
+      const r = await getRate(saleCurrency, baseCurrency, { organizationId: sRow['organizationId'] as string });
+      if (r == null || r <= 0) {
+        return jsonResponse({
+          success: false,
+          error: `No exchange rate for ${saleCurrency}→${baseCurrency}. Sync rates or set a manual override first.`,
+          code: 'NO_EXCHANGE_RATE',
+        }, 400);
+      }
+      exchangeRate = r;
+    }
+    const baseAmount = totalAmount * exchangeRate;
+
     // showCostOnSale only gates what's echoed back to the person who rang
     // this up (see cost-visibility.server.ts) — costPrice itself is always
     // persisted below, a snapshot at sale time, so Analytics/Reports/Sale
     // Detail can compute profit later regardless of who's looking.
     const showCostOnSale = await canViewCostData(auth.payload);
-    const costPrice = product.costPrice;
-    const profit = totalAmount - (costPrice * quantity);
-    const marginPercentage = totalAmount > 0 ? (profit / totalAmount) * 100 : 0;
+    const costPrice = product.costPrice; // base currency (product prices are base)
+    const profit = baseAmount - (costPrice * quantity); // base currency
+    const marginPercentage = baseAmount > 0 ? (profit / baseAmount) * 100 : 0;
 
     // Create sales entry — client id when supplied, else server-generated.
     const saleId = clientSaleId ?? uuidv4();
@@ -278,6 +302,9 @@ export async function POST(
       quantity,
       unitPrice,
       totalAmount,
+      currency: saleCurrency,
+      exchangeRate,
+      baseAmount,
       costPrice,
       paymentMethod: paymentMethod || 'cash',
       customerName: customerName || null,

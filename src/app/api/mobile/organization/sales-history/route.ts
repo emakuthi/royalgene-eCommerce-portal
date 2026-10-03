@@ -85,9 +85,9 @@ export async function GET(request: NextRequest) {
     }
 
     const totalSales = count || 0;
-    const totalAmount = (sales || []).reduce((sum: number, sale: Record<string, unknown>) => sum + ((sale.totalAmount as number) || 0), 0);
+    const totalAmount = (sales || []).reduce((sum: number, sale: Record<string, unknown>) => sum + ((((sale as Record<string, unknown>).baseAmount ?? sale.totalAmount) as number) || 0), 0);
     const totalProfit = (sales || []).reduce((sum: number, sale: Record<string, unknown>) => {
-      const profit = ((sale.totalAmount as number) || 0) - (((sale.costPrice as number) || 0) * ((sale.quantity as number) || 0));
+      const profit = ((((sale as Record<string, unknown>).baseAmount ?? sale.totalAmount) as number) || 0) - (((sale.costPrice as number) || 0) * ((sale.quantity as number) || 0));
       return sum + profit;
     }, 0);
 

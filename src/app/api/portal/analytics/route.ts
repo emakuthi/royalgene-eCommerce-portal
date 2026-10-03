@@ -36,7 +36,7 @@ interface ProductRow {
 function lineProfit(sale: SaleRecord): number {
   const cost = sale.costPrice;
   if (cost == null) return 0;
-  return (Number(sale.totalAmount) || 0) - cost * (Number(sale.quantity) || 0);
+  return (Number((sale as { baseAmount?: number }).baseAmount ?? sale.totalAmount) || 0) - cost * (Number(sale.quantity) || 0);
 }
 
 export async function GET(request: NextRequest) {
@@ -131,7 +131,7 @@ export async function GET(request: NextRequest) {
     const salesList: SaleRecord[] = Array.isArray(sales) ? (sales as unknown as SaleRecord[]) : [];
 
     salesList.forEach((sale) => {
-      const amt = Number(sale.totalAmount) || 0;
+      const amt = Number((sale as { baseAmount?: number }).baseAmount ?? sale.totalAmount) || 0;
       const profit = lineProfit(sale);
       totalSales += amt;
       totalProfit += profit;
@@ -175,11 +175,11 @@ export async function GET(request: NextRequest) {
       const profit = lineProfit(sale);
       const existing = dateMap.get(dateStr);
       if (existing) {
-        existing.sales += Number(sale.totalAmount) || 0;
+        existing.sales += Number((sale as { baseAmount?: number }).baseAmount ?? sale.totalAmount) || 0;
         existing.transactions += 1;
         existing.profit += profit;
       } else {
-        dateMap.set(dateStr, { date: dateStr, sales: Number(sale.totalAmount) || 0, transactions: 1, profit });
+        dateMap.set(dateStr, { date: dateStr, sales: Number((sale as { baseAmount?: number }).baseAmount ?? sale.totalAmount) || 0, transactions: 1, profit });
       }
     });
 

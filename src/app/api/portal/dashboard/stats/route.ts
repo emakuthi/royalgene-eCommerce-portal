@@ -93,8 +93,8 @@ export async function GET(request: NextRequest) {
     const months: SaleRecord[] = Array.isArray(monthSales) ? (monthSales as unknown as SaleRecord[]) : [];
 
     // Calculate totals
-    const salesToday = todays.reduce((sum: number, sale: SaleRecord) => sum + (Number(sale.totalAmount) || 0), 0);
-    const salesThisMonth = months.reduce((sum: number, sale: SaleRecord) => sum + (Number(sale.totalAmount) || 0), 0);
+    const salesToday = todays.reduce((sum: number, sale: SaleRecord) => sum + (Number((sale as { baseAmount?: number }).baseAmount ?? sale.totalAmount) || 0), 0);
+    const salesThisMonth = months.reduce((sum: number, sale: SaleRecord) => sum + (Number((sale as { baseAmount?: number }).baseAmount ?? sale.totalAmount) || 0), 0);
 
     const profitThisMonth = months.reduce((sum: number, sale: SaleRecord) => {
       const profitData = Array.isArray(sale.ProfitMargin) ? sale.ProfitMargin[0] as ProfitMarginRow : sale.ProfitMargin as ProfitMarginRow | undefined;
@@ -124,12 +124,12 @@ export async function GET(request: NextRequest) {
       const existing = productSalesMap.get(pid);
       if (existing) {
         existing.quantity += sale.quantity || 0;
-        existing.sales += Number(sale.totalAmount) || 0;
+        existing.sales += Number((sale as { baseAmount?: number }).baseAmount ?? sale.totalAmount) || 0;
       } else {
         productSalesMap.set(pid, {
           name: '',
           quantity: sale.quantity || 0,
-          sales: Number(sale.totalAmount) || 0,
+          sales: Number((sale as { baseAmount?: number }).baseAmount ?? sale.totalAmount) || 0,
         });
       }
     });

@@ -12,6 +12,8 @@ import { generateTaxInvoiceForSale } from '@/lib/etims/tax-invoice.server';
 import { syncSaleToQuickBooks } from '@/lib/accounting/sync-sale-to-quickbooks.server';
 import { assertCanCreate } from '@/lib/entitlements/enforce.server';
 import { canViewCostData } from '@/lib/cost-visibility.server';
+import { getOrgCurrency } from '@/lib/currency.server';
+import { getRate } from '@/lib/exchange-rates.server';
 
 export async function POST(request: NextRequest) {
   const startTime = Date.now();
@@ -33,6 +35,7 @@ export async function POST(request: NextRequest) {
       notes,
       size,
       color,
+      currency,
     } = await request.json();
 
     logger.info('Sales entry attempt', { shopStockId: shopStockId || null, shopId: payloadShopId, productId: payloadProductId, quantity, userId: payload.userId, endpoint: '/api/portal/sales' });
@@ -236,9 +239,24 @@ export async function POST(request: NextRequest) {
     }
 
     const totalAmount = quantity * unitPrice;
-    const costPrice = product.costPrice;
-    const profit = totalAmount - (costPrice * quantity);
-    const marginPercentage = totalAmount > 0 ? (profit / totalAmount) * 100 : 0;
+
+    // Per-transaction currency: unitPrice/totalAmount are in the sale currency;
+    // costPrice is base. Convert revenue to base, freeze the rate, profit in base.
+    const { currency: baseCurrency } = await getOrgCurrency(organizationId);
+    const saleCurrency = typeof currency === 'string' && /^[A-Za-z]{3}$/.test(currency) ? currency.toUpperCase() : baseCurrency;
+    let exchangeRate = 1;
+    if (saleCurrency !== baseCurrency) {
+      const r = await getRate(saleCurrency, baseCurrency, { organizationId });
+      if (r == null || r <= 0) {
+        return jsonResponse({ success: false, error: `No exchange rate for ${saleCurrency}→${baseCurrency}. Sync rates or set a manual override first.` }, 400);
+      }
+      exchangeRate = r;
+    }
+    const baseAmount = totalAmount * exchangeRate;
+
+    const costPrice = product.costPrice; // base currency
+    const profit = baseAmount - (costPrice * quantity); // base currency
+    const marginPercentage = baseAmount > 0 ? (profit / baseAmount) * 100 : 0;
 
     // Create sales entry
     const saleId = uuidv4();
@@ -255,6 +273,9 @@ export async function POST(request: NextRequest) {
         quantity,
         unitPrice,
         totalAmount,
+        currency: saleCurrency,
+        exchangeRate,
+        baseAmount,
         costPrice,
         paymentMethod,
         customerName: customerName || null,
@@ -281,7 +302,7 @@ export async function POST(request: NextRequest) {
         organizationId,
         salesEntryId: saleId,
         costPrice: costPrice * quantity,
-        sellingPrice: totalAmount,
+        sellingPrice: baseAmount,
         profit,
         marginPercentage,
         createdAt: now,
