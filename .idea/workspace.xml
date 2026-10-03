@@ -5,10 +5,7 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="53124f75-4f6d-41b9-86f2-d9f8d085fd7c" name="Changes" comment="">
-      <change beforePath="$PROJECT_DIR$/src/app/(protected)/platform/page.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/src/app/(protected)/platform/page.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/app/api/platform/settings/route.ts" beforeDir="false" afterPath="$PROJECT_DIR$/src/app/api/platform/settings/route.ts" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/lib/mobile-auth-response.server.ts" beforeDir="false" afterPath="$PROJECT_DIR$/src/lib/mobile-auth-response.server.ts" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/lib/platform-settings.server.ts" beforeDir="false" afterPath="$PROJECT_DIR$/src/lib/platform-settings.server.ts" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -69,7 +66,7 @@
     "RunOnceActivity.typescript.service.memoryLimit.init": "true",
     "codeWithMe.voiceChat.enabledByDefault": "false",
     "copilot.chat.legacySessionMetadata.migrated": "true",
-    "git-widget-placeholder": "feat/mobile-access-gate-toggle",
+    "git-widget-placeholder": "feat/sales-currency",
     "kotlin-language-version-configured": "true",
     "last_opened_file_path": "/Users/elvismakuthi/Public/WebstormProjects/royalgene-web/royalgene-eCommerce-portal/public",
     "node.js.detected.package.eslint": "true",

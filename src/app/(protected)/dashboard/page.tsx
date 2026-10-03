@@ -72,6 +72,8 @@ function PortalDashboardContent() {
         // Aggregate
         let totalSales = 0;
         let totalProfit = 0;
+        let totalExpenses = 0;
+        let netProfit = 0;
         let salesToday = 0;
         let averageMarginAcc = 0;
         let marginCount = 0;
@@ -82,6 +84,8 @@ function PortalDashboardContent() {
           if (!s) continue;
           totalSales += s.salesThisMonth || 0;
           totalProfit += s.totalProfit || 0;
+          totalExpenses += s.totalExpenses || 0;
+          netProfit += s.netProfit || 0;
           salesToday += s.salesToday || 0;
           // averageMargin is always a number in the API shape; accumulate and count
           averageMarginAcc += s.averageMargin;
@@ -107,6 +111,8 @@ function PortalDashboardContent() {
           totalSales,
           totalProfit,
           averageMargin,
+          totalExpenses,
+          netProfit,
           lowStockProducts,
           topSellingProducts,
           salesToday,

@@ -96,16 +96,35 @@ export async function GET(request: NextRequest) {
     const salesToday = todays.reduce((sum: number, sale: SaleRecord) => sum + (Number((sale as { baseAmount?: number }).baseAmount ?? sale.totalAmount) || 0), 0);
     const salesThisMonth = months.reduce((sum: number, sale: SaleRecord) => sum + (Number((sale as { baseAmount?: number }).baseAmount ?? sale.totalAmount) || 0), 0);
 
-    const profitThisMonth = months.reduce((sum: number, sale: SaleRecord) => {
-      const profitData = Array.isArray(sale.ProfitMargin) ? sale.ProfitMargin[0] as ProfitMarginRow : sale.ProfitMargin as ProfitMarginRow | undefined;
-      return sum + (profitData?.profit || 0);
-    }, 0);
+    // Gross profit from the per-sale cost SNAPSHOT (costPrice × qty), the same
+    // rule analytics uses. The old ProfitMargin-join is never written to, so it
+    // reported 0 profit regardless of actual sales.
+    const lineProfit = (sale: SaleRecord): number => {
+      const cost = (sale as { costPrice?: number | null }).costPrice;
+      if (cost == null) return 0;
+      const amt = Number((sale as { baseAmount?: number }).baseAmount ?? sale.totalAmount) || 0;
+      return amt - cost * (Number(sale.quantity) || 0);
+    };
+    const profitThisMonth = months.reduce((sum, sale) => sum + lineProfit(sale), 0);
+    const averageMargin = salesThisMonth > 0 ? (profitThisMonth / salesThisMonth) * 100 : 0;
 
-    const marginSum = months.reduce((sum: number, sale: SaleRecord) => {
-      const profitData = Array.isArray(sale.ProfitMargin) ? sale.ProfitMargin[0] as ProfitMarginRow : sale.ProfitMargin as ProfitMarginRow | undefined;
-      return sum + (profitData?.marginPercentage || 0);
-    }, 0);
-    const averageMargin = months.length > 0 ? marginSum / months.length : 0;
+    // Operating expenses over the same rolling 30-day window, this shop only.
+    let expensesThisMonth = 0;
+    if (payload.organizationId) {
+      const { data: expenseRows } = await supabaseAdmin
+        .from('Expense')
+        .select('baseAmount')
+        .eq('organizationId', payload.organizationId)
+        .eq('shopId', shopId)
+        .is('deletedAt', null)
+        .gte('expenseDate', monthStart.toISOString().slice(0, 10))
+        .lte('expenseDate', now.toISOString().slice(0, 10));
+      expensesThisMonth = ((expenseRows as { baseAmount: number }[]) ?? []).reduce(
+        (sum, e) => sum + (Number(e.baseAmount) || 0),
+        0,
+      );
+    }
+    const netProfitThisMonth = profitThisMonth - expensesThisMonth;
 
     // Get low stock items
     const { data: allStockItems } = await supabaseAdmin
@@ -165,7 +184,7 @@ export async function GET(request: NextRequest) {
     // Cost/profit are owner-only (see cost-visibility.server.ts).
     const showCost = await canViewCostData(payload);
 
-    return jsonResponse({ success: true, data: { totalSales: salesThisMonth, totalProfit: showCost ? profitThisMonth : null, averageMargin: showCost ? averageMargin : null, lowStockProducts: lowStockItems.length, topSellingProducts, salesToday, salesThisMonth } }, 200);
+    return jsonResponse({ success: true, data: { totalSales: salesThisMonth, totalProfit: showCost ? profitThisMonth : null, averageMargin: showCost ? averageMargin : null, totalExpenses: showCost ? expensesThisMonth : null, netProfit: showCost ? netProfitThisMonth : null, lowStockProducts: lowStockItems.length, topSellingProducts, salesToday, salesThisMonth } }, 200);
   } catch (error) {
     logger.error('Dashboard stats error', {
       error: error instanceof Error ? error.message : String(error),

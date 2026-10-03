@@ -25,6 +25,8 @@ import {
   ArrowDownRight,
   Minus,
   LayoutGrid,
+  Receipt,
+  Wallet,
 } from 'lucide-react';
 import {
   BarChart,
@@ -96,6 +98,14 @@ interface InventoryValuation {
   totalRetailValue: number;
   totalCostValue: number | null;
   shops: ShopValuation[];
+}
+
+interface PnlMonth {
+  month: string; // YYYY-MM
+  revenue: number;
+  grossProfit: number;
+  expenses: number;
+  netProfit: number;
 }
 
 const CHART_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6'];
@@ -249,11 +259,19 @@ export default function AnalyticsPage() {
     totalSales: 0,
     totalProfit: 0,
     avgMargin: 0,
+    totalExpenses: 0,
+    netProfit: 0,
+    netMargin: 0,
     totalTransactions: 0,
     avgTransactionValue: 0,
     bestDay: 0,
     worstDay: 0,
   });
+
+  // Monthly profit-and-loss trend (gross vs net, expenses) — see /api/portal/analytics/pnl
+  const [pnl, setPnl] = useState<PnlMonth[]>([]);
+  // Profit/expense figures are owner/admin-only (API returns null otherwise).
+  const [canSeeProfit, setCanSeeProfit] = useState(true);
 
   // Org-wide stock on hand and its value, per shop — admins only, and
   // deliberately independent of dateRange/currentShop (see the API route's
@@ -328,6 +346,7 @@ export default function AnalyticsPage() {
 
             setSalesData(processedSalesData);
             setTopProducts(processedProducts);
+            setCanSeeProfit(rawSummary.totalProfit !== null && rawSummary.totalProfit !== undefined);
 
             const totalTransactions = rawSummary.totalTransactions || 0;
             const avgValue = totalTransactions > 0 ? rawSummary.totalSales / totalTransactions : 0;
@@ -338,6 +357,9 @@ export default function AnalyticsPage() {
               totalSales: rawSummary.totalSales || 0,
               totalProfit: rawSummary.totalProfit || 0,
               avgMargin: rawSummary.avgMargin || 0,
+              totalExpenses: rawSummary.totalExpenses || 0,
+              netProfit: rawSummary.netProfit || 0,
+              netMargin: rawSummary.netMargin || 0,
               totalTransactions,
               avgTransactionValue: avgValue,
               bestDay: bestDayProfit,
@@ -389,6 +411,26 @@ export default function AnalyticsPage() {
     })();
   }, [mounted, _hasHydrated, token, authUser?.role]);
 
+  // Monthly P&L trend (gross vs net profit). Independent of the week/month/year
+  // range selector — always the last 6 calendar months — but respects the shop
+  // filter so a single-shop view shows that shop's own P&L.
+  useEffect(() => {
+    if (!mounted || !_hasHydrated || !token) return;
+    const admin = authUser?.role === 'admin' || authUser?.role === 'super_admin';
+    const shopId = currentShop?.id;
+    if (!shopId && !admin) { setPnl([]); return; }
+    (async () => {
+      try {
+        const url = shopId
+          ? `/api/portal/analytics/pnl?shopId=${shopId}&months=6`
+          : `/api/portal/analytics/pnl?months=6`;
+        const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` }, cache: 'no-store' });
+        const j = await res.json();
+        if (res.ok && j.success && Array.isArray(j.data)) setPnl(j.data);
+      } catch { /* leave empty */ }
+    })();
+  }, [mounted, _hasHydrated, token, currentShop, authUser?.role]);
+
   /* ---- derived ---- */
   const isAdmin = authUser?.role === 'admin' || authUser?.role === 'super_admin';
   const filteredProducts = useMemo(() => {
@@ -435,6 +477,28 @@ export default function AnalyticsPage() {
 
   const marginPercent =
     summary.totalSales > 0 ? ((summary.totalProfit / summary.totalSales) * 100) : 0;
+
+  // P&L trend chart (gross vs net profit + expenses per month), converted to
+  // the reporting currency.
+  const pnlChartData = useMemo(
+    () =>
+      pnl.map(m => ({
+        month: new Date(`${m.month}-01T00:00:00Z`).toLocaleDateString('en-US', { month: 'short', year: '2-digit' }),
+        gross: Math.round(m.grossProfit * reportRate),
+        net: Math.round(m.netProfit * reportRate),
+        expenses: Math.round(m.expenses * reportRate),
+      })),
+    [pnl, reportRate],
+  );
+
+  // Month-over-month change in net profit (latest full month vs the one before).
+  const netMoM = useMemo(() => {
+    if (pnl.length < 2) return null;
+    const curr = pnl[pnl.length - 1].netProfit;
+    const prev = pnl[pnl.length - 2].netProfit;
+    if (prev === 0) return curr === 0 ? 0 : null; // undefined % when prior month was flat
+    return ((curr - prev) / Math.abs(prev)) * 100;
+  }, [pnl]);
 
   /* ---- loading / empty states ---- */
   if (!mounted) {
@@ -523,16 +587,54 @@ export default function AnalyticsPage() {
           />
           <KPICard
             loading={loading}
-            title="Total Profit"
+            title="Gross Profit"
             value={
               <span className="text-green-600 dark:text-green-400">
                 {fmt(summary.totalProfit)}
               </span>
             }
-            subtitle={`${marginPercent.toFixed(1)}% of sales`}
+            subtitle={`${marginPercent.toFixed(1)}% margin · before expenses`}
             icon={<DollarSign className="h-5 w-5 text-green-600" />}
             iconBg="bg-green-100 dark:bg-green-900/50"
           />
+          {canSeeProfit && (
+            <KPICard
+              loading={loading}
+              title="Expenses"
+              value={
+                <span className="text-rose-600 dark:text-rose-400">
+                  {fmt(summary.totalExpenses)}
+                </span>
+              }
+              subtitle="Operating expenses this period"
+              icon={<Receipt className="h-5 w-5 text-rose-600" />}
+              iconBg="bg-rose-100 dark:bg-rose-900/50"
+            />
+          )}
+          {canSeeProfit && (
+            <KPICard
+              loading={loading}
+              title="Net Profit"
+              value={
+                <span className={summary.netProfit >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}>
+                  {fmt(summary.netProfit)}
+                </span>
+              }
+              subtitle={
+                <span className="inline-flex flex-wrap items-center gap-x-2">
+                  <span>{summary.netMargin.toFixed(1)}% margin · after expenses</span>
+                  {netMoM != null && (
+                    <span className="inline-flex items-center gap-1">
+                      <span className="text-gray-400">MoM</span>
+                      <TrendIndicator value={netMoM} />
+                    </span>
+                  )}
+                </span>
+              }
+              icon={<Wallet className="h-5 w-5 text-emerald-600" />}
+              iconBg="bg-emerald-100 dark:bg-emerald-900/50"
+            />
+          )}
           <KPICard
             loading={loading}
             title="Avg Margin"
@@ -541,7 +643,7 @@ export default function AnalyticsPage() {
                 {summary.avgMargin.toFixed(1)}%
               </span>
             }
-            subtitle="Profit margin"
+            subtitle="Gross profit margin"
             icon={<TrendingUp className="h-5 w-5 text-indigo-600" />}
             iconBg="bg-indigo-100 dark:bg-indigo-900/50"
           />
@@ -627,6 +729,39 @@ export default function AnalyticsPage() {
                   </div>
                 </div>
               )}
+            </CardContent>
+          </Card>
+        )}
+
+        {/* ============================================ */}
+        {/*  PROFIT & LOSS TREND (MoM)                   */}
+        {/* ============================================ */}
+        {pnlChartData.some(m => m.gross !== 0 || m.expenses !== 0) && (
+          <Card>
+            <CardHeader>
+              <div className="flex items-center gap-2">
+                <Wallet className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
+                <div>
+                  <CardTitle>Profit &amp; Loss Trend</CardTitle>
+                  <CardDescription>
+                    Gross profit, expenses and net profit per month — last 6 months
+                  </CardDescription>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <ResponsiveContainer width="100%" height={320}>
+                <BarChart data={pnlChartData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke={gridStroke} />
+                  <XAxis dataKey="month" stroke={axisStroke} fontSize={12} tickLine={false} />
+                  <YAxis stroke={axisStroke} fontSize={12} tickLine={false} />
+                  <Tooltip contentStyle={tooltipStyle} formatter={(value: number) => formatMoney(Number(value), reportingCurrency)} />
+                  <Legend />
+                  <Bar dataKey="gross" fill="#10b981" radius={[4, 4, 0, 0]} name={`Gross profit (${reportingCurrency})`} />
+                  <Bar dataKey="expenses" fill="#f43f5e" radius={[4, 4, 0, 0]} name={`Expenses (${reportingCurrency})`} />
+                  <Bar dataKey="net" fill="#6366f1" radius={[4, 4, 0, 0]} name={`Net profit (${reportingCurrency})`} />
+                </BarChart>
+              </ResponsiveContainer>
             </CardContent>
           </Card>
         )}
