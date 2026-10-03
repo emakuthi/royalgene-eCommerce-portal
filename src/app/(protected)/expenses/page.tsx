@@ -9,13 +9,20 @@ import { useBranding } from '@/lib/branding-context';
 import { formatMoney } from '@/lib/currency';
 import { toast } from 'sonner';
 import PortalHeader from '@/components/portal/PortalHeader';
-import { Trash2, Plus } from 'lucide-react';
+import { Trash2, Plus, Download, Play, Repeat } from 'lucide-react';
 
 interface Category { id: string; name: string; isActive: boolean }
 interface Shop { id: string; name: string }
 interface Expense {
   id: string; shopId: string | null; categoryId: string | null; categoryName: string | null;
   amount: number; currency: string; baseAmount: number; description: string | null; expenseDate: string;
+}
+type Frequency = 'daily' | 'weekly' | 'monthly';
+interface Recurring {
+  id: string; shopId: string | null; categoryId: string | null; categoryName: string | null;
+  amount: number; currency: string; description: string | null;
+  frequency: Frequency; interval: number; nextRunDate: string; endDate: string | null;
+  isActive: boolean; lastGeneratedDate: string | null;
 }
 
 export default function ExpensesPage() {
@@ -38,22 +45,33 @@ export default function ExpensesPage() {
   const [saving, setSaving] = useState(false);
   const [newCategory, setNewCategory] = useState('');
 
+  // Recurring templates
+  const [recurring, setRecurring] = useState<Recurring[]>([]);
+  const [rFrequency, setRFrequency] = useState<Frequency>('monthly');
+  const [rInterval, setRInterval] = useState('1');
+  const [rStartDate, setRStartDate] = useState(new Date().toISOString().slice(0, 10));
+  const [rEndDate, setREndDate] = useState('');
+  const [rSaving, setRSaving] = useState(false);
+  const [running, setRunning] = useState(false);
+
   const authHeaders = useCallback(() => ({ 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }), [token]);
 
   const loadAll = useCallback(async () => {
     if (!token) return;
     setLoading(true);
     try {
-      const [cats, shopsRes, curRes, exp] = await Promise.all([
+      const [cats, shopsRes, curRes, exp, rec] = await Promise.all([
         fetch('/api/portal/expense-categories?activeOnly=1', { headers: authHeaders() }).then(r => r.json()).catch(() => ({})),
         fetch('/api/portal/shops', { headers: authHeaders() }).then(r => r.json()).catch(() => ({})),
         fetch('/api/currencies/active', { headers: authHeaders() }).then(r => r.json()).catch(() => ({})),
         fetch('/api/portal/expenses', { headers: authHeaders() }).then(r => r.json()).catch(() => ({})),
+        fetch('/api/portal/recurring-expenses', { headers: authHeaders() }).then(r => r.json()).catch(() => ({})),
       ]);
       if (cats?.success) setCategories(cats.data ?? []);
       if (shopsRes?.success) setShops((shopsRes.data ?? []).map((s: { id: string; name: string }) => ({ id: s.id, name: s.name })));
       if (curRes?.success) setCurrencies((curRes.data ?? []).map((c: { code: string }) => c.code));
       if (exp?.success) setExpenses(exp.data ?? []);
+      if (rec?.success) setRecurring(rec.data ?? []);
     } finally {
       setLoading(false);
     }
@@ -99,8 +117,71 @@ export default function ExpensesPage() {
     else toast.error('Failed to delete');
   }
 
+  async function exportCsv() {
+    try {
+      const res = await fetch('/api/portal/expenses/export', { headers: authHeaders() });
+      if (!res.ok) { toast.error('Export failed'); return; }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `expenses-${new Date().toISOString().slice(0, 10)}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch { toast.error('Export failed'); }
+  }
+
+  async function addRecurring() {
+    const amt = Number(amount);
+    if (!Number.isFinite(amt) || amt <= 0) { toast.error('Enter a valid amount above first'); return; }
+    setRSaving(true);
+    try {
+      const res = await fetch('/api/portal/recurring-expenses', {
+        method: 'POST', headers: authHeaders(),
+        body: JSON.stringify({
+          amount: amt, currency, categoryId: categoryId || undefined, shopId: shopId || undefined,
+          description: description || undefined, frequency: rFrequency, interval: Number(rInterval) || 1,
+          startDate: rStartDate, endDate: rEndDate || undefined,
+        }),
+      });
+      const j = await res.json();
+      if (j?.success) { toast.success('Recurring expense scheduled'); await loadAll(); }
+      else toast.error(j?.error || 'Failed to schedule');
+    } finally { setRSaving(false); }
+  }
+
+  async function toggleRecurring(r: Recurring) {
+    const res = await fetch(`/api/portal/recurring-expenses/${r.id}`, { method: 'PATCH', headers: authHeaders(), body: JSON.stringify({ isActive: !r.isActive }) });
+    const j = await res.json().catch(() => ({}));
+    if (j?.success) setRecurring(prev => prev.map(x => x.id === r.id ? { ...x, isActive: !r.isActive } : x));
+    else toast.error('Failed to update');
+  }
+
+  async function removeRecurring(id: string) {
+    const res = await fetch(`/api/portal/recurring-expenses/${id}`, { method: 'DELETE', headers: authHeaders() });
+    const j = await res.json().catch(() => ({}));
+    if (j?.success) { setRecurring(prev => prev.filter(r => r.id !== id)); toast.success('Recurring expense removed'); }
+    else toast.error('Failed to remove');
+  }
+
+  async function runDueNow() {
+    setRunning(true);
+    try {
+      const res = await fetch('/api/portal/recurring-expenses/run', { method: 'POST', headers: authHeaders() });
+      const j = await res.json();
+      if (j?.success) { toast.success(`Generated ${j.data?.generated ?? 0} expense(s)`); await loadAll(); }
+      else toast.error('Failed to run');
+    } finally { setRunning(false); }
+  }
+
   const totalBase = expenses.reduce((s, e) => s + (e.baseAmount || 0), 0);
   const shopName = (id: string | null) => (id ? shops.find(s => s.id === id)?.name ?? '—' : 'All shops');
+  const freqLabel = (r: Recurring) => {
+    const unit = { daily: 'day', weekly: 'week', monthly: 'month' }[r.frequency];
+    return r.interval > 1 ? `every ${r.interval} ${unit}s` : ({ daily: 'daily', weekly: 'weekly', monthly: 'monthly' } as const)[r.frequency];
+  };
 
   return (
     <>
@@ -153,12 +234,78 @@ export default function ExpensesPage() {
           </CardContent>
         </Card>
 
+        {/* Recurring expenses */}
+        <Card>
+          <CardContent className="p-4 space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="font-semibold flex items-center gap-2"><Repeat className="h-4 w-4" />Recurring expenses</h2>
+              <Button variant="outline" size="sm" onClick={runDueNow} disabled={running}><Play className="h-3.5 w-3.5 mr-1" />{running ? 'Running…' : 'Run due now'}</Button>
+            </div>
+            <p className="text-xs text-gray-500">
+              Uses the amount, currency, category and shop from the form above. Each run records a real expense automatically (daily), freezing the exchange rate at that moment.
+            </p>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Frequency</label>
+                <select value={rFrequency} onChange={e => setRFrequency(e.target.value as Frequency)} className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 px-2 py-2 text-sm">
+                  <option value="daily">Daily</option>
+                  <option value="weekly">Weekly</option>
+                  <option value="monthly">Monthly</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Every</label>
+                <Input type="number" min="1" step="1" value={rInterval} onChange={e => setRInterval(e.target.value)} />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Starts</label>
+                <Input type="date" value={rStartDate} onChange={e => setRStartDate(e.target.value)} />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Ends (optional)</label>
+                <Input type="date" value={rEndDate} onChange={e => setREndDate(e.target.value)} />
+              </div>
+            </div>
+            <Button onClick={addRecurring} disabled={rSaving} variant="outline" size="sm"><Plus className="h-3.5 w-3.5 mr-1" />{rSaving ? 'Scheduling…' : 'Schedule recurring'}</Button>
+
+            {recurring.length > 0 && (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="text-left text-xs text-gray-500">
+                    <tr><th className="py-2">Amount</th><th>Category</th><th>Shop</th><th>Schedule</th><th>Next run</th><th>Status</th><th></th></tr>
+                  </thead>
+                  <tbody>
+                    {recurring.map(r => (
+                      <tr key={r.id} className="border-t border-gray-100 dark:border-gray-800">
+                        <td className="py-2 whitespace-nowrap">{formatMoney(r.amount, r.currency)}</td>
+                        <td>{r.categoryName ?? '—'}</td>
+                        <td>{shopName(r.shopId)}</td>
+                        <td className="whitespace-nowrap">{freqLabel(r)}</td>
+                        <td className="whitespace-nowrap">{r.isActive ? r.nextRunDate : '—'}</td>
+                        <td>
+                          <button onClick={() => toggleRecurring(r)} className={`text-xs rounded-full px-2 py-0.5 ${r.isActive ? 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300' : 'bg-gray-100 text-gray-500 dark:bg-gray-800'}`}>
+                            {r.isActive ? 'Active' : 'Paused'}
+                          </button>
+                        </td>
+                        <td><button onClick={() => removeRecurring(r.id)} className="text-gray-400 hover:text-red-500"><Trash2 className="h-4 w-4" /></button></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
         {/* List */}
         <Card>
           <CardContent className="p-4">
             <div className="flex items-center justify-between mb-3">
               <h2 className="font-semibold">Recent expenses</h2>
-              <span className="text-sm text-gray-500">Total: <strong>{formatMoney(totalBase, base)}</strong></span>
+              <div className="flex items-center gap-3">
+                <span className="text-sm text-gray-500">Total: <strong>{formatMoney(totalBase, base)}</strong></span>
+                <Button variant="outline" size="sm" onClick={exportCsv} disabled={expenses.length === 0}><Download className="h-3.5 w-3.5 mr-1" />Export CSV</Button>
+              </div>
             </div>
             {loading ? (
               <p className="text-sm text-muted-foreground py-6 text-center">Loading…</p>
