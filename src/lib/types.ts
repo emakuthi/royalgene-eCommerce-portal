@@ -475,6 +475,8 @@ export interface PortalDashboardStats {
   totalSales: number;
   totalProfit: number;
   averageMargin: number;
+  totalExpenses?: number;
+  netProfit?: number;
   lowStockProducts: number;
   topSellingProducts: Array<{ name: string; quantity: number; sales: number }>;
   salesToday: number;

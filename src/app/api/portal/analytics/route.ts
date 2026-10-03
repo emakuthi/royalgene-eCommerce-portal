@@ -187,6 +187,29 @@ export async function GET(request: NextRequest) {
 
     const avgMargin = totalSales > 0 ? (totalProfit / totalSales) * 100 : 0;
 
+    // Operating expenses over the same window, in base currency. Scope mirrors
+    // the P&L design: a single-shop view counts only that shop's expenses; the
+    // all-shops (admin) view counts every expense in the org, including
+    // org-wide ones with no shopId.
+    let totalExpenses = 0;
+    if (payload.organizationId) {
+      let expenseQuery = supabaseAdmin
+        .from('Expense')
+        .select('baseAmount')
+        .eq('organizationId', payload.organizationId)
+        .is('deletedAt', null)
+        .gte('expenseDate', startDate.toISOString().slice(0, 10))
+        .lte('expenseDate', now.toISOString().slice(0, 10));
+      if (requestedShopId) expenseQuery = expenseQuery.eq('shopId', requestedShopId);
+      const { data: expenseRows } = await expenseQuery;
+      totalExpenses = ((expenseRows as { baseAmount: number }[]) ?? []).reduce(
+        (sum, e) => sum + (Number(e.baseAmount) || 0),
+        0,
+      );
+    }
+    const netProfit = totalProfit - totalExpenses;
+    const netMargin = totalSales > 0 ? (netProfit / totalSales) * 100 : 0;
+
     logger.info('Analytics fetched successfully', {
       shopIds,
       range,
@@ -201,7 +224,7 @@ export async function GET(request: NextRequest) {
     const gatedSalesData = showCost ? salesData : salesData.map(({ profit: _p, ...rest }) => rest);
     const gatedTopProducts = showCost ? topProducts : topProducts.map(({ profit: _p, ...rest }) => rest);
 
-    return jsonResponse({ success: true, data: { summary: { totalSales, totalProfit: showCost ? totalProfit : null, avgMargin: showCost ? avgMargin : null, totalTransactions: salesList.length }, salesData: gatedSalesData, topProducts: gatedTopProducts } }, 200);
+    return jsonResponse({ success: true, data: { summary: { totalSales, totalProfit: showCost ? totalProfit : null, avgMargin: showCost ? avgMargin : null, totalExpenses: showCost ? totalExpenses : null, netProfit: showCost ? netProfit : null, netMargin: showCost ? netMargin : null, totalTransactions: salesList.length }, salesData: gatedSalesData, topProducts: gatedTopProducts } }, 200);
   } catch (error) {
     logger.error('Analytics error', {
       error: error instanceof Error ? error.message : String(error),

@@ -22,8 +22,13 @@ export default function AdminDashboard({ stats, loading, currentShopId }: { stat
               <StatCard loading={loading} title="Total Sales" value={loading ? '-' : `${Math.round((stats?.totalSales) || 0)}`} subtitle="Total transactions" icon={<></>} />
             </Link>
             <Link href="/analytics">
-              <StatCard loading={loading} title="Total Profit" value={loading ? '-' : `${formatMoneyMajor((stats?.totalProfit) || 0, cur)}`} subtitle="Profit last 30 days" icon={<></>} />
+              <StatCard loading={loading} title="Gross Profit" value={loading ? '-' : `${formatMoneyMajor((stats?.totalProfit) || 0, cur)}`} subtitle="Before expenses · last 30 days" icon={<></>} />
             </Link>
+            {stats?.netProfit != null && (
+              <Link href="/analytics">
+                <StatCard loading={loading} title="Net Profit" value={loading ? '-' : `${formatMoneyMajor((stats?.netProfit) || 0, cur)}`} subtitle={`After ${formatMoneyMajor((stats?.totalExpenses) || 0, cur)} expenses`} icon={<></>} />
+              </Link>
+            )}
             <Link href="/analytics">
               <StatCard loading={loading} title="Low Stock" value={loading ? '-' : stats?.lowStockProducts ?? 0} subtitle="Products need restocking" icon={<></>} />
             </Link>

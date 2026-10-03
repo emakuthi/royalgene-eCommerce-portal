@@ -34,10 +34,15 @@ export default function ShopDashboard({ stats, loading, shopName, portalUserPosi
             <StatCard loading={loading} title="Sales Today" value={loading ? '-' : `${formatMoneyMajor(stats?.salesToday || 0, cur)}`} subtitle="Today's transactions" icon={<></>} />
           </Link>
           <Link href="/analytics">
-            <StatCard loading={loading} title="Profit" value={loading ? '-' : `${formatMoneyMajor(stats?.totalProfit || 0, cur)}`} subtitle="Total profit last 30 days" icon={<></>} />
+            <StatCard loading={loading} title="Gross Profit" value={loading ? '-' : `${formatMoneyMajor(stats?.totalProfit || 0, cur)}`} subtitle="Before expenses · last 30 days" icon={<></>} />
           </Link>
+          {stats?.netProfit != null && (
+            <Link href="/analytics">
+              <StatCard loading={loading} title="Net Profit" value={loading ? '-' : `${formatMoneyMajor(stats?.netProfit || 0, cur)}`} subtitle={`After ${formatMoneyMajor(stats?.totalExpenses || 0, cur)} expenses`} icon={<></>} />
+            </Link>
+          )}
           <Link href="/analytics">
-            <StatCard loading={loading} title="Avg Margin" value={loading ? '-' : `${(stats?.averageMargin ?? 0).toFixed(1)}%`} subtitle="Average profit margin" icon={<></>} />
+            <StatCard loading={loading} title="Avg Margin" value={loading ? '-' : `${(stats?.averageMargin ?? 0).toFixed(1)}%`} subtitle="Gross profit margin" icon={<></>} />
           </Link>
           <Link href="/analytics">
             <StatCard loading={loading} title="Low Stock" value={loading ? '-' : stats?.lowStockProducts ?? 0} subtitle="Products need restocking" icon={<></>} />
