@@ -79,6 +79,9 @@ function StockManagementContent() {
   const [isRestockModalOpen, setIsRestockModalOpen] = useState(false);
   const [restockStockId, setRestockStockId] = useState<string | null>(null);
   const [restockQuantity, setRestockQuantity] = useState<number | ''>('');
+  const [restockUnitCost, setRestockUnitCost] = useState<string>('');
+  const [restockCurrency, setRestockCurrency] = useState<string>(cur);
+  const [activeCurrencies, setActiveCurrencies] = useState<string[]>([cur]);
   const [restocking, setRestocking] = useState(false);
   // View / Edit modal state
   const [isViewModalOpen, setIsViewModalOpen] = useState(false);
@@ -121,6 +124,18 @@ function StockManagementContent() {
   useEffect(() => {
     setMounted(true);
   }, []);
+
+  // Active currencies for the restock (purchase) cost picker.
+  useEffect(() => {
+    if (!token) return;
+    (async () => {
+      try {
+        const res = await fetch('/api/currencies/active', { headers: { Authorization: `Bearer ${token}` } });
+        const j = await res.json();
+        if (j?.success && Array.isArray(j.data)) setActiveCurrencies(j.data.map((c: { code: string }) => c.code));
+      } catch { /* keep default */ }
+    })();
+  }, [token]);
 
   useEffect(() => {
     if (!mounted || !token || !_hasHydrated) return;
@@ -844,18 +859,34 @@ function StockManagementContent() {
           <div className="bg-white dark:bg-gray-900 rounded-lg w-full max-w-md p-6">
             <div className="flex items-center justify-between">
               <h3 className="text-lg font-semibold">Restock Item</h3>
-              <Button variant="ghost" onClick={() => { setIsRestockModalOpen(false); setRestockStockId(null); setRestockQuantity(''); }}>Close</Button>
+              <Button variant="ghost" onClick={() => { setIsRestockModalOpen(false); setRestockStockId(null); setRestockQuantity(''); setRestockUnitCost(''); }}>Close</Button>
             </div>
             <div className="mt-4">
               <label className={`block text-sm ${textSecondary}`}>Quantity to set</label>
               <Input type="number" value={restockQuantity} onChange={(e) => setRestockQuantity(e.target.value === '' ? '' : Number(e.target.value))} placeholder="Enter new stock quantity" />
+
+              <label className={`block text-sm mt-3 ${textSecondary}`}>Purchase unit cost (optional)</label>
+              <div className="flex items-center gap-2">
+                <Input type="number" step="0.01" value={restockUnitCost} onChange={(e) => setRestockUnitCost(e.target.value)} placeholder="Cost per unit" className="flex-1" />
+                {activeCurrencies.length > 1 && (
+                  <select
+                    value={restockCurrency}
+                    onChange={(e) => setRestockCurrency(e.target.value)}
+                    className="rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 px-2 py-2 text-sm"
+                  >
+                    {activeCurrencies.map((c) => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                )}
+              </div>
+              <p className={`text-xs mt-1 ${textSecondary}`}>Recorded as the purchase cost when increasing stock.</p>
+
               <div className="flex items-center justify-end gap-3 mt-4">
-                <Button variant="outline" onClick={() => { setIsRestockModalOpen(false); setRestockStockId(null); setRestockQuantity(''); }}>Cancel</Button>
+                <Button variant="outline" onClick={() => { setIsRestockModalOpen(false); setRestockStockId(null); setRestockQuantity(''); setRestockUnitCost(''); }}>Cancel</Button>
                 <Button onClick={async () => {
                   if (restockQuantity === '' || restockQuantity < 0) { toast.error('Enter a valid quantity'); return; }
                   setRestocking(true);
                   try {
-                    const res = await fetch('/api/portal/stock', { method: 'PUT', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ stockId: restockStockId, quantity: restockQuantity }) });
+                    const res = await fetch('/api/portal/stock', { method: 'PUT', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ stockId: restockStockId, quantity: restockQuantity, unitCost: restockUnitCost ? Number(restockUnitCost) : undefined, currency: restockCurrency }) });
                     const json = await res.json();
                     if (!res.ok || !json.success) { toast.error(json.error || 'Failed to restock'); setRestocking(false); return; }
                     // update local stocks
@@ -863,7 +894,7 @@ function StockManagementContent() {
                     toast.success('Stock updated');
                     setIsRestockModalOpen(false);
                     setRestockStockId(null);
-                    setRestockQuantity('');
+                    setRestockQuantity(''); setRestockUnitCost('');
                   } catch (err) {
                     console.error('Restock error', err);
                     toast.error('Failed to restock');

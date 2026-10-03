@@ -9,6 +9,8 @@ import { syncProductStockFromShopStocks } from '@/lib/supabase-db';
 import { hasVariantStock } from '@/lib/variant-stock.server';
 import { jsonResponse, optionsResponse } from '@/lib/apiResponse';
 import { trackFromRequest } from '@/lib/activity-tracker';
+import { getOrgCurrency } from '@/lib/currency.server';
+import { getRate } from '@/lib/exchange-rates.server';
 
 export async function GET(request: NextRequest) {
   const startTime = Date.now();
@@ -177,7 +179,7 @@ export async function PUT(request: NextRequest) {
     if (auth instanceof NextResponse) return auth;
     const payload = auth;
 
-    const { stockId, quantity, reason } = await request.json();
+    const { stockId, quantity, reason, unitCost, currency } = await request.json();
 
     if (!stockId || quantity === undefined) {
       return jsonResponse({ success: false, error: 'Missing required fields' }, 400);
@@ -269,6 +271,22 @@ export async function PUT(request: NextRequest) {
         throw new Error(updateError.message);
       }
 
+      // Minimal "purchase": a positive restock with a recorded unit cost.
+      // Resolve + freeze the currency→base rate, store the base cost on the txn.
+      const addedQty = quantity - (oldStock.quantity || 0);
+      const unitCostNum = Number(unitCost);
+      let purchaseFields: Record<string, unknown> = {};
+      if (addedQty > 0 && Number.isFinite(unitCostNum) && unitCostNum > 0) {
+        const { currency: baseCurrency } = await getOrgCurrency(oldStock.organizationId as string);
+        const costCurrency = typeof currency === 'string' && /^[A-Za-z]{3}$/.test(currency) ? currency.toUpperCase() : baseCurrency;
+        let rate = 1;
+        if (costCurrency !== baseCurrency) {
+          const r = await getRate(costCurrency, baseCurrency, { organizationId: oldStock.organizationId as string });
+          if (r && r > 0) rate = r;
+        }
+        purchaseFields = { currency: costCurrency, exchangeRate: rate, unitCost: unitCostNum, baseAmount: unitCostNum * addedQty * rate };
+      }
+
       // Create transaction record
       await supabaseAdmin
         .from('StockTransaction')
@@ -281,6 +299,7 @@ export async function PUT(request: NextRequest) {
           quantity: quantity - (oldStock.quantity || 0),
           reason: reason || 'Manual adjustment',
           createdAt: new Date().toISOString(),
+          ...purchaseFields,
         }]);
 
       // Sync aggregated product stockQuantity so storefront reflects portal changes
