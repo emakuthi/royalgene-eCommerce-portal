@@ -41,7 +41,10 @@ function formatCurrency(amount: number, currency: string = 'KES') {
 }
 
 export default function NewSalePage() {
-  const cur = useBranding().branding.currency;
+  const cur = useBranding().branding.currency; // tenant base currency
+  const [saleCurrency, setSaleCurrency] = useState(cur);
+  const [activeCurrencies, setActiveCurrencies] = useState<string[]>([cur]);
+  const [baseRate, setBaseRate] = useState(1); // saleCurrency → base rate, for the "≈ base" preview
   const searchParams = useSearchParams();
   const router = useRouter();
   const { token } = useHydratedAuth();
@@ -83,6 +86,45 @@ export default function NewSalePage() {
 
   // Set mounted to true after hydration so store values are available
   useEffect(() => setMounted(true), []);
+
+  // Load active currencies for the sale-currency picker.
+  useEffect(() => {
+    if (!mounted || !token) return;
+    (async () => {
+      try {
+        const res = await fetch('/api/currencies/active', { headers: { Authorization: `Bearer ${token}` } });
+        const j = await res.json();
+        if (j?.success && Array.isArray(j.data)) setActiveCurrencies(j.data.map((c: { code: string }) => c.code));
+      } catch { /* keep default */ }
+    })();
+  }, [mounted, token]);
+
+  // Keep the "≈ base" preview rate in sync with the chosen sale currency.
+  useEffect(() => {
+    if (!token || saleCurrency === cur) { setBaseRate(1); return; }
+    (async () => {
+      try {
+        const res = await fetch(`/api/exchange-rates/${saleCurrency}/${cur}`, { headers: { Authorization: `Bearer ${token}` } });
+        const j = await res.json();
+        setBaseRate(j?.success && j.data?.rate ? Number(j.data.rate) : 1);
+      } catch { setBaseRate(1); }
+    })();
+  }, [saleCurrency, cur, token]);
+
+  // Switching currency converts the entered unit price (prefill, editable).
+  async function changeCurrency(newCur: string) {
+    const prev = saleCurrency;
+    setSaleCurrency(newCur);
+    if (prev === newCur || !token) return;
+    try {
+      const res = await fetch(`/api/exchange-rates/${prev}/${newCur}`, { headers: { Authorization: `Bearer ${token}` } });
+      const j = await res.json();
+      if (j?.success && j.data?.rate) {
+        const v = (parseFloat(unitPriceInput || '0') || 0) * Number(j.data.rate);
+        setUnitPriceInput(v.toFixed(2));
+      }
+    } catch { /* leave as-is */ }
+  }
 
   useEffect(() => {
     // If saleId is present, fetch sale and populate form
@@ -341,6 +383,7 @@ export default function NewSalePage() {
             productId: formData.productId,
             quantity,
             unitPrice: payloadUnitPrice,
+            currency: saleCurrency,
             paymentMethod,
             customerName: formData.customerName || null,
             customerPhone: formData.customerPhone || null,
@@ -485,8 +528,20 @@ export default function NewSalePage() {
                     <Label>Quantity *</Label>
                     <Input type="number" min={1} value={quantityInput} onChange={(e) => setQuantityInput(e.target.value)} onBlur={() => setFormData(prev => ({ ...prev, quantity: parseInt(quantityInput || '1', 10) || 1 }))} />
                   </div>
+                  {activeCurrencies.length > 1 && (
+                    <div>
+                      <Label>Sale Currency</Label>
+                      <select
+                        value={saleCurrency}
+                        onChange={(e) => changeCurrency(e.target.value)}
+                        className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 py-2 text-sm"
+                      >
+                        {activeCurrencies.map((c) => <option key={c} value={c}>{c}{c === cur ? ' (base)' : ''}</option>)}
+                      </select>
+                    </div>
+                  )}
                   <div>
-                    <Label>Unit Price ({cur}) *</Label>
+                    <Label>Unit Price ({saleCurrency}) *</Label>
                     <Input type="number" step="0.01" value={unitPriceInput} onChange={(e) => setUnitPriceInput(e.target.value)} onBlur={() => setFormData(prev => ({ ...prev, unitPrice: parseFloat(unitPriceInput || '0') || 0 }))} />
                     {errors.unitPrice && <p className="text-sm text-red-600 mt-1">{errors.unitPrice}</p>}
                   </div>
@@ -542,7 +597,11 @@ export default function NewSalePage() {
                 </div>
 
                 <div>
-                  <p className="text-sm">Total: <strong>{formatCurrency(totalAmount, cur)}</strong></p>
+                  <p className="text-sm">Total: <strong>{formatCurrency(totalAmount, saleCurrency)}</strong>
+                    {saleCurrency !== cur && baseRate > 0 && (
+                      <span className="text-muted-foreground"> · ≈ {formatCurrency(totalAmount * baseRate, cur)}</span>
+                    )}
+                  </p>
                 </div>
 
                 <div className="flex gap-3 pt-4">

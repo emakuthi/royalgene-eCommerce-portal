@@ -65,9 +65,9 @@ export async function GET(request: NextRequest) {
     const salesList: SalesEntry[] = (sales ?? []) as SalesEntry[];
 
     const totalSales = salesList.length;
-    const totalRevenue = salesList.reduce((sum: number, s: SalesEntry) => sum + Number(s.totalAmount ?? 0), 0);
+    const totalRevenue = salesList.reduce((sum: number, s: SalesEntry) => sum + Number(((s as Record<string, unknown>).baseAmount ?? s.totalAmount) ?? 0), 0);
     const totalProfit = salesList.reduce((sum: number, s: SalesEntry) => {
-      const totalAmount = Number(s.totalAmount ?? 0);
+      const totalAmount = Number(((s as Record<string, unknown>).baseAmount ?? s.totalAmount) ?? 0);
       const costPrice = Number(s.costPrice ?? 0);
       const quantity = Number(s.quantity ?? 0);
       return sum + (totalAmount - costPrice * quantity);
@@ -98,7 +98,7 @@ export async function GET(request: NextRequest) {
         trendMap.set(key, { sales: 0, revenue: 0, profit: 0 });
       }
       const trend = trendMap.get(key)!;
-      const totalAmount = Number(sale.totalAmount ?? 0);
+      const totalAmount = Number(((sale as Record<string, unknown>).baseAmount ?? sale.totalAmount) ?? 0);
       const costPrice = Number(sale.costPrice ?? 0);
       const quantity = Number(sale.quantity ?? 0);
       trend.sales += 1;

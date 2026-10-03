@@ -82,9 +82,9 @@ export async function GET(request: NextRequest) {
     }
 
     const totalSales = salesList.length;
-    const totalRevenue = salesList.reduce((sum: number, s: Record<string, unknown>) => sum + ((s.totalAmount as number) || 0), 0);
+    const totalRevenue = salesList.reduce((sum: number, s: Record<string, unknown>) => sum + ((((s as Record<string, unknown>).baseAmount ?? s.totalAmount) as number) || 0), 0);
     const totalProfit = salesList.reduce((sum: number, s: Record<string, unknown>) => {
-      const profit = ((s.totalAmount as number) || 0) - (((s.costPrice as number) || 0) * ((s.quantity as number) || 0));
+      const profit = ((((s as Record<string, unknown>).baseAmount ?? s.totalAmount) as number) || 0) - (((s.costPrice as number) || 0) * ((s.quantity as number) || 0));
       return sum + profit;
     }, 0);
     const averageTransactionValue = totalSales > 0 ? totalRevenue / totalSales : 0;
@@ -97,7 +97,7 @@ export async function GET(request: NextRequest) {
       }
       const product = productMap.get(productId)!;
       product.quantity += (sale.quantity as number);
-      product.revenue += (sale.totalAmount as number);
+      product.revenue += (((sale as Record<string, unknown>).baseAmount ?? sale.totalAmount) as number);
     });
 
     let topProduct = null;
