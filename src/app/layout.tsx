@@ -44,6 +44,11 @@ export const viewport: Viewport = {
   initialScale: 1,
   maximumScale: 5,
   userScalable: true,
+  // Declaring both schemes stops Android Chrome / Samsung Internet "auto dark
+  // mode" from force-darkening the page (which made MUI inputs unreadable when
+  // the phone was in dark mode but the portal in light). The actual scheme is
+  // pinned per theme in theme.css.
+  colorScheme: 'light dark',
 };
 
 export default async function RootLayout({

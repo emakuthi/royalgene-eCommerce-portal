@@ -408,6 +408,13 @@ export async function GET(request: NextRequest) {
     let shopId = searchParams.get('shopId') || null;
     const limit = parseInt(searchParams.get('limit') || '50');
     const offset = parseInt(searchParams.get('offset') || '0');
+    // Optional ISO-timestamp window (inclusive from, exclusive to) — lets the
+    // client compute real per-day totals in the viewer's own timezone.
+    const from = searchParams.get('from');
+    const to = searchParams.get('to');
+    if ((from && Number.isNaN(Date.parse(from))) || (to && Number.isNaN(Date.parse(to)))) {
+      return jsonResponse({ success: false, error: 'Invalid from/to date' }, 400);
+    }
 
     const isAdmin = payload.role === 'admin' || payload.role === 'super_admin';
 
@@ -453,6 +460,8 @@ export async function GET(request: NextRequest) {
     } else if (payload.organizationId) {
       query = query.eq('organizationId', payload.organizationId);
     }
+    if (from) query = query.gte('createdAt', new Date(from).toISOString());
+    if (to) query = query.lt('createdAt', new Date(to).toISOString());
 
     const { data: sales, error } = await query;
 

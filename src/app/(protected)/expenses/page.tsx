@@ -191,27 +191,27 @@ export default function ExpensesPage() {
         {/* Add expense */}
         <Card>
           <CardContent className="p-4 space-y-4">
-            <h2 className="font-semibold">Record an expense</h2>
+            <h2 className="text-lg font-semibold">Record an expense</h2>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
               <div>
                 <label className="block text-xs text-gray-500 mb-1">Amount</label>
                 <div className="flex gap-2">
                   <Input type="number" step="0.01" value={amount} onChange={e => setAmount(e.target.value)} placeholder="0.00" className="flex-1" />
-                  <select value={currency} onChange={e => setCurrency(e.target.value)} className="rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 px-2 text-sm">
+                  <select value={currency} onChange={e => setCurrency(e.target.value)} className="shrink-0 rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 px-2 text-sm">
                     {currencies.map(c => <option key={c} value={c}>{c}</option>)}
                   </select>
                 </div>
               </div>
               <div>
                 <label className="block text-xs text-gray-500 mb-1">Category</label>
-                <select value={categoryId} onChange={e => setCategoryId(e.target.value)} className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 px-2 py-2 text-sm">
+                <select value={categoryId} onChange={e => setCategoryId(e.target.value)} className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 px-2 py-2 text-sm">
                   <option value="">— none —</option>
                   {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                 </select>
               </div>
               <div>
                 <label className="block text-xs text-gray-500 mb-1">Shop (optional)</label>
-                <select value={shopId} onChange={e => setShopId(e.target.value)} className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 px-2 py-2 text-sm">
+                <select value={shopId} onChange={e => setShopId(e.target.value)} className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 px-2 py-2 text-sm">
                   <option value="">All shops (org-wide)</option>
                   {shops.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                 </select>
@@ -225,11 +225,13 @@ export default function ExpensesPage() {
                 <Input value={description} onChange={e => setDescription(e.target.value)} placeholder="e.g. October rent" />
               </div>
             </div>
-            <div className="flex items-center gap-2">
-              <Button onClick={addExpense} disabled={saving} className="bg-[hsl(var(--primary))] text-white">{saving ? 'Saving…' : 'Add Expense'}</Button>
-              <span className="text-gray-300">|</span>
-              <Input value={newCategory} onChange={e => setNewCategory(e.target.value)} placeholder="New category" className="w-40 h-9" />
-              <Button variant="outline" size="sm" onClick={addCategory}><Plus className="h-3.5 w-3.5 mr-1" />Add category</Button>
+            <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+              <Button onClick={addExpense} disabled={saving} className="w-full sm:w-auto bg-[hsl(var(--primary))] text-white">{saving ? 'Saving…' : 'Add Expense'}</Button>
+              <span className="hidden sm:inline text-gray-300">|</span>
+              <div className="flex items-center gap-2">
+                <Input value={newCategory} onChange={e => setNewCategory(e.target.value)} placeholder="New category" className="flex-1 sm:flex-none sm:w-40" />
+                <Button variant="outline" size="sm" onClick={addCategory} className="shrink-0"><Plus className="h-3.5 w-3.5 mr-1" />Add category</Button>
+              </div>
             </div>
           </CardContent>
         </Card>
@@ -237,17 +239,17 @@ export default function ExpensesPage() {
         {/* Recurring expenses */}
         <Card>
           <CardContent className="p-4 space-y-4">
-            <div className="flex items-center justify-between">
-              <h2 className="font-semibold flex items-center gap-2"><Repeat className="h-4 w-4" />Recurring expenses</h2>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h2 className="text-lg font-semibold flex items-center gap-2"><Repeat className="h-4 w-4" />Recurring expenses</h2>
               <Button variant="outline" size="sm" onClick={runDueNow} disabled={running}><Play className="h-3.5 w-3.5 mr-1" />{running ? 'Running…' : 'Run due now'}</Button>
             </div>
             <p className="text-xs text-gray-500">
               Uses the amount, currency, category and shop from the form above. Each run records a real expense automatically (daily), freezing the exchange rate at that moment.
             </p>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
               <div>
                 <label className="block text-xs text-gray-500 mb-1">Frequency</label>
-                <select value={rFrequency} onChange={e => setRFrequency(e.target.value as Frequency)} className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 px-2 py-2 text-sm">
+                <select value={rFrequency} onChange={e => setRFrequency(e.target.value as Frequency)} className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 px-2 py-2 text-sm">
                   <option value="daily">Daily</option>
                   <option value="weekly">Weekly</option>
                   <option value="monthly">Monthly</option>
@@ -269,7 +271,25 @@ export default function ExpensesPage() {
             <Button onClick={addRecurring} disabled={rSaving} variant="outline" size="sm"><Plus className="h-3.5 w-3.5 mr-1" />{rSaving ? 'Scheduling…' : 'Schedule recurring'}</Button>
 
             {recurring.length > 0 && (
-              <div className="overflow-x-auto">
+              <>
+              <ul className="sm:hidden divide-y divide-gray-100 dark:divide-gray-800">
+                {recurring.map(r => (
+                  <li key={r.id} className="py-3 flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="font-medium">{formatMoney(r.amount, r.currency)} <span className="text-xs font-normal text-gray-500">· {freqLabel(r)}</span></div>
+                      <div className="text-xs text-gray-500 truncate">{r.categoryName ?? 'No category'} · {shopName(r.shopId)}</div>
+                      <div className="text-xs text-gray-500">Next run: {r.isActive ? r.nextRunDate : '—'}</div>
+                    </div>
+                    <div className="flex items-center gap-3 shrink-0">
+                      <button onClick={() => toggleRecurring(r)} className={`text-xs rounded-full px-2 py-0.5 ${r.isActive ? 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300' : 'bg-gray-100 text-gray-500 dark:bg-gray-800'}`}>
+                        {r.isActive ? 'Active' : 'Paused'}
+                      </button>
+                      <button onClick={() => removeRecurring(r.id)} aria-label="Remove recurring expense" className="text-gray-400 hover:text-red-500"><Trash2 className="h-4 w-4" /></button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+              <div className="hidden sm:block overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead className="text-left text-xs text-gray-500">
                     <tr><th className="py-2">Amount</th><th>Category</th><th>Shop</th><th>Schedule</th><th>Next run</th><th>Status</th><th></th></tr>
@@ -293,6 +313,7 @@ export default function ExpensesPage() {
                   </tbody>
                 </table>
               </div>
+              </>
             )}
           </CardContent>
         </Card>
@@ -300,8 +321,8 @@ export default function ExpensesPage() {
         {/* List */}
         <Card>
           <CardContent className="p-4">
-            <div className="flex items-center justify-between mb-3">
-              <h2 className="font-semibold">Recent expenses</h2>
+            <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+              <h2 className="text-lg font-semibold">Recent expenses</h2>
               <div className="flex items-center gap-3">
                 <span className="text-sm text-gray-500">Total: <strong>{formatMoney(totalBase, base)}</strong></span>
                 <Button variant="outline" size="sm" onClick={exportCsv} disabled={expenses.length === 0}><Download className="h-3.5 w-3.5 mr-1" />Export CSV</Button>
@@ -312,7 +333,23 @@ export default function ExpensesPage() {
             ) : expenses.length === 0 ? (
               <p className="text-sm text-muted-foreground py-6 text-center">No expenses recorded yet.</p>
             ) : (
-              <div className="overflow-x-auto">
+              <>
+              <ul className="sm:hidden divide-y divide-gray-100 dark:divide-gray-800">
+                {expenses.map(e => (
+                  <li key={e.id} className="py-3 flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="font-medium">
+                        {formatMoney(e.amount, e.currency)}
+                        {e.currency !== base && <span className="text-xs font-normal text-gray-500"> ≈ {formatMoney(e.baseAmount, base)}</span>}
+                      </div>
+                      <div className="text-xs text-gray-500 truncate">{e.expenseDate} · {e.categoryName ?? 'No category'} · {shopName(e.shopId)}</div>
+                      {e.description && <div className="text-sm truncate">{e.description}</div>}
+                    </div>
+                    <button onClick={() => removeExpense(e.id)} aria-label="Delete expense" className="shrink-0 text-gray-400 hover:text-red-500"><Trash2 className="h-4 w-4" /></button>
+                  </li>
+                ))}
+              </ul>
+              <div className="hidden sm:block overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead className="text-left text-xs text-gray-500">
                     <tr><th className="py-2">Date</th><th>Category</th><th>Shop</th><th>Amount</th><th>In {base}</th><th>Description</th><th></th></tr>
@@ -332,6 +369,7 @@ export default function ExpensesPage() {
                   </tbody>
                 </table>
               </div>
+              </>
             )}
           </CardContent>
         </Card>
