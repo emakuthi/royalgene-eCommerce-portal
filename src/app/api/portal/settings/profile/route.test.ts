@@ -3,10 +3,9 @@ import { NextRequest } from 'next/server';
 
 const mockUpdatedUser = { id: 'user-1', email: 'u@example.com', name: 'Updated', phone: '0700000000' };
 
-vi.mock('@/lib/auth', () => ({
-  extractTokenFromHeader: (h: string | null | undefined) => 'token',
-  verifyToken: (t: string | null | undefined) => ({ userId: 'user-1' }),
-}));
+// The route authenticates via requireAuth (@/lib/authorize); this test used to
+// mock the retired @/lib/auth, so the real JWT check rejected the fake token.
+vi.mock('@/lib/authorize', () => ({ requireAuth: vi.fn(() => ({ userId: 'user-1' })) }));
 
 vi.mock('@/lib/supabase-client', () => ({
   supabaseAdmin: {

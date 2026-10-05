@@ -696,7 +696,7 @@ export default function PortalSettingsPage() {
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-950">
       {/* Page header — sticky */}
-      <div className="sticky top-0 z-30 bg-white dark:bg-gray-900 border-b border-[hsl(var(--border))] shadow-sm">
+      <div className="sm:sticky sm:top-0 z-30 bg-white dark:bg-gray-900 border-b border-[hsl(var(--border))] shadow-sm">
         <div className="max-w-5xl mx-auto px-4 sm:px-6 py-6">
           {/* Avatar + user summary */}
           <div className="flex items-center gap-4">
@@ -760,8 +760,10 @@ export default function PortalSettingsPage() {
         </div>
 
         {/* Tab row */}
-        <div className="max-w-5xl mx-auto px-4 sm:px-6">
-          <div className="flex gap-1 overflow-x-auto scrollbar-none -mb-px">
+        <div className="relative max-w-5xl mx-auto px-4 sm:px-6">
+          {/* Right-edge fade: the scrollbar is hidden, so on phones this is the only hint that more tabs (Billing, Permissions…) exist. */}
+          <div aria-hidden className="pointer-events-none absolute right-0 top-0 bottom-0 w-10 bg-gradient-to-l from-white dark:from-gray-900 sm:hidden" />
+          <div className="flex gap-1 overflow-x-auto scrollbar-none -mb-px pr-8 sm:pr-0">
             {TABS.filter(tab => tab.id !== 'permissions' || isBillingAdmin).map(tab => {
               const Icon = tab.icon;
               const active = activeTab === tab.id;
@@ -769,7 +771,7 @@ export default function PortalSettingsPage() {
                 <button
                   key={tab.id}
                   type="button"
-                  onClick={() => setActiveTab(tab.id)}
+                  onClick={(e) => { setActiveTab(tab.id); e.currentTarget.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' }); }}
                   className={`flex items-center gap-2 px-4 py-3 text-sm font-medium whitespace-nowrap border-b-2 transition-colors
                     ${active
                       ? 'border-[hsl(var(--primary))] text-[hsl(var(--primary))]'

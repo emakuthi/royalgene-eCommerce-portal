@@ -59,7 +59,7 @@ export function useEntitlement(): EntitlementState {
       }
       if (usageRes.success && usageRes.data) {
         setLimits(usageRes.data.limits);
-        setSubscriptionStatus(usageRes.data.subscription.status);
+        setSubscriptionStatus(usageRes.data.subscription?.status ?? null);
       }
       setLoading(false);
     });

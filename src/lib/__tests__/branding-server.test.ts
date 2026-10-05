@@ -36,7 +36,16 @@ describe('getTenantBranding', () => {
       tagline: BRANDING_DEFAULTS.tagline,
       logoUrl: 'data:image/png;base64,AAA',
       faviconUrl: null,
+      currency: BRANDING_DEFAULTS.currency,
+      usdRate: null,
     });
+  });
+
+  it('maps currency and a numeric-string usdRate from the org row', async () => {
+    mock.row = { name: 'Acme Retail', tagline: null, logoUrl: null, faviconUrl: null, currency: ' UGX ', usdRate: '3700' };
+    const b = await getTenantBranding('org-1');
+    expect(b.currency).toBe('UGX');
+    expect(b.usdRate).toBe(3700);
   });
 });
 

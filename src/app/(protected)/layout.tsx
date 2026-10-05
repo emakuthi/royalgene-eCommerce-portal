@@ -51,7 +51,7 @@ function PortalLogo({ size = 'md' }: { size?: 'sm' | 'md' }) {
 
   return (
     <Link href="/dashboard" className="flex items-center gap-2 flex-shrink-0">
-      <Image src={imgSrc} alt={branding.companyName} width={px} height={px} className="object-contain" priority unoptimized />
+      <Image src={imgSrc} alt={branding.companyName || "Logo"} width={px} height={px} className="object-contain" priority unoptimized />
       {size === 'md' && (
         <div className="hidden lg:block">
           <p className="font-bold text-sm text-gray-900 dark:text-white leading-none">{branding.companyName}</p>

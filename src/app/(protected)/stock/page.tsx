@@ -503,6 +503,26 @@ function StockManagementContent() {
     }
   };
 
+  /** Downloads the visible stock list as CSV (the Export button used to do nothing). */
+  const exportStockCsv = () => {
+    if (filteredStocks.length === 0) { toast.error('No stock to export'); return; }
+    const esc = (v: unknown) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+    const rows = filteredStocks.map(st => {
+      const p = getProductFromRow(st) as (Product & { costPrice?: number | null; sku?: string; category?: string }) | undefined;
+      return [p?.name ?? '', p?.sku ?? '', p?.category ?? '', st.shopName ?? shopName, st.quantity, st.lowStockThreshold, p?.price ?? '', p?.costPrice ?? ''];
+    });
+    const header = ['Product', 'SKU', 'Category', 'Shop', 'Quantity', 'Low-stock threshold', 'Selling price', 'Cost price'];
+    const blob = new Blob([[header, ...rows].map(r => r.map(esc).join(',')).join('\n')], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `stock-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <div className="w-full bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800">
       <PortalHeader
@@ -511,9 +531,8 @@ function StockManagementContent() {
         description="Manage stock levels and products across all outlets"
         breadcrumbs={[{ label: 'Portal', href: '/portal' }, { label: 'Stock' }]}
         actions={(
-          <div className="flex items-center gap-3">
-            <Button variant="ghost">Export</Button>
-            <Button variant="ghost">Filter</Button>
+          <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+            <Button variant="outline" onClick={exportStockCsv}>Export</Button>
             <Link href="/stock/add-new">
               <Button className="bg-[hsl(var(--primary))] text-white hover:brightness-90">+ Add Product</Button>
             </Link>
@@ -643,7 +662,9 @@ function StockManagementContent() {
               const status = stockStatusBadge(stock.quantity, stock.lowStockThreshold, theme === 'dark');
               const productWithCost = stock.product as (Product & { costPrice?: number }) | undefined;
               const sellPrice = Number(productWithCost?.price ?? 0);
-              const costPrice = Number(productWithCost?.costPrice ?? sellPrice);
+              // null = hidden for this role (server nulls it). Was `?? sellPrice`, which showed
+              // staff the selling price labelled as "Cost".
+              const costPrice = productWithCost?.costPrice != null ? Number(productWithCost.costPrice) : null;
               const cardProductId = getProductFromRow(stock)?.id;
               const cardSelected = Boolean(cardProductId && selectedProductIds.has(cardProductId));
               return (
@@ -669,8 +690,8 @@ function StockManagementContent() {
                         <p className={`text-xs ${muted}`}>{stock.shopName ?? shopName}</p>
                       </div>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${status.className}`}>
+                    <div className="flex shrink-0 items-center gap-2">
+                      <span className={`whitespace-nowrap px-2 py-0.5 rounded-full text-xs font-medium ${status.className}`}>
                         {status.label}
                       </span>
                       <DropdownMenu>
@@ -707,7 +728,7 @@ function StockManagementContent() {
                     </div>
                   </div>
                   {/* Stats grid */}
-                  <div className="grid grid-cols-3 gap-2 text-center">
+                  <div className="grid grid-cols-2 gap-2 text-center">
                     <div className="rounded-lg bg-gray-50 dark:bg-gray-700/50 p-2">
                       <p className={`text-xs ${muted}`}>Stock</p>
                       <p className={`font-bold text-sm ${textPrimary}`}>{stock.quantity}</p>
@@ -716,15 +737,11 @@ function StockManagementContent() {
                       <p className={`text-xs ${muted}`}>Min Level</p>
                       <p className={`font-bold text-sm ${textPrimary}`}>{stock.lowStockThreshold}</p>
                     </div>
-                    <div className="rounded-lg bg-gray-50 dark:bg-gray-700/50 p-2">
-                      <p className={`text-xs ${muted}`}>Reserved</p>
-                      <p className={`font-bold text-sm ${textPrimary}`}>0</p>
-                    </div>
                   </div>
 
                   {/* Prices */}
                   <div className={`flex justify-between text-xs ${textSecondary} border-t ${tableBorder} pt-2`}>
-                    <span>Cost: <span className="font-semibold">{formatMoneyMajor(costPrice, cur)}</span></span>
+                    {costPrice != null ? <span>Cost: <span className="font-semibold">{formatMoneyMajor(costPrice, cur)}</span></span> : <span />}
                     <span>Sell: <span className="font-semibold">{formatMoneyMajor(sellPrice, cur)}</span></span>
                   </div>
                 </div>
@@ -751,24 +768,22 @@ function StockManagementContent() {
                   <th className="py-3 px-4">Product</th>
                   <th className="py-3 px-4">Shop</th>
                   <th className="py-3 px-4 text-center">Current Stock</th>
-                  <th className="py-3 px-4 text-center">Available</th>
-                  <th className="py-3 px-4 text-center">Reserved</th>
                   <th className="py-3 px-4 text-center">Min Level</th>
                   <th className="py-3 px-4 text-center">Status</th>
-                  <th className="py-3 px-4 text-center">Cost Value</th>
-                  <th className="py-3 px-4 text-center">Sell Value</th>
+                  <th className="py-3 px-4 text-center">Cost Price</th>
+                  <th className="py-3 px-4 text-center">Selling Price</th>
                   <th className="py-3 px-4 text-center">Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {filteredStocks.map(stock => {
-                  const available = stock.quantity; // placeholder: available = quantity - reserved (if reserved existed)
-                  const reserved = 0;
                   const status = stockStatusBadge(stock.quantity, stock.lowStockThreshold, theme === 'dark');
                   // price values are stored in major units (KES), no conversion needed
                   const productWithCost = stock.product as (Product & { costPrice?: number }) | undefined;
                   const sellPrice = Number(productWithCost?.price ?? 0);
-                  const costPrice = Number(productWithCost?.costPrice ?? sellPrice);
+                  // null = hidden for this role (server nulls it). Was `?? sellPrice`, which showed
+              // staff the selling price labelled as "Cost".
+              const costPrice = productWithCost?.costPrice != null ? Number(productWithCost.costPrice) : null;
                   const rowProductId = getProductFromRow(stock)?.id;
 
                   return (
@@ -789,14 +804,12 @@ function StockManagementContent() {
                       </td>
                       <td className={`py-3 px-4 ${textSecondary}`}>{stock.shopName ?? shopName}</td>
                       <td className="py-3 px-4 text-center font-semibold">{stock.quantity}</td>
-                      <td className="py-3 px-4 text-center">{available}</td>
-                      <td className="py-3 px-4 text-center">{reserved}</td>
                       <td className="py-3 px-4 text-center">{stock.lowStockThreshold}</td>
                       <td className="py-3 px-4 text-center">
-                        <span className={`px-2 py-1 rounded-full text-xs ${status.className}`}>{status.label}</span>
+                        <span className={`whitespace-nowrap px-2 py-1 rounded-full text-xs ${status.className}`}>{status.label}</span>
                       </td>
                       <td className="py-3 px-4 text-center">
-                        <div className="font-semibold">{formatMoneyMajor(costPrice, cur)}</div>
+                        <div className="font-semibold">{costPrice != null ? formatMoneyMajor(costPrice, cur) : '—'}</div>
                       </td>
                       <td className="py-3 px-4 text-center">
                         <div className="font-semibold">{formatMoneyMajor(sellPrice, cur)}</div>

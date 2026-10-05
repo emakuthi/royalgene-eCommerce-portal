@@ -71,12 +71,15 @@ vi.mock('@/lib/supabase-client', () => ({
       }
       if (table === 'Product') {
         state.productCalls += 1;
-        // 1st call = the update-then-select version-guard query; 2nd call
-        // (conflict path only) = fetching the current row to return to the
-        // caller.
-        return state.productCalls === 1
-          ? chainable({ data: state.productUpdateRows, error: null })
-          : chainable({ data: state.productCurrent, error: null });
+        // Answer by query KIND, not call order: the route also reads Product
+        // before updating (price check, audit snapshot for product history), so
+        // "1st call = the update" broke when those reads were added. An
+        // update().select() chain gets the version-guarded rows; any plain read
+        // gets the current row.
+        const reader = chainable({ data: state.productCurrent, error: null });
+        const updater = chainable({ data: state.productUpdateRows, error: null });
+        (reader as { update: unknown }).update = vi.fn(() => updater);
+        return reader;
       }
       return chainable({ data: null, error: null });
     }),

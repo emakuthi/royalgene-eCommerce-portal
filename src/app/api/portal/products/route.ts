@@ -7,7 +7,6 @@ import { requireTenantUser } from '@/lib/authorize';
 import { supabaseAdmin } from '@/lib/supabase-client';
 import logger from '@/lib/logger';
 import { createProductForShop } from '@/lib/portal-products';
-import type { ShopStock, Product } from '@/lib/types';
 import { jsonResponse, optionsResponse } from '@/lib/apiResponse';
 import { trackFromRequest } from '@/lib/activity-tracker';
 import { assertCanCreate } from '@/lib/entitlements/enforce.server';
@@ -224,130 +223,73 @@ export async function DELETE(request: NextRequest) {
       }
     }
 
-    // Track product deletion (fire-and-forget)
-    void trackFromRequest(request, payload, {
+    // No in-memory fallback: if the database write fails, say so. (This used to
+    // "succeed" by deleting from an in-process sample store, so a failed delete
+    // looked done until the next reload/deploy brought the product back.)
+    const DELETE_FAILED = 'Failed to delete the product — nothing was changed. Please try again.';
+    const trackDelete = () => void trackFromRequest(request, payload, {
       action: 'product.delete', category: 'product',
       resourceType: 'Product', resourceId: productId,
       shopId: providedShopId,
       details: { adminDelete: payload.role === 'admin' || payload.role === 'super_admin' },
     });
 
-    // If admin/super_admin and provided shopId, allow deleting only that ShopStock row
+    // Admin/super_admin: with a shopId, remove only that shop's ShopStock row;
+    // without one, delete (or archive, if it has sales history) the whole product.
     if (payload.role === 'admin' || payload.role === 'super_admin') {
-      try {
-        if (providedShopId) {
-          const { error } = await supabaseAdmin.from('ShopStock').delete().eq('productId', productId).eq('shopId', providedShopId);
-          if (error) {
-            logger.warn('Supabase ShopStock delete failed for admin; attempting in-memory fallback', { error: String(error), productId, shopId: providedShopId });
-            try {
-              const { db } = await import('@/lib/db');
-              const filtered = (db.shopStocks as unknown as ShopStock[]).filter((s) => !(s.productId === productId && s.shopId === providedShopId));
-              db.shopStocks = filtered as unknown as ShopStock[];
-              return jsonResponse({ success: true }, 200);
-            } catch (fallbackErr) {
-              logger.error('Admin delete in-memory fallback failed', { error: fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr) });
-              return jsonResponse({ success: false, error: 'Failed to delete' }, 500);
-            }
-          }
-          return jsonResponse({ success: true }, 200);
+      if (providedShopId) {
+        const { error } = await supabaseAdmin.from('ShopStock').delete().eq('productId', productId).eq('shopId', providedShopId);
+        if (error) {
+          logger.error('Admin ShopStock delete failed', { error: String(error), productId, shopId: providedShopId });
+          return jsonResponse({ success: false, error: DELETE_FAILED }, 500);
         }
+        trackDelete();
+        return jsonResponse({ success: true }, 200);
+      }
 
-        // If no shopId provided, admins may request full product deletion (remove product + shopstock)
-        // Use existing db helper to keep behavior consistent
-        try {
-          const { softDeleted } = await (await import('@/lib/supabase-db')).deleteProduct(productId);
-          if (softDeleted) {
-            return jsonResponse({
-              success: true,
-              data: { deactivated: true },
-              message: 'This product has sales history, so it was archived instead of deleted — it no longer shows in any shop.',
-            }, 200);
-          }
-          return jsonResponse({ success: true }, 200);
-        } catch (supabaseErr) {
-          logger.warn('Admin full-product delete failed in Supabase; attempting in-memory fallback', { error: supabaseErr instanceof Error ? supabaseErr.message : String(supabaseErr), productId });
-          try {
-            const { db } = await import('@/lib/db');
-            db.products = db.products.filter((p: Product) => p.id !== productId);
-            const remaining = (db.shopStocks as unknown as ShopStock[]).filter((s) => s.productId !== productId);
-            db.shopStocks = remaining as unknown as ShopStock[];
-            return jsonResponse({ success: true }, 200);
-          } catch (fallbackErr) {
-            logger.error('Admin full-product delete fallback failed', { error: fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr) });
-            return jsonResponse({ success: false, error: 'Failed to delete' }, 500);
-          }
+      try {
+        const { softDeleted } = await (await import('@/lib/supabase-db')).deleteProduct(productId);
+        trackDelete();
+        if (softDeleted) {
+          return jsonResponse({
+            success: true,
+            data: { deactivated: true },
+            message: 'This product has sales history, so it was archived instead of deleted — it no longer shows in any shop.',
+          }, 200);
         }
+        return jsonResponse({ success: true }, 200);
       } catch (err) {
-        logger.warn('Admin portal delete failed, attempting in-memory fallback', { error: err instanceof Error ? err.message : String(err), productId, shopId: providedShopId });
-        try {
-          const { db } = await import('@/lib/db');
-          if (providedShopId) {
-            const filtered = (db.shopStocks as unknown as ShopStock[]).filter((s) => !(s.productId === productId && s.shopId === providedShopId));
-            db.shopStocks = filtered as unknown as ShopStock[];
-             return jsonResponse({ success: true }, 200);
-           }
-          db.products = db.products.filter((p: Product) => p.id !== productId);
-          const remaining = (db.shopStocks as unknown as ShopStock[]).filter((s) => s.productId !== productId);
-          db.shopStocks = remaining as unknown as ShopStock[];
-           return jsonResponse({ success: true }, 200);
-         } catch (fallbackErr) {
-           logger.error('Admin delete fallback failed', { error: fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr) });
-           return jsonResponse({ success: false, error: 'Failed to delete' }, 500);
-         }
-       }
+        logger.error('Admin full-product delete failed', { error: err instanceof Error ? err.message : String(err), productId });
+        return jsonResponse({ success: false, error: DELETE_FAILED }, 500);
+      }
     }
 
-    // For portal users: delete the ShopStock row for their shop only
-    try {
-      const { data: portalUser, error: portalError } = await supabaseAdmin
-        .from('PortalUser')
-        .select('*')
-        .eq('userId', payload.userId)
-        .limit(1)
-        .maybeSingle();
+    // Portal users: delete the ShopStock row for their own shop only.
+    const { data: portalUser, error: portalError } = await supabaseAdmin
+      .from('PortalUser')
+      .select('*')
+      .eq('userId', payload.userId)
+      .limit(1)
+      .maybeSingle();
 
-      if (portalError || !portalUser) {
-        logger.warn('Delete product failed: portal user not found', { userId: payload.userId });
-        return jsonResponse({ success: false, error: 'Portal user not found' }, 403);
-      }
+    if (portalError || !portalUser) {
+      logger.warn('Delete product failed: portal user not found', { userId: payload.userId });
+      return jsonResponse({ success: false, error: 'Portal user not found' }, 403);
+    }
 
-      const shopId = (portalUser as Record<string, unknown>).shopId as string | undefined;
-      if (!shopId) {
-        logger.warn('Delete product failed: portal user has no shopId', { userId: payload.userId });
-        return jsonResponse({ success: false, error: 'Shop ID unavailable' }, 400);
-      }
+    const shopId = (portalUser as Record<string, unknown>).shopId as string | undefined;
+    if (!shopId) {
+      logger.warn('Delete product failed: portal user has no shopId', { userId: payload.userId });
+      return jsonResponse({ success: false, error: 'Shop ID unavailable' }, 400);
+    }
 
-      const { error } = await supabaseAdmin.from('ShopStock').delete().eq('productId', productId).eq('shopId', shopId);
-      if (error) {
-        logger.warn('Supabase ShopStock delete failed for portal user; attempting in-memory fallback', { error: String(error), productId, shopId });
-        try {
-          const { db } = await import('@/lib/db');
-          const filtered = (db.shopStocks as unknown as ShopStock[]).filter((s) => !(s.productId === productId && s.shopId === shopId));
-          db.shopStocks = filtered as unknown as ShopStock[];
-          return jsonResponse({ success: true }, 200);
-        } catch (fallbackErr) {
-          logger.error('Portal delete in-memory fallback failed', { error: fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr) });
-          return jsonResponse({ success: false, error: 'Failed to delete' }, 500);
-        }
-      }
-
-      return jsonResponse({ success: true }, 200);
-    } catch (err) {
-      logger.warn('Portal delete failed, falling back to in-memory DB', { error: err instanceof Error ? err.message : String(err), productId });
-      try {
-        const { db } = await import('@/lib/db');
-        const { data: portalUser } = await supabaseAdmin.from('PortalUser').select('*').eq('userId', payload.userId).limit(1).maybeSingle();
-        const shopId = (portalUser as Record<string, unknown>)?.shopId as string | undefined;
-        if (!shopId) return jsonResponse({ success: false, error: 'Shop ID unavailable' }, 400);
-
-        const filtered = (db.shopStocks as unknown as ShopStock[]).filter((s) => !(s.productId === productId && s.shopId === shopId));
-        db.shopStocks = filtered as unknown as ShopStock[];
-         return jsonResponse({ success: true }, 200);
-       } catch (fallbackErr) {
-         logger.error('Portal delete fallback failed', { error: fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr) });
-         return jsonResponse({ success: false, error: 'Failed to delete' }, 500);
-       }
-     }
+    const { error } = await supabaseAdmin.from('ShopStock').delete().eq('productId', productId).eq('shopId', shopId);
+    if (error) {
+      logger.error('Portal user ShopStock delete failed', { error: String(error), productId, shopId });
+      return jsonResponse({ success: false, error: DELETE_FAILED }, 500);
+    }
+    trackDelete();
+    return jsonResponse({ success: true }, 200);
    } catch (error) {
      logger.error('Delete product route failure', { error: error instanceof Error ? error.message : String(error) });
      return jsonResponse({ success: false, error: 'Internal server error' }, 500);

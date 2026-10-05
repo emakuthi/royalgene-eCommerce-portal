@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Plus, MapPin, Phone, Mail, User, Eye, Edit, Settings, Store, Users, TrendingUp, Trash2 } from 'lucide-react';
+import { Plus, MapPin, Phone, Mail, User, Edit, Store, Users, TrendingUp, Trash2 } from 'lucide-react';
 import PortalHeader from '@/components/portal/PortalHeader';
 import { useHydratedAuth } from '@/lib/hooks';
 import { toast } from 'sonner';
@@ -20,6 +20,15 @@ import MuiDialogContentText from '@mui/material/DialogContentText';
 import MuiDialogActions from '@mui/material/DialogActions';
 import MuiButton from '@mui/material/Button';
 
+/** Real per-shop numbers from /api/portal/dashboard/stats (last 30 days). */
+interface ShopStats {
+  revenue: number;
+  transactions: number;
+  /** null when this role can't see cost/profit. */
+  profit: number | null;
+  lowStock: number;
+}
+
 interface Shop {
   id: string;
   name: string;
@@ -29,13 +38,6 @@ interface Shop {
   shopkeeper?: string | null;
   createdAt?: string;
 }
-
-// Fallback sample data (used only if fetch fails) - module scope to avoid useEffect dependency
-const sampleShops: Shop[] = [
-  { id: 'shop1', name: 'Main Store', location: '123 Fashion Street, Downtown', phone: '+1-234-567-8901', email: 'main@boutique.com', shopkeeper: 'Shop Keeper', createdAt: 'Jan 15, 2024, 03:00 AM' },
-  { id: 'shop2', name: 'Downtown Branch', location: '456 Style Avenue, City Center', phone: '+1-234-567-8902', email: 'downtown@boutique.com', shopkeeper: 'Alice Johnson', createdAt: 'Feb 20, 2024, 03:00 AM' },
-  { id: 'shop3', name: 'Mall Outlet', location: '789 Shopping Mall, Level 2', phone: '+1-234-567-8903', email: 'mall@boutique.com', shopkeeper: null, createdAt: 'Mar 10, 2024, 03:00 AM' },
-];
 
 export default function ShopsPage() {
   // shops will be loaded from the server
@@ -78,7 +80,6 @@ export default function ShopsPage() {
     }
   };
 
-  // sampleShops is a stable module-level constant; avoid noisy linter here
   useEffect(() => {
     if (!mounted) return;
 
@@ -90,13 +91,14 @@ export default function ShopsPage() {
           setShops((res.data ?? []) as Shop[]);
         } else {
           console.warn('Failed to fetch shops', res.error);
-          toast.error(res.error || 'Failed to load shops from server — showing sample data');
-          setShops(sampleShops);
+          // Never substitute made-up shops — an owner could try to edit/delete them.
+          toast.error(res.error || 'Failed to load shops');
+          setShops([]);
         }
       } catch (err) {
         console.error('Error loading shops', err);
-        toast.error('Error loading shops — showing sample data');
-        setShops(sampleShops);
+        toast.error('Error loading shops');
+        setShops([]);
       } finally {
         setLoading(false);
       }
@@ -106,7 +108,33 @@ export default function ShopsPage() {
     void load();
   }, [mounted, token]);
 
-  // createShop moved to dedicated page; keep shops listing code here only
+  // Per-shop last-30-day stats. These cards/tabs used to show hardcoded numbers
+  // (revenue 12,381.50, "85% performance", 128 orders, 3.2% conversion).
+  const [shopStats, setShopStats] = useState<Record<string, ShopStats>>({});
+  useEffect(() => {
+    if (!token || shops.length === 0) return;
+    let cancelled = false;
+    void Promise.all(shops.map(async (shop) => {
+      try {
+        const res = await fetch(`/api/portal/dashboard/stats?shopId=${shop.id}`, { headers: { Authorization: `Bearer ${token}` }, cache: 'no-store' });
+        const j = await res.json();
+        if (!res.ok || !j?.success) return null;
+        const d = j.data as { salesThisMonth?: number; transactionsThisMonth?: number; totalProfit?: number | null; lowStockProducts?: number };
+        return [shop.id, { revenue: d.salesThisMonth ?? 0, transactions: d.transactionsThisMonth ?? 0, profit: d.totalProfit ?? null, lowStock: d.lowStockProducts ?? 0 }] as const;
+      } catch { return null; }
+    })).then(rows => {
+      if (cancelled) return;
+      setShopStats(Object.fromEntries(rows.filter((r): r is NonNullable<typeof r> => r !== null)));
+    });
+    return () => { cancelled = true; };
+  }, [shops, token]);
+  const statsLoaded = Object.keys(shopStats).length > 0;
+  const totals = Object.values(shopStats).reduce(
+    (acc, st) => ({ revenue: acc.revenue + st.revenue, transactions: acc.transactions + st.transactions }),
+    { revenue: 0, transactions: 0 },
+  );
+  const canSeeProfit = Object.values(shopStats).some(st => st.profit !== null);
+
 
   // Helper to change tab and persist selection in the URL without full navigation
   const selectTab = (tab: 'overview' | 'performance' | 'management') => {
@@ -141,7 +169,7 @@ export default function ShopsPage() {
           description="Create and manage outlets, assign shopkeepers, and monitor performance"
           breadcrumbs={[{ label: 'Portal', href: '/portal' }, { label: 'Shops' }]}
           actions={(
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <Link href="/shops/add-new">
                 <Button className="bg-[hsl(var(--primary))] bg-opacity-10 text-[hsl(var(--primary-foreground))] hover:bg-[hsl(var(--primary))] hover:bg-opacity-20"><Plus className="mr-2" />Create Shop</Button>
               </Link>
@@ -163,11 +191,11 @@ export default function ShopsPage() {
           <div className="pt-4 grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
             <StatCard title="Total Shops" value={shops.length} subtitle="Active outlets" icon={<Store className="h-6 w-6 text-emerald-600" />} />
             <StatCard title="With Shopkeepers" value={shops.filter(s => s.shopkeeper).length} subtitle="Assigned managers" icon={<Users className="h-6 w-6 text-purple-600" />} />
-            <StatCard title="Total Revenue" value={formatMoneyMajor(12381.5, cur)} subtitle="All outlets combined" icon={<span className="text-green-600 text-sm">{cur}</span>} />
-            <StatCard title="Avg Performance" value="85%" subtitle="Target achievement" icon={<TrendingUp className="h-6 w-6 text-blue-600" />} />
+            <StatCard title="Revenue (30d)" value={statsLoaded ? formatMoneyMajor(totals.revenue, cur) : '—'} subtitle="All outlets combined" icon={<span className="text-green-600 text-sm">{cur}</span>} />
+            <StatCard title="Transactions (30d)" value={statsLoaded ? totals.transactions.toLocaleString() : '—'} subtitle="Checkouts, all outlets" icon={<TrendingUp className="h-6 w-6 text-blue-600" />} />
           </div>
           {/* Tabs */}
-          <div className="flex items-center gap-2 mb-4">
+          <div className="flex flex-wrap items-center gap-2 mb-4">
             <Button variant="ghost" onClick={() => selectTab('overview')} className={`${activeTab === 'overview' ? 'bg-[hsl(var(--primary))] bg-opacity-10 text-[hsl(var(--primary-foreground))] rounded-md shadow-sm' : ''}`}>Shop Overview</Button>
             <Button variant="ghost" onClick={() => selectTab('performance')} className={`${activeTab === 'performance' ? 'bg-[hsl(var(--primary))] bg-opacity-10 text-[hsl(var(--primary-foreground))] rounded-md shadow-sm' : ''}`}>Performance</Button>
             <Button variant="ghost" onClick={() => selectTab('management')} className={`${activeTab === 'management' ? 'bg-[hsl(var(--primary))] bg-opacity-10 text-[hsl(var(--primary-foreground))] rounded-md shadow-sm' : ''}`}>Management</Button>
@@ -187,18 +215,44 @@ export default function ShopsPage() {
                       <CardTitle>All Shops</CardTitle>
                     </CardHeader>
                     <CardContent>
-                      <div className="overflow-x-auto">
+                      {/* Phones: one card per shop instead of an 800px-wide table. */}
+                      {!loading && (
+                        <ul className="sm:hidden divide-y divide-muted-foreground/10">
+                          {shops.map((shop) => (
+                            <li key={shop.id} className="py-3 space-y-1.5">
+                              <div className="flex items-start justify-between gap-2">
+                                <div className="min-w-0">
+                                  <div className="font-medium">{shop.name}</div>
+                                  <div className="text-xs text-muted-foreground flex items-center gap-1"><MapPin className="h-3 w-3 shrink-0" /><span className="truncate">{shop.location || '—'}</span></div>
+                                </div>
+                                <div className="flex shrink-0 items-center">
+                                  <Link href={`/shops/${shop.id}/edit`}><Button variant="ghost" size="icon" aria-label="Edit shop"><Edit className="h-4 w-4" /></Button></Link>
+                                  <Button variant="ghost" size="icon" aria-label="Delete shop" className="text-destructive hover:text-destructive" disabled={deleting === shop.id} onClick={() => setDeleteTarget({ id: shop.id, name: shop.name })}><Trash2 className="h-4 w-4" /></Button>
+                                </div>
+                              </div>
+                              <div className="text-xs text-muted-foreground flex flex-wrap gap-x-3 gap-y-1">
+                                {shop.phone && <span className="flex items-center gap-1"><Phone className="h-3 w-3" />{shop.phone}</span>}
+                                {shop.email && <span className="flex min-w-0 items-center gap-1"><Mail className="h-3 w-3 shrink-0" /><span className="truncate">{shop.email}</span></span>}
+                              </div>
+                              <div className="text-xs flex items-center gap-1">
+                                <User className="h-3 w-3 text-green-600" />
+                                {shop.shopkeeper ? shop.shopkeeper : <Link href="/users" className="text-[hsl(var(--primary))] underline">Assign a shopkeeper</Link>}
+                              </div>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                      <div className={`overflow-x-auto ${loading ? '' : 'hidden sm:block'}`}>
                         {loading ? (
                           <div className="py-12 text-center text-gray-600">Loading shops...</div>
                         ) : (
-                          <table className="w-full min-w-[800px] table-auto">
+                          <table className="w-full min-w-[720px] table-auto">
                             <thead>
                               <tr className="text-left text-sm text-muted-foreground">
                                 <th className="py-3 px-4">Shop Details</th>
                                 <th className="py-3 px-4">Location</th>
                                 <th className="py-3 px-4">Contact</th>
                                 <th className="py-3 px-4">Shopkeeper</th>
-                                <th className="py-3 px-4">Status</th>
                                 <th className="py-3 px-4">Created</th>
                                 <th className="py-3 px-4">Actions</th>
                               </tr>
@@ -237,20 +291,16 @@ export default function ShopsPage() {
                                         <span>{shop.shopkeeper}</span>
                                       </div>
                                     ) : (
-                                      <Button size="sm" variant="outline">Assign</Button>
+                                      // Shop assignment is managed per user on the Users page.
+                                      <Link href="/users"><Button size="sm" variant="outline">Assign</Button></Link>
                                     )}
                                   </td>
-                                  <td className="py-4 px-4">
-                                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-[hsl(var(--primary))] bg-opacity-10 text-[hsl(var(--primary-foreground))]">Active</span>
-                                  </td>
-                                  <td className="py-4 px-4 text-sm text-muted-foreground">{shop.createdAt}</td>
+                                  <td className="py-4 px-4 text-sm text-muted-foreground">{shop.createdAt ? new Date(shop.createdAt).toLocaleDateString() : '—'}</td>
                                   <td className="py-4 px-4">
                                     <div className="flex items-center gap-3">
-                                      <Button variant="ghost" size="icon"><Eye className="h-4 w-4" /></Button>
                                       <Link href={`/shops/${shop.id}/edit`}>
-                                        <Button variant="ghost" size="icon"><Edit className="h-4 w-4" /></Button>
+                                        <Button variant="ghost" size="icon" aria-label="Edit shop"><Edit className="h-4 w-4" /></Button>
                                       </Link>
-                                      <Button variant="ghost" size="icon"><Settings className="h-4 w-4" /></Button>
                                       <Button
                                         variant="ghost"
                                         size="icon"
@@ -275,18 +325,40 @@ export default function ShopsPage() {
             )}
 
             {activeTab === 'performance' && (
-              <div className="space-y-4">
-                <div className="pt-4 grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-                  <StatCard title="Sales (7d)" value={formatMoneyMajor(45230.0, cur)} subtitle="Last 7 days" icon={<TrendingUp className="h-6 w-6 text-green-600" />} />
-                  <StatCard title="Orders" value={128} subtitle="Last 7 days" icon={<Users className="h-6 w-6 text-blue-600" />} />
-                  <StatCard title="Conversion" value="3.2%" subtitle="Store avg" icon={<Store className="h-6 w-6 text-purple-600" />} />
-                </div>
-                <Card>
-                  <CardContent>
-                    <div className="text-sm text-muted-foreground">Performance analytics are coming soon. Integrate metrics and charts here (revenue by outlet, orders by day, top products).</div>
-                  </CardContent>
-                </Card>
-              </div>
+              <Card className="mt-4">
+                <CardHeader>
+                  <CardTitle>Performance by shop · last 30 days</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {!statsLoaded ? (
+                    <div className="py-8 text-center text-sm text-muted-foreground">Loading shop performance…</div>
+                  ) : (
+                    <ul className="divide-y divide-muted-foreground/10">
+                      {[...shops].sort((a, b) => (shopStats[b.id]?.revenue ?? 0) - (shopStats[a.id]?.revenue ?? 0)).map((shop) => {
+                        const st = shopStats[shop.id];
+                        const share = totals.revenue > 0 && st ? Math.round((st.revenue / totals.revenue) * 100) : 0;
+                        return (
+                          <li key={shop.id} className="py-3">
+                            <div className="flex items-baseline justify-between gap-3">
+                              <div className="min-w-0 font-medium truncate">{shop.name}</div>
+                              <div className="shrink-0 whitespace-nowrap font-semibold">{st ? formatMoneyMajor(st.revenue, cur) : '—'}</div>
+                            </div>
+                            <div className="mt-1.5 h-1.5 w-full rounded-full bg-muted">
+                              <div className="h-1.5 rounded-full bg-[hsl(var(--primary))]" style={{ width: `${share}%` }} />
+                            </div>
+                            <div className="mt-1.5 text-xs text-muted-foreground flex flex-wrap gap-x-3 gap-y-1">
+                              <span>{share}% of revenue</span>
+                              <span>{(st?.transactions ?? 0).toLocaleString()} transactions</span>
+                              {canSeeProfit && st?.profit != null && <span>Profit {formatMoneyMajor(st.profit, cur)}</span>}
+                              <span className={st && st.lowStock > 0 ? 'text-amber-600' : ''}>{st?.lowStock ?? 0} low-stock items</span>
+                            </div>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  )}
+                </CardContent>
+              </Card>
             )}
 
             {activeTab === 'management' && (

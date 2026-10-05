@@ -18,12 +18,12 @@ export default function TopProducts({ products }: { products?: Product[] }) {
             <div className="text-sm text-gray-500">No top products yet.</div>
           ) : (
             products.map((p, i) => (
-              <div key={p.name} className={`flex items-center justify-between p-2 rounded ${i === 0 ? 'bg-gray-50 dark:bg-gray-800' : ''}`}>
-                <div>
+              <div key={p.name} className={`flex items-center justify-between gap-3 p-2 rounded ${i === 0 ? 'bg-gray-50 dark:bg-gray-800' : ''}`}>
+                <div className="min-w-0">
                   <div className="text-xs text-gray-500">#{i + 1}</div>
-                  <div className="font-medium">{p.name}</div>
+                  <div className="font-medium line-clamp-2">{p.name}</div>
                 </div>
-                <div className="text-right">
+                <div className="shrink-0 whitespace-nowrap text-right">
                   <div className="font-semibold">{formatMoneyMajor(p.sales, cur)}</div>
                   <div className="text-xs text-green-600">{p.quantity} sold</div>
                 </div>

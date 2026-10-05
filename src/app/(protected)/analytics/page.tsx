@@ -108,6 +108,9 @@ interface PnlMonth {
   netProfit: number;
 }
 
+/** 600000 → "600K", 1250000 → "1.3M" — full numbers squeezed the plot area on phones. */
+const compactTick = (v: number) => new Intl.NumberFormat('en', { notation: 'compact', maximumFractionDigits: 1 }).format(v);
+
 const CHART_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6'];
 
 const DATE_RANGES = [
@@ -216,7 +219,10 @@ export default function AnalyticsPage() {
   const cur = useBranding().branding.currency; // tenant base
   // Reporting-currency: display-only conversion of base figures. Does not
   // change stored data — just how totals are presented.
-  const [reportingCurrency, setReportingCurrency] = useState(cur);
+  // null = follow the tenant base currency (which may finish loading after first render);
+  // set once the user picks one. Was useState(cur), which froze an undefined/early value.
+  const [pickedCurrency, setReportingCurrency] = useState<string | null>(null);
+  const reportingCurrency = pickedCurrency ?? cur;
   const [reportCurrencies, setReportCurrencies] = useState<string[]>([cur]);
   const [reportRate, setReportRate] = useState(1); // base → reportingCurrency
 
@@ -469,6 +475,7 @@ export default function AnalyticsPage() {
     () =>
       topProducts.slice(0, 5).map(p => ({
         name: p.name.length > 12 ? p.name.substring(0, 11) + '…' : p.name,
+        fullName: p.name, // the legend has room for the whole name (and truncates by CSS if not)
         value: Math.round(p.totalSales),
         id: p.id,
       })),
@@ -754,7 +761,7 @@ export default function AnalyticsPage() {
                 <BarChart data={pnlChartData}>
                   <CartesianGrid strokeDasharray="3 3" stroke={gridStroke} />
                   <XAxis dataKey="month" stroke={axisStroke} fontSize={12} tickLine={false} />
-                  <YAxis stroke={axisStroke} fontSize={12} tickLine={false} />
+                  <YAxis stroke={axisStroke} fontSize={12} tickLine={false} width={44} tickFormatter={compactTick} />
                   <Tooltip contentStyle={tooltipStyle} formatter={(value: number) => formatMoney(Number(value), reportingCurrency)} />
                   <Legend />
                   <Bar dataKey="gross" fill="#10b981" radius={[4, 4, 0, 0]} name={`Gross profit (${reportingCurrency})`} />
@@ -797,7 +804,7 @@ export default function AnalyticsPage() {
                     </defs>
                     <CartesianGrid strokeDasharray="3 3" stroke={gridStroke} />
                     <XAxis dataKey="date" stroke={axisStroke} fontSize={12} tickLine={false} />
-                    <YAxis stroke={axisStroke} fontSize={12} tickLine={false} />
+                    <YAxis stroke={axisStroke} fontSize={12} tickLine={false} width={44} tickFormatter={compactTick} />
                     <Tooltip contentStyle={tooltipStyle} formatter={(value: number) => formatMoney(Number(value) * reportRate, reportingCurrency)} />
                     <Legend />
                     <Area type="monotone" dataKey="sales" stroke="#3b82f6" strokeWidth={2} fillOpacity={1} fill="url(#gradSales)" name={`Sales (${reportingCurrency})`} />
@@ -825,7 +832,7 @@ export default function AnalyticsPage() {
                     <BarChart data={chartData}>
                       <CartesianGrid strokeDasharray="3 3" stroke={gridStroke} />
                       <XAxis dataKey="date" stroke={axisStroke} fontSize={12} tickLine={false} />
-                      <YAxis stroke={axisStroke} fontSize={12} tickLine={false} />
+                      <YAxis stroke={axisStroke} fontSize={12} tickLine={false} width={44} tickFormatter={compactTick} />
                       <Tooltip contentStyle={tooltipStyle} />
                       <Bar dataKey="transactions" fill="#f59e0b" radius={[6, 6, 0, 0]} name="Transactions" />
                     </BarChart>
@@ -855,7 +862,7 @@ export default function AnalyticsPage() {
                       </defs>
                       <CartesianGrid strokeDasharray="3 3" stroke={gridStroke} />
                       <XAxis dataKey="date" stroke={axisStroke} fontSize={12} tickLine={false} />
-                      <YAxis stroke={axisStroke} fontSize={12} tickLine={false} />
+                      <YAxis stroke={axisStroke} fontSize={12} tickLine={false} width={44} tickFormatter={compactTick} />
                       <Tooltip contentStyle={tooltipStyle} formatter={(value: number) => formatMoney(Number(value) * reportRate, reportingCurrency)} />
                       <Area type="monotone" dataKey="avgValue" stroke="#8b5cf6" strokeWidth={2} fillOpacity={1} fill="url(#gradAvg)" name={`Avg Value (${reportingCurrency})`} />
                     </AreaChart>
@@ -883,15 +890,14 @@ export default function AnalyticsPage() {
                     </div>
                   </div>
                 </CardHeader>
-                <CardContent className="flex justify-center">
-                  <ResponsiveContainer width="100%" height={260}>
+                <CardContent>
+                  <ResponsiveContainer width="100%" height={220}>
                     <PieChart>
                       <Pie
                         data={productPieData}
                         cx="50%"
                         cy="50%"
                         labelLine={false}
-                        label={({ name, value }) => `${name}: ${value}`}
                         outerRadius={90}
                         innerRadius={45}
                         paddingAngle={3}
@@ -904,6 +910,26 @@ export default function AnalyticsPage() {
                       <Tooltip contentStyle={tooltipStyle} formatter={(value: number) => formatMoney(Number(value) * reportRate, reportingCurrency)} />
                     </PieChart>
                   </ResponsiveContainer>
+                  {/* Legend below the chart: outside slice labels ran off narrow screens and ignored the reporting currency. */}
+                  {(() => {
+                    const total = productPieData.reduce((sum, d) => sum + (Number(d.value) || 0), 0);
+                    return (
+                      <ul className="mt-3 space-y-1.5 text-sm">
+                        {productPieData.map((d, i) => (
+                          <li key={d.id} className="flex items-start gap-2">
+                            <span className="mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: CHART_COLORS[i % CHART_COLORS.length] }} />
+                            <div className="min-w-0 flex-1">
+                              <div className="truncate" title={d.fullName}>{d.fullName}</div>
+                              <div className="text-xs text-gray-500">
+                                <span className="font-medium text-gray-700 dark:text-gray-300">{formatMoney(Number(d.value) * reportRate, reportingCurrency)}</span>
+                                {' · '}{total > 0 ? Math.round((Number(d.value) / total) * 100) : 0}%
+                              </div>
+                            </div>
+                          </li>
+                        ))}
+                      </ul>
+                    );
+                  })()}
                 </CardContent>
               </Card>
             )}
@@ -925,7 +951,7 @@ export default function AnalyticsPage() {
                     <BarChart data={productChartData}>
                       <CartesianGrid strokeDasharray="3 3" stroke={gridStroke} />
                       <XAxis dataKey="name" stroke={axisStroke} fontSize={12} tickLine={false} />
-                      <YAxis stroke={axisStroke} fontSize={12} tickLine={false} />
+                      <YAxis stroke={axisStroke} fontSize={12} tickLine={false} width={44} tickFormatter={compactTick} />
                       <Tooltip contentStyle={tooltipStyle} formatter={(value: number) => formatMoney(Number(value) * reportRate, reportingCurrency)} />
                       <Legend />
                       <Bar dataKey="sales" fill="#3b82f6" radius={[4, 4, 0, 0]} name={`Sales (${reportingCurrency})`} />
@@ -1004,7 +1030,7 @@ export default function AnalyticsPage() {
 
                       {/* Info */}
                       <div className="flex-1 min-w-0">
-                        <p className="font-medium text-gray-900 dark:text-white truncate">
+                        <p className="font-medium text-gray-900 dark:text-white line-clamp-2 break-words">
                           {product.name}
                         </p>
                         <div className="flex items-center gap-3 mt-1">
