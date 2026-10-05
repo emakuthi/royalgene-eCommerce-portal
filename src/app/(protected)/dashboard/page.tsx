@@ -75,6 +75,7 @@ function PortalDashboardContent() {
         let totalExpenses = 0;
         let netProfit = 0;
         let salesToday = 0;
+        let transactionsThisMonth = 0;
         let averageMarginAcc = 0;
         let marginCount = 0;
         let lowStockProducts = 0;
@@ -87,6 +88,7 @@ function PortalDashboardContent() {
           totalExpenses += s.totalExpenses || 0;
           netProfit += s.netProfit || 0;
           salesToday += s.salesToday || 0;
+          transactionsThisMonth += s.transactionsThisMonth || 0;
           // averageMargin is always a number in the API shape; accumulate and count
           averageMarginAcc += s.averageMargin;
           marginCount++;
@@ -117,6 +119,7 @@ function PortalDashboardContent() {
           topSellingProducts,
           salesToday,
           salesThisMonth: totalSales,
+          transactionsThisMonth,
         });
       } catch (err) {
         console.error('Failed to load aggregated stats', err);

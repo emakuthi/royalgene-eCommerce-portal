@@ -13,6 +13,7 @@ type SaleRow = {
   id: string;
   createdAt: string;
   totalAmount: number;
+  unitPrice?: number | null;
   product?: { name?: string } | null;
   quantity?: number;
   paymentMethod?: string;
@@ -98,13 +99,14 @@ export default function RecentSales({ shopId, limit = 5 }: { shopId?: string; li
 
           {sales.map(s => (
             <div key={s.id} className="p-3 border rounded bg-white/50 dark:bg-gray-800/50">
-              <div className="flex items-center justify-between">
-                <div>
-                  <div className="font-medium">{s.product?.name ?? 'Sale'}</div>
-                  <div className="text-sm text-gray-500">{s.quantity ?? 1} × {formatMoneyMajor(s.totalAmount, cur)}</div>
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="font-medium line-clamp-2">{s.product?.name ?? 'Sale'}</div>
+                  {/* qty × UNIT price (was qty × total, e.g. "2 × 25,000" for a 25,000 sale) */}
+                  <div className="text-sm text-gray-500">{s.quantity ?? 1} × {formatMoneyMajor(s.unitPrice ?? s.totalAmount / Math.max(1, s.quantity ?? 1), cur)}</div>
                   <div className="text-xs text-gray-400">{formatDistanceToNow(new Date(s.createdAt), { addSuffix: true })}</div>
                 </div>
-                <div className="text-sm font-semibold">{formatMoneyMajor(s.totalAmount, cur)}</div>
+                <div className="shrink-0 whitespace-nowrap text-sm font-semibold">{formatMoneyMajor(s.totalAmount, cur)}</div>
               </div>
             </div>
           ))}

@@ -481,6 +481,8 @@ export interface PortalDashboardStats {
   topSellingProducts: Array<{ name: string; quantity: number; sales: number }>;
   salesToday: number;
   salesThisMonth: number;
+  /** Distinct checkouts in the same window as salesThisMonth. */
+  transactionsThisMonth?: number;
 }
 
 export interface PaymentDetails {

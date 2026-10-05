@@ -1,5 +1,7 @@
 'use client';
 
+import { formatMoneyMajor } from '@/lib/format';
+import { useBranding } from '@/lib/branding-context';
 import { useEffect, useMemo, useState, useCallback } from 'react';
 import type { Product } from '@/lib/types';
 import { Button } from '@/components/ui/button';
@@ -8,7 +10,7 @@ import { useHydratedAuth } from '@/lib/hooks';
 import { usePortalStore } from '@/lib/store';
 import { toast } from 'sonner';
 import Link from 'next/link';
-import { Eye, Plus, ShoppingCart, DollarSign, TrendingUp, Download, Sliders, Package, Trash2, X, ArchiveRestore } from 'lucide-react';
+import { Eye, Plus, ShoppingCart, DollarSign, TrendingUp, Download, Package, Trash2, X, ArchiveRestore } from 'lucide-react';
 import PortalHeader from '@/components/portal/PortalHeader';
 import { computePrefillForm } from '@/lib/sales-prefill';
 import StatCard from '@/components/ui/stat-card';
@@ -22,8 +24,20 @@ import DialogContentText from '@mui/material/DialogContentText';
 import DialogActions from '@mui/material/DialogActions';
 import MuiButton from '@mui/material/Button';
 
-function formatCurrency(amount: number) {
-  return amount.toFixed(2);
+type MonthStats = {
+  thisCount: number;
+  thisRevenue: number;
+  /** null when this role can't see cost prices (server nulls costPrice). */
+  thisProfit: number | null;
+  prevCount: number;
+  prevRevenue: number;
+};
+
+/** "+12.5% vs last month", or a plain note when last month had nothing to compare against. */
+function vsLastMonth(current: number, previous: number): string {
+  if (previous <= 0) return 'No sales last month to compare';
+  const pct = ((current - previous) / previous) * 100;
+  return `${pct >= 0 ? '+' : '−'}${Math.abs(pct).toFixed(1)}% vs last month`;
 }
 
 function SalesEntryContent() {
@@ -35,11 +49,12 @@ function SalesEntryContent() {
   const borderColor = theme === 'dark' ? 'border-gray-800' : 'border-gray-200';
    const { token, user: authUser } = useHydratedAuth();
    const { currentShop, _hasHydrated } = usePortalStore();
+   const cur = useBranding().branding.currency;
    const [mounted, setMounted] = useState(false);
    const [sales, setSales] = useState<SalesRow[]>([]);
    const [stocks, setStocks] = useState<StockRow[]>([]);
-   const [prevMonthSales, setPrevMonthSales] = useState(0);
-   const [prevMonthRevenue, setPrevMonthRevenue] = useState(0);
+   const [monthStats, setMonthStats] = useState<MonthStats | null>(null);
+   const [monthRows, setMonthRows] = useState<SalesRow[]>([]);
    const router = useRouter();
    const isAdmin = authUser?.role === 'admin' || authUser?.role === 'super_admin';
    // Bulk selection/delete — admin-only. Each id is one SalesEntry row (one
@@ -96,49 +111,57 @@ function SalesEntryContent() {
 
   useEffect(() => setMounted(true), []);
 
-  // Helper function to calculate previous month's data - memoized with useCallback
-  const fetchPreviousMonthData = useCallback(async (shopId: string) => {
+  // Real month-to-date stats vs last month. (These cards used to be computed from
+  // just the 10 rows on the current page and compared with all of last month.)
+  // One request covers both months; split by the viewer's local month boundaries.
+  const fetchMonthStats = useCallback(async (shopId: string) => {
     try {
-      // Calculate date range for previous month
       const now = new Date();
-      const lastMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0); // Last day of previous month
-      const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1); // First day of previous month
-
-      const qs = new URLSearchParams();
-      qs.set('shopId', shopId);
-      qs.set('limit', '1000'); // Get all sales in previous month
-      qs.set('offset', '0');
-
-      const res = await fetch(`/api/portal/sales?${qs.toString()}`, {
-        headers: { Authorization: `Bearer ${token}` },
-        cache: 'no-store',
-      });
-
+      const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+      const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+      const qs = new URLSearchParams({ shopId, limit: '10000', offset: '0', from: lastMonthStart.toISOString() });
+      const res = await fetch(`/api/portal/sales?${qs.toString()}`, { headers: { Authorization: `Bearer ${token}` }, cache: 'no-store' });
       const json = await res.json();
-      if (json.success && Array.isArray(json.data)) {
-        // Filter for previous month only
-        const prevMonthData = (json.data || []).filter((s: SalesRow) => {
-          const saleDate = new Date(s.createdAt);
-          return saleDate >= lastMonthStart && saleDate <= lastMonthEnd;
-        });
-
-        const prevSalesCount = prevMonthData.length;
-        const prevRevenue = prevMonthData.reduce((sum: number, s: SalesRow) => sum + (s.totalAmount || 0), 0);
-
-        setPrevMonthSales(prevSalesCount);
-        setPrevMonthRevenue(prevRevenue);
-      }
+      if (!json.success || !Array.isArray(json.data)) return;
+      const rows = json.data as SalesRow[];
+      const amount = (r: SalesRow) => Number((r as SalesRow & { baseAmount?: number }).baseAmount ?? r.totalAmount) || 0;
+      const thisMonth = rows.filter(r => new Date(r.createdAt) >= thisMonthStart);
+      const lastMonth = rows.filter(r => new Date(r.createdAt) < thisMonthStart);
+      const costHidden = thisMonth.some(r => r.costPrice == null && r.product?.costPrice == null);
+      setMonthRows(thisMonth);
+      setMonthStats({
+        thisCount: thisMonth.length,
+        thisRevenue: thisMonth.reduce((sum, r) => sum + amount(r), 0),
+        thisProfit: costHidden ? null : thisMonth.reduce((sum, r) => sum + (r.unitPrice - (r.costPrice ?? r.product?.costPrice ?? 0)) * r.quantity, 0),
+        prevCount: lastMonth.length,
+        prevRevenue: lastMonth.reduce((sum, r) => sum + amount(r), 0),
+      });
     } catch (err) {
-      console.error('Failed to fetch previous month data:', err);
-      setPrevMonthSales(0);
-      setPrevMonthRevenue(0);
+      console.error('Failed to load month stats:', err);
     }
   }, [token]);
 
   useEffect(() => {
     if (!mounted || !token || !_hasHydrated || !currentShop?.id) return;
-    fetchPreviousMonthData(currentShop.id);
-  }, [mounted, token, currentShop, _hasHydrated, fetchPreviousMonthData]);
+    void fetchMonthStats(currentShop.id);
+  }, [mounted, token, currentShop, _hasHydrated, fetchMonthStats]);
+
+  /** Downloads this month's sales as CSV (the Export button used to do nothing). */
+  const exportMonthCsv = () => {
+    if (monthRows.length === 0) { toast.error('No sales this month to export'); return; }
+    const esc = (v: unknown) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+    const header = ['Date', 'Product', 'Quantity', 'Unit price', 'Total', 'Payment method', 'Customer'];
+    const lines = monthRows.map(r => [new Date(r.createdAt).toLocaleString(), r.product?.name ?? '', r.quantity, r.unitPrice, r.totalAmount, r.paymentMethod, r.customerName ?? ''].map(esc).join(','));
+    const blob = new Blob([[header.map(esc).join(','), ...lines].join('\n')], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `sales-${new Date().toISOString().slice(0, 7)}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  };
 
   useEffect(() => {
     if (!mounted || !token || !_hasHydrated) return;
@@ -195,6 +218,9 @@ function SalesEntryContent() {
           // sale time) over the product's current cost, which may have
           // since changed.
           const salesData = (json.data || []).map((s: SalesRow) => {
+            // Server nulls both cost fields for roles that can't see cost — keep that as
+            // "unknown" rather than 0 (which showed staff a profit equal to the full price).
+            if (s.costPrice == null && s.product?.costPrice == null) return { ...s, costPrice: null, ProfitMargin: null };
             const costPrice = s.costPrice || s.product?.costPrice || 0;
             const profit = (s.unitPrice - costPrice) * s.quantity;
             return { ...s, costPrice, ProfitMargin: { profit, costPrice } };
@@ -230,6 +256,9 @@ function SalesEntryContent() {
           // by the API now, cost price prefers the SalesEntry's own
           // historical snapshot.
           const salesData = (j.data || []).map((s: SalesRow) => {
+            // Server nulls both cost fields for roles that can't see cost — keep that as
+            // "unknown" rather than 0 (which showed staff a profit equal to the full price).
+            if (s.costPrice == null && s.product?.costPrice == null) return { ...s, costPrice: null, ProfitMargin: null };
             const costPrice = s.costPrice || s.product?.costPrice || 0;
             const profit = (s.unitPrice - costPrice) * s.quantity;
             return { ...s, costPrice, ProfitMargin: { profit, costPrice } };
@@ -282,32 +311,14 @@ function SalesEntryContent() {
     }
   };
 
+  const canSeeCost = sales.some(s => s.costPrice != null);
+
   const stats = useMemo(() => {
-    const totalSales = sales.length;
-    const totalRevenue = sales.reduce((sum, s) => sum + (s.totalAmount || 0), 0);
-
-    // Use the pre-calculated profit from ProfitMargin (always populated from fetchSales/fetchPage)
-    const totalProfit = sales.reduce((sum, s) => {
-      return sum + (s.ProfitMargin?.profit || 0);
-    }, 0);
-
     const availableStock = stocks.filter(s => s.quantity > 0).length;
     const lowStockItems = stocks.filter(s => s.quantity > 0 && s.quantity <= (s.lowStockThreshold ?? 5)).length;
     const outOfStockItems = stocks.filter(s => s.quantity <= 0).length;
-    return { totalSales, totalRevenue, totalProfit, availableStock, lowStockItems, outOfStockItems };
-  }, [sales, stocks]);
-
-  // Calculate percentage changes for month-over-month comparison
-  const salesChange = prevMonthSales > 0
-    ? (((stats.totalSales - prevMonthSales) / prevMonthSales) * 100).toFixed(1)
-    : stats.totalSales > 0 ? '100.0' : '0.0';
-
-  const revenueChange = prevMonthRevenue > 0
-    ? (((stats.totalRevenue - prevMonthRevenue) / prevMonthRevenue) * 100).toFixed(1)
-    : stats.totalRevenue > 0 ? '100.0' : '0.0';
-
-  const salesChangePrefix = parseFloat(salesChange) >= 0 ? '+' : '';
-  const revenueChangePrefix = parseFloat(revenueChange) >= 0 ? '+' : '';
+    return { availableStock, lowStockItems, outOfStockItems };
+  }, [stocks]);
 
   if (!mounted) return <div className={`flex items-center justify-center min-h-screen ${bgPrimary}`}><div className="text-center"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div><p className={`${textSecondary}`}>Loading...</p></div></div>;
 
@@ -319,7 +330,7 @@ function SalesEntryContent() {
         description="Track and manage sales entries across all outlets"
         breadcrumbs={[{ label: 'Portal', href: '/portal' }, { label: 'Sales' }]}
         actions={(
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-2 sm:gap-3">
             {isAdmin && (
               <Link href="/sales/trash">
                 <Button variant="outline" className={`flex items-center gap-2 ${textPrimary}`}>
@@ -328,13 +339,9 @@ function SalesEntryContent() {
                 </Button>
               </Link>
             )}
-            <Button variant="outline" className={`flex items-center gap-2 ${textPrimary}`}>
+            <Button variant="outline" onClick={exportMonthCsv} className={`flex items-center gap-2 ${textPrimary}`}>
               <Download className="h-4 w-4" />
               <span className="text-sm">Export</span>
-            </Button>
-            <Button variant="outline" className={`flex items-center gap-2 ${textPrimary}`}>
-              <Sliders className="h-4 w-4" />
-              <span className="text-sm">Filter</span>
             </Button>
             <Link href="/sales/new">
               <Button className="bg-[hsl(var(--primary))] text-white flex items-center gap-2 hover:opacity-90"><span className="text-sm">+ New Sale</span></Button>
@@ -347,21 +354,23 @@ function SalesEntryContent() {
       <div className="px-2 sm:px-2 py-2 pb-2 w-full">
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
          <StatCard
-           title="Total Sales"
-           value={stats.totalSales}
-           subtitle={`${salesChangePrefix}${salesChange}% from last month`}
+           title="Sales this month"
+           value={monthStats ? monthStats.thisCount.toLocaleString() : '—'}
+           subtitle={monthStats ? vsLastMonth(monthStats.thisCount, monthStats.prevCount) : 'Loading…'}
            icon={<ShoppingCart className="h-6 w-6 text-blue-600" />}
          />
          <StatCard
-           title="Total Revenue"
-           value={formatCurrency(stats.totalRevenue)}
-           subtitle={`${revenueChangePrefix}${revenueChange}% from last month`}
+           title="Revenue this month"
+           value={monthStats ? formatMoneyMajor(monthStats.thisRevenue, cur) : '—'}
+           subtitle={monthStats ? vsLastMonth(monthStats.thisRevenue, monthStats.prevRevenue) : 'Loading…'}
            icon={<DollarSign className="h-6 w-6 text-green-600" />}
          />
          <StatCard
-           title="Total Profit"
-           value={formatCurrency(stats.totalProfit)}
-           subtitle={`Margin: ${stats.totalRevenue > 0 ? ((stats.totalProfit / stats.totalRevenue) * 100).toFixed(1) : '0.0'}%`}
+           title="Profit this month"
+           value={monthStats?.thisProfit != null ? formatMoneyMajor(monthStats.thisProfit, cur) : '—'}
+           subtitle={monthStats?.thisProfit != null
+             ? `Margin: ${monthStats.thisRevenue > 0 ? ((monthStats.thisProfit / monthStats.thisRevenue) * 100).toFixed(1) : '0.0'}%`
+             : 'Cost prices hidden for your role'}
            icon={<TrendingUp className="h-6 w-6 text-purple-600" />}
          />
          <StatCard
@@ -393,7 +402,35 @@ function SalesEntryContent() {
            </div>
          </CardHeader>
          <CardContent>
-           <div className="overflow-x-auto">
+           {/* Phones: one card per sale instead of a 10-column table that scrolls sideways. */}
+           <ul className="sm:hidden -mx-2 divide-y divide-gray-100 dark:divide-gray-800">
+             {sales.map(s => {
+               const isSelected = selectedSaleIds.has(s.id);
+               const profit = s.ProfitMargin?.profit;
+               return (
+                 <li key={s.id} className={`flex items-start gap-2 px-2 py-3 ${isSelected ? (theme === 'dark' ? 'bg-purple-900/10' : 'bg-purple-50') : ''}`}>
+                   {isAdmin && (
+                     <Checkbox checked={isSelected} onChange={() => toggleSaleSelected(s.id)} size="small" sx={{ p: 0.5 }} aria-label={`Select sale for ${s.product?.name || 'product'}`} />
+                   )}
+                   <button className="min-w-0 flex-1 text-left" onClick={() => router.push(`/sales/new?saleId=${encodeURIComponent(s.id)}`)}>
+                     <div className={`font-medium line-clamp-2 ${textPrimary}`}>{s.product?.name || 'Unknown'}</div>
+                     <div className={`text-xs ${textSecondary}`}>
+                       {s.quantity} × {formatMoneyMajor(s.unitPrice, cur)} · {new Date(s.createdAt).toLocaleDateString()} {new Date(s.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                     </div>
+                   </button>
+                   <div className="shrink-0 text-right">
+                     <div className={`whitespace-nowrap text-sm font-semibold ${textPrimary}`}>{formatMoneyMajor(s.totalAmount, cur)}</div>
+                     {canSeeCost && profit != null && (
+                       <div className={`whitespace-nowrap text-xs ${profit >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+                         {profit >= 0 ? '+' : ''}{formatMoneyMajor(profit, cur)}
+                       </div>
+                     )}
+                   </div>
+                 </li>
+               );
+             })}
+           </ul>
+           <div className="hidden sm:block overflow-x-auto">
              <table className="w-full border-collapse">
                <thead>
                  <tr className={`text-xs font-semibold ${textSecondary} border-b-2 ${borderColor} bg-opacity-50`}>
@@ -415,9 +452,9 @@ function SalesEntryContent() {
                   <th className="py-4 px-2 text-left hidden lg:table-cell">ID</th>
                   <th className="py-4 px-2 text-left">Product</th>
                   <th className="py-4 px-2 text-center">Qty</th>
-                  <th className="py-4 px-2 text-right">Cost Price</th>
+                  {canSeeCost && <th className="py-4 px-2 text-right">Cost Price</th>}
                   <th className="py-4 px-2 text-right">Unit Price</th>
-                  <th className="py-4 px-2 text-right">Profit</th>
+                  {canSeeCost && <th className="py-4 px-2 text-right">Profit</th>}
                   <th className="py-4 px-2 text-right">Total</th>
                   <th className="py-4 px-2 text-center hidden sm:table-cell">Payment</th>
                   <th className="py-4 px-2 text-center">Actions</th>
@@ -444,13 +481,15 @@ function SalesEntryContent() {
                       <td className={`py-3 px-2 text-xs text-gray-400 font-mono hidden lg:table-cell`}>{s.id.slice(0, 8)}...</td>
                       <td className={`py-3 px-2 text-sm font-medium ${textPrimary}`}>{s.product?.name || 'Unknown'}</td>
                       <td className={`py-3 px-2 text-sm text-center font-medium ${textPrimary}`}>{s.quantity}</td>
-                      <td className={`py-3 px-2 text-sm text-right font-medium ${textPrimary}`}>{formatCurrency(costPrice)}</td>
-                      <td className={`py-3 px-2 text-sm text-right font-medium ${textPrimary}`}>{formatCurrency(s.unitPrice)}</td>
-                      <td className={`py-3 px-2 text-sm text-right font-medium ${totalProfit > 0 ? 'text-green-600 dark:text-green-400' : totalProfit < 0 ? 'text-red-600 dark:text-red-400' : textSecondary}`}>
-                        <div>{formatCurrency(totalProfit)}</div>
-                        <div className={`text-xs ${textSecondary}`}>{margin}%</div>
-                      </td>
-                      <td className={`py-3 px-2 text-sm text-right font-semibold ${textPrimary}`}>{formatCurrency(s.totalAmount)}</td>
+                      {canSeeCost && <td className={`py-3 px-2 text-sm text-right font-medium ${textPrimary}`}>{formatMoneyMajor(costPrice, cur)}</td>}
+                      <td className={`py-3 px-2 text-sm text-right font-medium ${textPrimary}`}>{formatMoneyMajor(s.unitPrice, cur)}</td>
+                      {canSeeCost && (
+                        <td className={`py-3 px-2 text-sm text-right font-medium ${totalProfit > 0 ? 'text-green-600 dark:text-green-400' : totalProfit < 0 ? 'text-red-600 dark:text-red-400' : textSecondary}`}>
+                          <div>{formatMoneyMajor(totalProfit, cur)}</div>
+                          <div className={`text-xs ${textSecondary}`}>{margin}%</div>
+                        </td>
+                      )}
+                      <td className={`py-3 px-2 text-sm text-right font-semibold ${textPrimary}`}>{formatMoneyMajor(s.totalAmount, cur)}</td>
                       <td className="py-3 px-2 text-center hidden sm:table-cell">
                         {(() => {
                           const pm = s.paymentMethod;
@@ -528,7 +567,7 @@ function SalesEntryContent() {
         <DialogContent>
           <ul className="list-disc pl-5 text-sm space-y-0.5 mb-2">
             {sales.filter(s => selectedSaleIds.has(s.id)).slice(0, 5).map(s => (
-              <li key={s.id} className="truncate">{s.product?.name || 'Unknown'} — {formatCurrency(s.totalAmount)}</li>
+              <li key={s.id} className="truncate">{s.product?.name || 'Unknown'} — {formatMoneyMajor(s.totalAmount, cur)}</li>
             ))}
           </ul>
           {selectedSaleIds.size > 5 && (

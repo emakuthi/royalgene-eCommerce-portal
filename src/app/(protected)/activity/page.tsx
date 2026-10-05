@@ -350,8 +350,33 @@ function ActivityContent() {
                 </p>
               </div>
             ) : (
-              /* Activity table */
-              <div className="overflow-x-auto">
+              <>
+              {/* Phones: stacked rows — the table squeezed action names and cut off emails. */}
+              <ul className={`sm:hidden divide-y ${theme === 'dark' ? 'divide-gray-800' : 'divide-gray-100'}`}>
+                {logs.map(log => (
+                  <li key={log.id} className="flex items-start gap-2.5 py-3">
+                    <div className={`mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full ${STATUS_DOT[log.status] || 'bg-gray-400'}`} title={log.status} />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-baseline justify-between gap-2">
+                        <span className={`text-sm font-medium ${textPrimary}`}>{friendlyAction(log.action)}</span>
+                        <span className={`shrink-0 text-xs ${textSecondary}`} title={fullDate(log.createdAt)}>{relativeTime(log.createdAt)}</span>
+                      </div>
+                      {showWhoColumn && (log.userName || log.userEmail) && (
+                        <div className={`text-xs truncate ${textSecondary}`}>{log.userName || log.userEmail}</div>
+                      )}
+                      <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                        <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-semibold ${CATEGORY_COLORS[log.category] || CATEGORY_COLORS.general}`}>{log.category}</span>
+                        {log.source !== 'portal' && (
+                          <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] ${theme === 'dark' ? 'bg-white/10 text-gray-400' : 'bg-gray-200 text-gray-500'}`}>{log.source}</span>
+                        )}
+                        {log.device && <span className={`inline-flex items-center gap-1 text-[10px] ${textSecondary}`}>{log.deviceType && DEVICE_ICONS[log.deviceType]}{log.device}</span>}
+                      </div>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+              {/* Activity table */}
+              <div className="hidden sm:block overflow-x-auto">
                 <table className="w-full border-collapse">
                   <thead>
                     <tr className={`text-xs font-semibold ${textSecondary} border-b-2 ${borderColor} bg-opacity-50`}>
@@ -427,6 +452,7 @@ function ActivityContent() {
                   </tbody>
                 </table>
               </div>
+              </>
             )}
 
             {/* Pagination (matches sales page pattern) */}

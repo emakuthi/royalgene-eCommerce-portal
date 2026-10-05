@@ -396,7 +396,7 @@ function PortalUsersContent() {
     <div className={`${pageBg} w-full`}>
       <PortalHeader
         backHref="/dashboard"
-        title={<><span className="text-4xl">User Management</span></>}
+        title="User Management"
         description="Manage users, roles, and access permissions across your boutique"
         breadcrumbs={[{ label: 'Portal', href: '/portal' }, { label: 'Users' }]}
         actions={(
@@ -544,7 +544,46 @@ function PortalUsersContent() {
             <CardTitle>All Users</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="overflow-x-auto">
+            {/* Phones: one card per user instead of a 6-column table that scrolls sideways. */}
+            <ul className={`sm:hidden divide-y ${theme === 'dark' ? 'divide-gray-800' : 'divide-gray-100'}`}>
+              {displayedUsers.map(u => (
+                <li key={u.id} className="py-3 space-y-2">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="font-medium truncate">{u.user?.name || 'Unknown'}</div>
+                      <div className={`text-xs truncate ${textSecondary}`}>{u.user?.email}</div>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-1">
+                      <Button variant="ghost" size="sm" onClick={() => openEditModal(u)}>Edit</Button>
+                      {u.isActive ? (
+                        <Button variant="ghost" size="icon" aria-label="Disable user" onClick={() => setDeleteTarget({ id: u.id, name: u.user?.name ?? u.id })} disabled={deleting === u.id} className="text-destructive hover:text-destructive"><Trash2 className="h-4 w-4"/></Button>
+                      ) : (
+                        <Button variant="ghost" size="sm" onClick={() => { setPurgeTarget({ id: u.id, name: u.user?.name ?? u.id, email: u.user?.email ?? '' }); setPurgeConfirm(''); }} className="text-destructive hover:text-destructive">Purge</Button>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-pink-50 text-pink-700">{u.position}</span>
+                    {u.isActive
+                      ? <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-pink-50 text-pink-700">Active</span>
+                      : <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-amber-50 text-amber-700">Inactive</span>}
+                    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${u.mobileAccess !== false ? 'bg-emerald-50 text-emerald-700' : 'bg-gray-100 text-gray-500'}`}><Smartphone className="h-3 w-3" />{u.mobileAccess !== false ? 'Mobile' : 'No mobile'}</span>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    {(u.allShops && u.allShops.length > 0 ? u.allShops.map(s => ({ id: s.shopId, name: s.shop?.name || s.shopId })) : u.shop ? [{ id: u.shop.id, name: u.shop.name }] : []).map(s => (
+                      <Badge key={s.id} className="max-w-full truncate text-xs px-2 py-0.5 bg-blue-50 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300">{s.name}</Badge>
+                    ))}
+                    {!u.shop && !(u.allShops && u.allShops.length) && <span className="text-gray-400 italic text-xs">No shop assignment</span>}
+                    {!String(u.id).startsWith('admin-') && (
+                      <Button variant="ghost" size="sm" className="h-7 px-2 text-xs text-blue-600" onClick={() => openShopsModal(u)}>
+                        <Plus className="h-3.5 w-3.5 mr-1" />Shops
+                      </Button>
+                    )}
+                  </div>
+                </li>
+              ))}
+            </ul>
+            <div className="hidden sm:block overflow-x-auto">
               <table className="w-full">
                 <thead>
                   <tr className={`text-left text-sm ${textSecondary} border-b ${borderColor}`}>

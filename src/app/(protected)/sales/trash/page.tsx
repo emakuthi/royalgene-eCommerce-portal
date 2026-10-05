@@ -1,5 +1,7 @@
 'use client';
 
+import { formatMoneyMajor } from '@/lib/format';
+import { useBranding } from '@/lib/branding-context';
 import { useEffect, useState, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -30,9 +32,6 @@ interface TrashedSale {
   purgeEligibleAt: string;
 }
 
-function formatCurrency(amount: number) {
-  return amount.toFixed(2);
-}
 
 function daysUntil(iso: string): number {
   return Math.ceil((new Date(iso).getTime() - Date.now()) / 86_400_000);
@@ -40,6 +39,7 @@ function daysUntil(iso: string): number {
 
 function SalesTrashContent() {
   const { theme } = useTheme();
+  const cur = useBranding().branding.currency;
   const { token, user: authUser } = useHydratedAuth();
   const isAdmin = authUser?.role === 'admin' || authUser?.role === 'super_admin';
 
@@ -182,7 +182,39 @@ function SalesTrashContent() {
                 <p className="text-sm">Nothing in the trash right now.</p>
               </div>
             ) : (
-              <div className="overflow-x-auto">
+              <>
+              {/* Phones: one card per deleted sale instead of a 7-column table. */}
+              <ul className={`sm:hidden divide-y ${theme === 'dark' ? 'divide-gray-800' : 'divide-gray-100'}`}>
+                {sales.map(s => {
+                  const daysLeft = daysUntil(s.purgeEligibleAt);
+                  const variant = [s.size, s.color].filter(Boolean).join(' / ');
+                  return (
+                    <li key={s.id} className="py-3 space-y-2">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className={`text-sm font-medium line-clamp-2 ${textPrimary}`}>{s.productName || 'Unknown product'}</div>
+                          <div className={`text-xs ${textSecondary}`}>
+                            {[variant, `Qty ${s.quantity}`, s.shopName].filter(Boolean).join(' · ')}
+                          </div>
+                        </div>
+                        <div className={`shrink-0 whitespace-nowrap text-sm font-semibold ${textPrimary}`}>{formatMoneyMajor(s.totalAmount, cur)}</div>
+                      </div>
+                      <div className="flex items-center justify-between gap-2 text-xs">
+                        <span className={textSecondary}>
+                          Deleted {new Date(s.deletedAt).toLocaleDateString()} · {daysLeft <= 0
+                            ? <span className="font-medium text-red-600 dark:text-red-400">purge eligible now</span>
+                            : <>purge in {daysLeft} day{daysLeft === 1 ? '' : 's'}</>}
+                        </span>
+                        <Button size="sm" variant="outline" className="gap-1.5 shrink-0" onClick={() => void restore(s.id)} disabled={restoringId === s.id}>
+                          <ArchiveRestore className="h-3.5 w-3.5" />
+                          {restoringId === s.id ? 'Restoring…' : 'Restore'}
+                        </Button>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+              <div className="hidden sm:block overflow-x-auto">
                 <table className="w-full border-collapse">
                   <thead>
                     <tr className={`text-xs font-semibold ${textSecondary} border-b-2 ${borderColor}`}>
@@ -207,7 +239,7 @@ function SalesTrashContent() {
                           </td>
                           <td className={`py-3 px-2 text-sm ${textSecondary}`}>{s.shopName || '—'}</td>
                           <td className={`py-3 px-2 text-sm text-center ${textPrimary}`}>{s.quantity}</td>
-                          <td className={`py-3 px-2 text-sm text-right font-medium ${textPrimary}`}>{formatCurrency(s.totalAmount)}</td>
+                          <td className={`py-3 px-2 text-sm text-right font-medium ${textPrimary}`}>{formatMoneyMajor(s.totalAmount, cur)}</td>
                           <td className={`py-3 px-2 text-xs ${textSecondary}`}>{new Date(s.deletedAt).toLocaleDateString()}</td>
                           <td className="py-3 px-2 text-xs">
                             {daysLeft <= 0 ? (
@@ -236,6 +268,7 @@ function SalesTrashContent() {
                   </tbody>
                 </table>
               </div>
+              </>
             )}
           </CardContent>
         </Card>

@@ -19,7 +19,7 @@ export default function AdminDashboard({ stats, loading, currentShopId }: { stat
               <StatCard loading={loading} title="Total Revenue" value={loading ? '-' : `${formatMoneyMajor((stats?.salesThisMonth) || 0, cur)}`} subtitle="Total sales last 30 days" icon={<></>} />
             </Link>
             <Link href="/analytics">
-              <StatCard loading={loading} title="Total Sales" value={loading ? '-' : `${Math.round((stats?.totalSales) || 0)}`} subtitle="Total transactions" icon={<></>} />
+              <StatCard loading={loading} title="Transactions" value={loading ? '-' : (stats?.transactionsThisMonth ?? 0).toLocaleString()} subtitle="Checkouts · last 30 days" icon={<></>} />
             </Link>
             <Link href="/analytics">
               <StatCard loading={loading} title="Gross Profit" value={loading ? '-' : `${formatMoneyMajor((stats?.totalProfit) || 0, cur)}`} subtitle="Before expenses · last 30 days" icon={<></>} />

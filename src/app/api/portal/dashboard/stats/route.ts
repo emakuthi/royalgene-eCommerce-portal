@@ -12,6 +12,7 @@ interface ProfitMarginRow {
 
 interface SaleRecord {
   id?: string;
+  saleGroupId?: string | null;
   productId: string;
   quantity: number;
   totalAmount: number;
@@ -94,6 +95,8 @@ export async function GET(request: NextRequest) {
 
     // Calculate totals
     const salesToday = todays.reduce((sum: number, sale: SaleRecord) => sum + (Number((sale as { baseAmount?: number }).baseAmount ?? sale.totalAmount) || 0), 0);
+    // Transactions = distinct checkouts (saleGroupId), not line items — same rule as the Android dashboard.
+    const transactionsThisMonth = new Set(months.map((s) => s.saleGroupId || s.id)).size;
     const salesThisMonth = months.reduce((sum: number, sale: SaleRecord) => sum + (Number((sale as { baseAmount?: number }).baseAmount ?? sale.totalAmount) || 0), 0);
 
     // Gross profit from the per-sale cost SNAPSHOT (costPrice × qty), the same
@@ -184,7 +187,7 @@ export async function GET(request: NextRequest) {
     // Cost/profit are owner-only (see cost-visibility.server.ts).
     const showCost = await canViewCostData(payload);
 
-    return jsonResponse({ success: true, data: { totalSales: salesThisMonth, totalProfit: showCost ? profitThisMonth : null, averageMargin: showCost ? averageMargin : null, totalExpenses: showCost ? expensesThisMonth : null, netProfit: showCost ? netProfitThisMonth : null, lowStockProducts: lowStockItems.length, topSellingProducts, salesToday, salesThisMonth } }, 200);
+    return jsonResponse({ success: true, data: { totalSales: salesThisMonth, totalProfit: showCost ? profitThisMonth : null, averageMargin: showCost ? averageMargin : null, totalExpenses: showCost ? expensesThisMonth : null, netProfit: showCost ? netProfitThisMonth : null, lowStockProducts: lowStockItems.length, topSellingProducts, salesToday, salesThisMonth, transactionsThisMonth } }, 200);
   } catch (error) {
     logger.error('Dashboard stats error', {
       error: error instanceof Error ? error.message : String(error),
