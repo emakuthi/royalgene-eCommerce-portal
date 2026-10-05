@@ -64,7 +64,7 @@ beforeEach(() => {
     ],
   };
 });
-afterEach(() => vi.clearAllMocks());
+afterEach(() => { vi.clearAllMocks(); });
 
 describe('cursor encode/decode', () => {
   it('round-trips', () => {

@@ -3,8 +3,7 @@ import { supabaseAdmin } from '@/lib/supabase-client';
 import { requireTenantUser } from '@/lib/authorize';
 import logger from '@/lib/logger';
 import { v4 as uuidv4 } from 'uuid';
-import { updateShopStock, recordStockTransaction } from '@/lib/db';
-import type { StockTransaction, PortalUser, ShopStock } from '@/lib/types';
+import type { PortalUser, ShopStock } from '@/lib/types';
 import { syncProductStockFromShopStocks } from '@/lib/supabase-db';
 import { hasVariantStock } from '@/lib/variant-stock.server';
 import { jsonResponse, optionsResponse } from '@/lib/apiResponse';
@@ -319,42 +318,10 @@ export async function PUT(request: NextRequest) {
 
       return jsonResponse({ success: true, data: updated }, 200);
     } catch (err) {
-      // Fallback to in-memory DB
-      logger.warn('Supabase update failed, falling back to in-memory DB', { error: err instanceof Error ? err.message : String(err) });
-
-      // Only allow fallback for admins or super_admins
-      if (payload.role !== 'admin' && payload.role !== 'super_admin') {
-        return jsonResponse({ success: false, error: 'Failed to update stock' }, 500);
-      }
-
-      const updated = updateShopStock(stockId, {
-        quantity,
-        lastRestockDate: new Date().toISOString(),
-        lastRestockBy: portalUser?.id || payload.userId,
-      });
-
-      // create transaction record in-memory
-      const tx: Partial<StockTransaction> = {
-        id: uuidv4(),
-        shopStockId: stockId,
-        portalUserId: portalUser?.id || payload.userId,
-        // ensure this matches the StockTransaction.type union
-        type: 'adjustment',
-        quantity: quantity - (oldStock.quantity || 0),
-        reason: reason || 'Manual adjustment',
-        createdAt: new Date().toISOString(),
-      };
-      recordStockTransaction(tx);
-
-      // Attempt to sync product stock even for fallback (best-effort)
-      try {
-        const prodId = (oldStock as unknown as { productId?: string }).productId;
-        if (prodId) await syncProductStockFromShopStocks(prodId);
-      } catch (syncErr) {
-        logger.warn('Failed to sync product stock after in-memory ShopStock update', { error: syncErr instanceof Error ? syncErr.message : String(syncErr) });
-      }
-
-      return jsonResponse({ success: true, data: updated }, 200);
+      // No in-memory fallback: a failed database write must not report success
+      // (it used to, for admins — the change then vanished on the next deploy).
+      logger.error('Stock update failed', { error: err instanceof Error ? err.message : String(err), stockId });
+      return jsonResponse({ success: false, error: 'Failed to update stock — nothing was changed. Please try again.' }, 500);
     }
   } catch (error) {
     logger.error('Stock update error', {
