@@ -59,7 +59,11 @@ export default function NewSalePage() {
   // recent sales + stats
   const [recentSales, setRecentSales] = useState<RecentSale[]>([]);
   const [loadingRecent, setLoadingRecent] = useState(true);
-  const [salesStats, setSalesStats] = useState({ totalSales: 0, totalRevenueCents: 0, avgItemsPerSale: 0 });
+  // Today's real totals (viewer's local day) + day-over-day revenue change.
+  // revenueChangePct is null when yesterday had no sales to compare against.
+  const [salesStats, setSalesStats] = useState<{ totalSales: number; totalRevenueCents: number; avgItemsPerSale: number; revenueChangePct: number | null }>(
+    { totalSales: 0, totalRevenueCents: 0, avgItemsPerSale: 0, revenueChangePct: null },
+  );
 
   // primary form data - keep numeric canonical values here when possible
   const [formData, setFormData] = useState({
@@ -265,11 +269,31 @@ export default function NewSalePage() {
 
         setRecentSales(rows);
 
-        // compute stats
-        const totalSales = rows.length;
-        const totalRevenueCents = rows.reduce((acc, s) => acc + (s.totalAmountCents || 0), 0);
-        const avgItemsPerSale = totalSales ? Math.round(rows.reduce((acc, s) => acc + s.quantity, 0) / totalSales) : 0;
-        setSalesStats({ totalSales, totalRevenueCents, avgItemsPerSale });
+        // Real today-vs-yesterday stats, bounded by the viewer's local midnight.
+        const todayStart = new Date();
+        todayStart.setHours(0, 0, 0, 0);
+        const yesterdayStart = new Date(todayStart);
+        yesterdayStart.setDate(yesterdayStart.getDate() - 1);
+        const statsRes = await fetch(
+          `/api/portal/sales?shopId=${currentShop.id}&limit=5000&from=${encodeURIComponent(yesterdayStart.toISOString())}`,
+          { headers: { Authorization: `Bearer ${token}` } },
+        );
+        const sj = statsRes.ok ? await statsRes.json() : null;
+        if (sj?.success && Array.isArray(sj.data)) {
+          const amount = (r: Record<string, unknown>) => Number(r.baseAmount ?? r.totalAmount ?? 0) || 0;
+          const all = sj.data as Record<string, unknown>[];
+          const isToday = (r: Record<string, unknown>) => new Date(String(r.createdAt)).getTime() >= todayStart.getTime();
+          const today = all.filter(isToday);
+          // Same-time-yesterday, so a half-finished day isn't compared with a full one.
+          const sameTimeYesterday = Date.now() - 24 * 60 * 60 * 1000;
+          const yesterday = all.filter(r => !isToday(r) && new Date(String(r.createdAt)).getTime() < sameTimeYesterday);
+          const totalRevenueCents = today.reduce((acc, r) => acc + amount(r), 0);
+          const yesterdayRevenue = yesterday.reduce((acc, r) => acc + amount(r), 0);
+          const totalSales = today.length;
+          const avgItemsPerSale = totalSales ? Math.round(today.reduce((acc, r) => acc + (Number(r.quantity) || 0), 0) / totalSales) : 0;
+          const revenueChangePct = yesterdayRevenue > 0 ? ((totalRevenueCents - yesterdayRevenue) / yesterdayRevenue) * 100 : null;
+          setSalesStats({ totalSales, totalRevenueCents, avgItemsPerSale, revenueChangePct });
+        }
       } catch (err) {
         console.error('Failed to fetch recent sales:', err);
       } finally {
@@ -646,12 +670,12 @@ export default function NewSalePage() {
 
             <Card className="mt-4">
               <CardHeader>
-                <CardTitle>Sales Summary</CardTitle>
+                <CardTitle>Today&apos;s Summary</CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <div className="text-xs text-gray-500">Total sales</div>
+                    <div className="text-xs text-gray-500">Sales today</div>
                     <div className="text-lg font-semibold">{salesStats.totalSales}</div>
                   </div>
                   <div>
@@ -665,11 +689,17 @@ export default function NewSalePage() {
                     <div className="text-lg font-semibold">{salesStats.avgItemsPerSale}</div>
                   </div>
                   <div>
-                    <div className="text-xs text-gray-500">Change</div>
-                    <div className="text-lg font-semibold text-green-600">+0%</div>
+                    <div className="text-xs text-gray-500">Revenue vs yesterday</div>
+                    {salesStats.revenueChangePct === null ? (
+                      <div className="text-lg font-semibold text-gray-400">—</div>
+                    ) : (
+                      <div className={`text-lg font-semibold ${salesStats.revenueChangePct >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                        {salesStats.revenueChangePct >= 0 ? '+' : '−'}{Math.round(Math.abs(salesStats.revenueChangePct))}%
+                      </div>
+                    )}
                   </div>
                 </div>
-                <p className="mt-3 text-xs text-gray-500">Summary is based on the most recent results retrieved from the server (limited to the latest items if available).</p>
+                <p className="mt-3 text-xs text-gray-500">Today so far for this shop, compared with yesterday up to the same time.</p>
               </CardContent>
             </Card>
           </div>

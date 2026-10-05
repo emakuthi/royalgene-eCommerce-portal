@@ -51,7 +51,7 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
   ) => {
     const { theme } = useTheme()
 
-    const base = 'inline-flex items-center justify-center gap-2 font-medium transition-colors normal-case'
+    const base = 'inline-flex items-center justify-center gap-2 font-medium transition-colors normal-case whitespace-nowrap'
 
     const sizeClasses =
       size === 'sm'

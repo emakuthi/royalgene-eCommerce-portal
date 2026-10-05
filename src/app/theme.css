@@ -1,4 +1,7 @@
 :root {
+  /* Native controls (date pickers, selects, scrollbars) follow the app theme,
+     not the OS theme. */
+  color-scheme: light;
   /* Base radius for rounded corners used by Tailwind theme (lg/md/sm) */
   --radius: 0.5rem; /* 8px - yields md = 6px and sm = 4px via tailwind calc */
 
@@ -32,6 +35,7 @@
 }
 
 .dark {
+  color-scheme: dark;
   /* Keep same radius in dark mode to ensure consistent rounded corners */
   --radius: 0.5rem;
 

@@ -10,6 +10,10 @@
   }
   html {
     scroll-behavior: smooth;
+    /* Stop mobile browsers (notably Oppo/HeyTap and other Android OEM
+       browsers) from auto-inflating text, which squeezes layouts. */
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
   }
   html, body {
     margin: 0;
@@ -85,6 +89,14 @@
   }
 
   /* Small helper text (captions, labels, badges) */
+  /* iOS Safari zooms the page when a focused field's text is under 16px,
+     which throws the whole layout off. Keep form text at 16px on phones. */
+  @media (max-width: 639px) {
+    input, select, textarea, .MuiInputBase-input {
+      font-size: 16px !important;
+    }
+  }
+
   small, .text-caption {
     font-size: clamp(0.6875rem, 0.625rem + 0.3125vw, 0.8125rem); /* 11px → 13px */
   }
