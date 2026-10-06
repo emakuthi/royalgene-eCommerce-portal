@@ -31,6 +31,11 @@ export async function canViewCostData(payload: VerifiedPayload): Promise<boolean
   return hasCapability(payload, 'view_cost_price');
 }
 
+/** Whether a cost price counts as set — same rule the sales routes enforce. */
+export function hasCostPrice(costPrice: unknown): boolean {
+  return costPrice != null && Number(costPrice) > 0;
+}
+
 /**
  * Null out the cost fields on a synced row. Null (rather than dropping the
  * key) keeps the payload shape stable for clients that expect the column, and
@@ -41,6 +46,11 @@ export function redactCostFields(entity: string, row: Record<string, unknown>): 
   const fields = COST_FIELDS[entity];
   if (!fields?.length) return row;
   const copy = { ...row };
+  // A non-owner still has to know WHETHER a product's cost is set — the app
+  // blocks selling one that isn't, offline, before the sale ever reaches
+  // the server. Without this, a redacted null read as "never set" and every
+  // sale by a shop manager was blocked even after an admin set the cost.
+  if (entity === 'Product') copy.hasCostPrice = hasCostPrice(row.costPrice);
   for (const f of fields) {
     if (f in copy) copy[f] = null;
   }

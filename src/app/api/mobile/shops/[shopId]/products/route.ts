@@ -5,7 +5,7 @@ import { jsonResponse } from '@/lib/apiResponse';
 import { verifyMobileShopAccess } from '@/lib/mobile-shop-auth';
 import { createProductForShop } from '@/lib/portal-products';
 import { isValidClientId } from '@/lib/sync/syncable-entities';
-import { canViewCostData } from '@/lib/cost-visibility.server';
+import { canViewCostData, hasCostPrice } from '@/lib/cost-visibility.server';
 import { hasCapability } from '@/lib/permissions.server';
 import { trackActivity } from '@/lib/activity-tracker';
 /**
@@ -109,6 +109,7 @@ export async function GET(
           description: product.description,
           price: product.price,
           costPrice: showCost ? ((product.costPrice as number) || 0) : null,
+          hasCostPrice: hasCostPrice(product.costPrice),
           quantity: ss.quantity,
           images: (product.images as string[]) || [],
           colors: (product.colors as string[]) || [],
