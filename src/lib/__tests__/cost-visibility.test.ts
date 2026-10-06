@@ -28,7 +28,16 @@ describe('canViewCostData', () => {
 describe('redactCostFields', () => {
   it('nulls costPrice on a Product row without dropping the key', () => {
     const out = redactCostFields('Product', { id: 'p1', price: 6500, costPrice: 3000 });
-    expect(out).toEqual({ id: 'p1', price: 6500, costPrice: null });
+    expect(out).toEqual({ id: 'p1', price: 6500, costPrice: null, hasCostPrice: true });
+  });
+
+  it('flags a Product with no (or zero) cost price as not set', () => {
+    expect(redactCostFields('Product', { id: 'p1', costPrice: null }).hasCostPrice).toBe(false);
+    expect(redactCostFields('Product', { id: 'p1', costPrice: 0 }).hasCostPrice).toBe(false);
+  });
+
+  it('adds no hasCostPrice flag to non-Product entities', () => {
+    expect(redactCostFields('SalesEntry', { id: 'e1', costPrice: 10 })).toEqual({ id: 'e1', costPrice: null });
   });
 
   it('leaves entities with no cost fields untouched', () => {

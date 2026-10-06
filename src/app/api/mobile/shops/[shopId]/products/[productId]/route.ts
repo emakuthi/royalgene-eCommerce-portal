@@ -4,7 +4,7 @@ import logger from '@/lib/logger';
 import { jsonResponse } from '@/lib/apiResponse';
 import { verifyMobileShopAccess } from '@/lib/mobile-shop-auth';
 import { deleteUploadedFiles } from '@/lib/storage-usage.server';
-import { canViewCostData } from '@/lib/cost-visibility.server';
+import { canViewCostData, hasCostPrice } from '@/lib/cost-visibility.server';
 import { hasCapability } from '@/lib/permissions.server';
 import { deleteProductsInOrg } from '@/lib/product-delete.server';
 import { trackActivity } from '@/lib/activity-tracker';
@@ -103,6 +103,7 @@ export async function GET(
           description: prod.description,
           price: prod.price,
           costPrice: (await canViewCostData(auth.payload)) ? (prod.costPrice || 0) : null,
+          hasCostPrice: hasCostPrice(prod.costPrice),
           quantity: shopStock.quantity,
           images: prod.images || [],
           colors: prod.colors || [],
@@ -405,6 +406,7 @@ export async function PUT(
         description: updatedProd?.description,
         price: updatedProd?.price,
         costPrice: (await canViewCostData(auth.payload)) ? (updatedProd?.costPrice || 0) : null,
+        hasCostPrice: hasCostPrice(updatedProd?.costPrice),
         quantity: updatedStock?.quantity ?? shopStock.quantity,
         images: updatedProd?.images || [],
         colors: updatedProd?.colors || [],
