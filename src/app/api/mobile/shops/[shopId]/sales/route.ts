@@ -1,3 +1,4 @@
+import { parseSaleDiscount } from '@/lib/sale-discount';
 import { NextRequest } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase-client';
 import logger from '@/lib/logger';
@@ -55,6 +56,7 @@ export async function POST(
       saleGroupId,
       currency,
       paymentBreakdown: rawPaymentBreakdown,
+      discountAmount: rawDiscountAmount,
     } = body as {
       productId: string;
       quantity: number;
@@ -72,6 +74,8 @@ export async function POST(
       currency?: string;
       /** Split payment — see lib/payment-breakdown.ts. Omitted for a single-method sale. */
       paymentBreakdown?: unknown;
+      /** This line item's share of the checkout discount, in the sale currency. */
+      discountAmount?: unknown;
     };
 
     const paymentBreakdown = parsePaymentBreakdown(rawPaymentBreakdown);
@@ -272,7 +276,11 @@ export async function POST(
     // Calculate totals. unitPrice/totalAmount are in the SALE currency; the
     // product's costPrice is in the tenant BASE currency, so profit must be
     // computed in base: convert revenue to base, then subtract the base cost.
-    const totalAmount = quantity * unitPrice;
+    const discountAmount = parseSaleDiscount(rawDiscountAmount, quantity * unitPrice);
+    if (typeof discountAmount !== 'number') {
+      return jsonResponse({ success: false, error: discountAmount.error, code: 'VALIDATION_ERROR' }, 400);
+    }
+    const totalAmount = quantity * unitPrice - discountAmount;
 
     const { currency: baseCurrency } = await getOrgCurrency(sRow['organizationId'] as string);
     const saleCurrency = typeof currency === 'string' && /^[A-Za-z]{3}$/.test(currency) ? currency.toUpperCase() : baseCurrency;
@@ -320,6 +328,8 @@ export async function POST(
       // Left off entirely (not null) for a single-method sale, so recording
       // one never depends on the paymentBreakdown column existing.
       paymentBreakdown: paymentBreakdown ?? undefined,
+      // Left off when 0 so an undiscounted sale doesn't depend on the column.
+      discountAmount: discountAmount > 0 ? discountAmount : undefined,
       customerName: customerName || null,
       customerPhone: customerPhone || null,
       notes: notes || null,
@@ -407,6 +417,7 @@ export async function POST(
         quantity,
         unitPrice,
         totalAmount,
+        discountAmount,
         costPrice: showCostOnSale ? costPrice : null,
         profit: showCostOnSale ? profit : null,
         marginPercentage: showCostOnSale ? Math.round(marginPercentage * 100) / 100 : null,

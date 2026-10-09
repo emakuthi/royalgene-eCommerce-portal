@@ -1,3 +1,4 @@
+import { parseSaleDiscount } from '@/lib/sale-discount';
 import { NextRequest } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase-client';
 import logger from '@/lib/logger';
@@ -171,13 +172,14 @@ export async function PATCH(
     }
 
     const body = await request.json();
-    const { quantity, unitPrice, paymentMethod, customerName, customerPhone, notes } = body;
+    const { quantity, unitPrice, paymentMethod, customerName, customerPhone, notes, discountAmount } = body;
 
     type UpdatePayload = Partial<{
       quantity: number;
       unitPrice: number;
       paymentMethod: string;
       paymentBreakdown: null;
+      discountAmount: number;
       customerName: string | null;
       customerPhone: string | null;
       notes: string | null;
@@ -200,7 +202,19 @@ export async function PATCH(
     // Recompute totalAmount
     const newQuantity = typeof updates.quantity === 'number' ? updates.quantity : existingSale.quantity;
     const newUnitPrice = typeof updates.unitPrice === 'number' ? updates.unitPrice : existingSale.unitPrice;
-    updates.totalAmount = newQuantity * newUnitPrice;
+    // A discount sent with the edit replaces the old one; otherwise keep the
+    // sale's existing discount (capped at the new gross, in case quantity or
+    // price dropped below it) — recomputing a plain quantity * unitPrice
+    // would silently undo it.
+    const oldDiscount = Number(existingSale.discountAmount) || 0;
+    let keptDiscount = Math.min(oldDiscount, newQuantity * newUnitPrice);
+    if (discountAmount !== undefined) {
+      const requested = parseSaleDiscount(discountAmount, newQuantity * newUnitPrice);
+      if (typeof requested !== 'number') return jsonResponse({ success: false, error: requested.error, code: 'VALIDATION_ERROR' }, 400);
+      keptDiscount = requested;
+    }
+    if (keptDiscount !== oldDiscount) updates.discountAmount = keptDiscount;
+    updates.totalAmount = newQuantity * newUnitPrice - keptDiscount;
     updates.updatedAt = new Date().toISOString();
 
     const { data: updatedSale, error: updateErr } = await supabaseAdmin

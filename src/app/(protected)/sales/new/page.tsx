@@ -149,7 +149,7 @@ export default function NewSalePage() {
               productId: s.productId || '',
               quantity: s.quantity || 1,
               unitPrice: s.unitPrice || 0,
-              discount: s.discount || 0,
+              discount: Number(s.discountAmount) || 0,
               paymentMethod: s.paymentMethod === 'mobile_money' ? 'mpesa' : s.paymentMethod,
               customerName: s.customerName || '',
               customerPhone: s.customerPhone || '',
@@ -373,8 +373,6 @@ export default function NewSalePage() {
     setSubmitting(true);
     try {
       const shopId = currentShop?.id;
-      const discountPerItem = discount / Math.max(1, quantity);
-      const payloadUnitPrice = Math.max(0, unitPrice - discountPerItem);
       const paymentMethod = formData.paymentMethod === 'mpesa' ? 'mobile_money' : formData.paymentMethod;
 
       if (editingSaleId) {
@@ -384,6 +382,7 @@ export default function NewSalePage() {
           body: JSON.stringify({
             quantity,
             unitPrice,
+            discountAmount: Math.min(discount, unitPrice * quantity),
             paymentMethod,
             customerName: formData.customerName || null,
             customerPhone: formData.customerPhone || null,
@@ -406,7 +405,8 @@ export default function NewSalePage() {
             shopStockId: formData.shopStockId,
             productId: formData.productId,
             quantity,
-            unitPrice: payloadUnitPrice,
+            unitPrice,
+            discountAmount: Math.min(discount, unitPrice * quantity),
             currency: saleCurrency,
             paymentMethod,
             customerName: formData.customerName || null,
