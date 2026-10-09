@@ -96,6 +96,7 @@ export async function GET(
       unitPrice: sale.unitPrice,
       totalAmount: sale.totalAmount,
       paymentMethod: sale.paymentMethod,
+      paymentBreakdown: sale.paymentBreakdown ?? null,
       customerName: sale.customerName
     };
     });

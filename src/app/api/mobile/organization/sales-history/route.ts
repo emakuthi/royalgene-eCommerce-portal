@@ -104,6 +104,7 @@ export async function GET(request: NextRequest) {
         unitPrice: sale.unitPrice,
         totalAmount: sale.totalAmount,
         paymentMethod: sale.paymentMethod,
+        paymentBreakdown: sale.paymentBreakdown ?? null,
         customerName: sale.customerName,
       };
     });
