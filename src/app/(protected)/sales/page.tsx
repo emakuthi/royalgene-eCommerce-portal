@@ -1,5 +1,6 @@
 'use client';
 
+import { paymentKind, type PaymentPart } from '@/lib/payment-breakdown';
 import { formatMoneyMajor } from '@/lib/format';
 import { useBranding } from '@/lib/branding-context';
 import { useEffect, useMemo, useState, useCallback } from 'react';
@@ -84,6 +85,7 @@ function SalesEntryContent() {
     totalAmount: number;
     costPrice?: number | null;
     paymentMethod: string;
+    paymentBreakdown?: PaymentPart[] | null;
     ProfitMargin?: { profit?: number; costPrice?: number } | null;
   };
 
@@ -491,22 +493,26 @@ function SalesEntryContent() {
                       )}
                       <td className={`py-3 px-2 text-sm text-right font-semibold ${textPrimary}`}>{formatMoneyMajor(s.totalAmount, cur)}</td>
                       <td className="py-3 px-2 text-center hidden sm:table-cell">
-                        {(() => {
-                          const pm = s.paymentMethod;
-                          const isMpesa = pm === 'mobile_money' || pm === 'mpesa';
-                          const isCard = pm === 'card';
-                          const label = isMpesa ? 'M-Pesa' : isCard ? 'Card' : 'Cash';
-                          const cls = isMpesa
-                            ? 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300'
-                            : isCard
-                              ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300'
-                              : 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300';
-                          return (
-                            <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold ${cls}`}>
-                              {isMpesa ? '📱' : isCard ? '💳' : '💵'} {label}
-                            </span>
-                          );
-                        })()}
+                        <div className="flex flex-wrap items-center justify-center gap-1">
+                          {(s.paymentBreakdown?.length ? s.paymentBreakdown : [{ method: s.paymentMethod, amount: null }]).map((part) => {
+                            const kind = paymentKind(part.method);
+                            const cls = kind === 'mpesa'
+                              ? 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300'
+                              : kind === 'card'
+                                ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300'
+                                : 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300';
+                            return (
+                              <span
+                                key={part.method}
+                                title={part.amount != null ? formatMoneyMajor(part.amount, cur) : undefined}
+                                className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold ${cls}`}
+                              >
+                                {kind === 'mpesa' ? '📱' : kind === 'card' ? '💳' : '💵'} {kind === 'mpesa' ? 'M-Pesa' : kind === 'card' ? 'Card' : 'Cash'}
+                                {part.amount != null && <span className="font-normal">{formatMoneyMajor(part.amount, cur)}</span>}
+                              </span>
+                            );
+                          })}
+                        </div>
                       </td>
                       <td className="py-3 px-2 text-center">
                         <div className="flex items-center justify-center gap-1">

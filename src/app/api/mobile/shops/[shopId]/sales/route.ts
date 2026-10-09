@@ -12,6 +12,7 @@ import { generateTaxInvoiceForSale } from '@/lib/etims/tax-invoice.server';
 import { syncSaleToQuickBooks } from '@/lib/accounting/sync-sale-to-quickbooks.server';
 import { isValidClientId } from '@/lib/sync/syncable-entities';
 import { idempotentInsert } from '@/lib/sync/idempotent-insert.server';
+import { parsePaymentBreakdown } from '@/lib/payment-breakdown';
 import { canViewCostData } from '@/lib/cost-visibility.server';
 import { hasCapability } from '@/lib/permissions.server';
 import { getOrgCurrency } from '@/lib/currency.server';
@@ -53,6 +54,7 @@ export async function POST(
       color,
       saleGroupId,
       currency,
+      paymentBreakdown: rawPaymentBreakdown,
     } = body as {
       productId: string;
       quantity: number;
@@ -68,7 +70,14 @@ export async function POST(
       saleGroupId?: string;
       /** The currency the sale was recorded in (default = tenant base). unitPrice/totalAmount are in THIS currency. */
       currency?: string;
+      /** Split payment — see lib/payment-breakdown.ts. Omitted for a single-method sale. */
+      paymentBreakdown?: unknown;
     };
+
+    const paymentBreakdown = parsePaymentBreakdown(rawPaymentBreakdown);
+    if (paymentBreakdown && !Array.isArray(paymentBreakdown)) {
+      return jsonResponse({ success: false, error: paymentBreakdown.error, code: 'VALIDATION_ERROR' }, 400);
+    }
 
     if (!productId || typeof quantity !== 'number' || typeof unitPrice !== 'number') {
       return jsonResponse({
@@ -95,6 +104,7 @@ export async function POST(
             unitPrice: dup.unitPrice,
             totalAmount: dup.totalAmount,
             paymentMethod: dup.paymentMethod,
+            paymentBreakdown: dup.paymentBreakdown ?? null,
             customerName: dup.customerName,
             customerPhone: dup.customerPhone,
           },
@@ -307,6 +317,9 @@ export async function POST(
       baseAmount,
       costPrice,
       paymentMethod: paymentMethod || 'cash',
+      // Left off entirely (not null) for a single-method sale, so recording
+      // one never depends on the paymentBreakdown column existing.
+      paymentBreakdown: paymentBreakdown ?? undefined,
       customerName: customerName || null,
       customerPhone: customerPhone || null,
       notes: notes || null,
@@ -398,6 +411,7 @@ export async function POST(
         profit: showCostOnSale ? profit : null,
         marginPercentage: showCostOnSale ? Math.round(marginPercentage * 100) / 100 : null,
         paymentMethod: paymentMethod || 'cash',
+        paymentBreakdown: paymentBreakdown ?? null,
         customerName: customerName || null,
         customerPhone: customerPhone || null
       },

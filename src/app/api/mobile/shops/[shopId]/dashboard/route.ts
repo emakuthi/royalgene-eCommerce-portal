@@ -1,3 +1,4 @@
+import { paymentMethodsOf } from '@/lib/payment-breakdown';
 import { NextRequest } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase-client';
 import logger from '@/lib/logger';
@@ -110,8 +111,10 @@ export async function GET(
     // Get sales by payment method
     const paymentMethodMap = new Map<string, number>();
     salesList.forEach((sale: Record<string, unknown>) => {
-      const method = (sale.paymentMethod as string) || 'cash';
-      paymentMethodMap.set(method, (paymentMethodMap.get(method) || 0) + 1);
+      // A split sale counts once under each method it was paid with.
+      for (const method of paymentMethodsOf(sale)) {
+        paymentMethodMap.set(method, (paymentMethodMap.get(method) || 0) + 1);
+      }
     });
 
     const salesByPaymentMethod: Record<string, number> = {};

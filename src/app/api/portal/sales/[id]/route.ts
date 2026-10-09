@@ -114,6 +114,7 @@ export async function PATCH(request: NextRequest, context: unknown) {
       quantity: number;
       unitPrice: number;
       paymentMethod: string;
+      paymentBreakdown: null;
       customerName: string | null;
       customerPhone: string | null;
       notes: string | null;
@@ -125,6 +126,10 @@ export async function PATCH(request: NextRequest, context: unknown) {
     if (typeof quantity === 'number') updates.quantity = quantity;
     if (typeof unitPrice === 'number') updates.unitPrice = unitPrice;
     if (paymentMethod) updates.paymentMethod = paymentMethod;
+    // Re-picking the method on a split sale replaces the split — keeping the
+    // old breakdown would contradict the new single method. Only touched
+    // when one exists, so a plain edit never depends on the column.
+    if (paymentMethod && existingSale.paymentBreakdown != null) updates.paymentBreakdown = null;
     if (typeof customerName !== 'undefined') updates.customerName = customerName;
     if (typeof customerPhone !== 'undefined') updates.customerPhone = customerPhone;
     if (typeof notes !== 'undefined') updates.notes = notes;
