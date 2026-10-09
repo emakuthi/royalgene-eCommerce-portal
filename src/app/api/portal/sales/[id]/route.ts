@@ -1,3 +1,4 @@
+import { parseSaleDiscount } from '@/lib/sale-discount';
 import { NextRequest, NextResponse } from 'next/server';
 import { requireTenantUser } from '@/lib/authorize';
 import { supabaseAdmin } from '@/lib/supabase-client';
@@ -76,7 +77,7 @@ export async function PATCH(request: NextRequest, context: unknown) {
     const payload = auth;
 
     const body = await request.json();
-    const { quantity, unitPrice, paymentMethod, customerName, customerPhone, notes } = body;
+    const { quantity, unitPrice, paymentMethod, customerName, customerPhone, notes, discountAmount } = body;
 
     // Fetch existing sale
     const { data: existingSale, error: saleErr } = await supabaseAdmin
@@ -115,6 +116,7 @@ export async function PATCH(request: NextRequest, context: unknown) {
       unitPrice: number;
       paymentMethod: string;
       paymentBreakdown: null;
+      discountAmount: number;
       customerName: string | null;
       customerPhone: string | null;
       notes: string | null;
@@ -137,7 +139,19 @@ export async function PATCH(request: NextRequest, context: unknown) {
     // Recompute totalAmount if quantity or unitPrice changed
     const newQuantity = typeof updates.quantity === 'number' ? updates.quantity : existingSale.quantity;
     const newUnitPrice = typeof updates.unitPrice === 'number' ? updates.unitPrice : existingSale.unitPrice;
-    const newTotalAmount = newQuantity * newUnitPrice;
+    // A discount sent with the edit replaces the old one; otherwise keep the
+    // sale's existing discount (capped at the new gross, in case quantity or
+    // price dropped below it) — recomputing a plain quantity * unitPrice
+    // would silently undo it.
+    const oldDiscount = Number(existingSale.discountAmount) || 0;
+    let keptDiscount = Math.min(oldDiscount, newQuantity * newUnitPrice);
+    if (discountAmount !== undefined) {
+      const requested = parseSaleDiscount(discountAmount, newQuantity * newUnitPrice);
+      if (typeof requested !== 'number') return jsonResponse({ success: false, error: requested.error }, 400);
+      keptDiscount = requested;
+    }
+    if (keptDiscount !== oldDiscount) updates.discountAmount = keptDiscount;
+    const newTotalAmount = newQuantity * newUnitPrice - keptDiscount;
     updates.totalAmount = newTotalAmount;
 
     const now = new Date().toISOString();

@@ -1,3 +1,4 @@
+import { parseSaleDiscount } from '@/lib/sale-discount';
 import { NextRequest, NextResponse } from 'next/server';
 import { requireTenantUser } from '@/lib/authorize';
 import { supabaseAdmin } from '@/lib/supabase-client';
@@ -36,6 +37,7 @@ export async function POST(request: NextRequest) {
       size,
       color,
       currency,
+      discountAmount: rawDiscountAmount,
     } = await request.json();
 
     logger.info('Sales entry attempt', { shopStockId: shopStockId || null, shopId: payloadShopId, productId: payloadProductId, quantity, userId: payload.userId, endpoint: '/api/portal/sales' });
@@ -238,7 +240,11 @@ export async function POST(request: NextRequest) {
       }, 409);
     }
 
-    const totalAmount = quantity * unitPrice;
+    const discountAmount = parseSaleDiscount(rawDiscountAmount, quantity * unitPrice);
+    if (typeof discountAmount !== 'number') {
+      return jsonResponse({ success: false, error: discountAmount.error }, 400);
+    }
+    const totalAmount = quantity * unitPrice - discountAmount;
 
     // Per-transaction currency: unitPrice/totalAmount are in the sale currency;
     // costPrice is base. Convert revenue to base, freeze the rate, profit in base.
@@ -277,6 +283,9 @@ export async function POST(request: NextRequest) {
         exchangeRate,
         baseAmount,
         costPrice,
+        // Spread, not `discountAmount: undefined` — a plain .insert() sends
+        // undefined as NULL, which the NOT NULL column would reject.
+        ...(discountAmount > 0 ? { discountAmount } : {}),
         paymentMethod,
         customerName: customerName || null,
         customerPhone: customerPhone || null,
