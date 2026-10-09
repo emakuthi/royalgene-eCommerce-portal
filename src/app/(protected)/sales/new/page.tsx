@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { paymentKind } from '@/lib/payment-breakdown';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -55,6 +56,7 @@ export default function NewSalePage() {
   const [loadingStocks, setLoadingStocks] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [editingSaleId, setEditingSaleId] = useState<string | null>(null);
+  const [originalPaymentMethod, setOriginalPaymentMethod] = useState<string | null>(null);
 
   // recent sales + stats
   const [recentSales, setRecentSales] = useState<RecentSale[]>([]);
@@ -150,12 +152,15 @@ export default function NewSalePage() {
               quantity: s.quantity || 1,
               unitPrice: s.unitPrice || 0,
               discount: Number(s.discountAmount) || 0,
-              paymentMethod: s.paymentMethod === 'mobile_money' ? 'mpesa' : s.paymentMethod,
+              // paymentKind folds the app's "M-Pesa"/"Card" spellings in too —
+              // an exact match left no option selected for any app sale.
+              paymentMethod: paymentKind(s.paymentMethod),
               customerName: s.customerName || '',
               customerPhone: s.customerPhone || '',
               notes: s.notes || '',
             };
             setFormData(newForm);
+            setOriginalPaymentMethod(newForm.paymentMethod);
           }
         } catch (err) {
           console.warn('Failed to fetch sale for edit', err);
@@ -383,7 +388,9 @@ export default function NewSalePage() {
             quantity,
             unitPrice,
             discountAmount: Math.min(discount, unitPrice * quantity),
-            paymentMethod,
+            // Only when actually changed: sending it replaces a split payment
+            // (Cash + M-Pesa) with the single method shown in the form.
+            ...(formData.paymentMethod !== originalPaymentMethod ? { paymentMethod } : {}),
             customerName: formData.customerName || null,
             customerPhone: formData.customerPhone || null,
             notes: formData.notes || null,

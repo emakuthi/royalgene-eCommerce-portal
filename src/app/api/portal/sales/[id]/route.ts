@@ -7,6 +7,64 @@ import { jsonResponse, optionsResponse } from '@/lib/apiResponse';
 import { trackFromRequest } from '@/lib/activity-tracker';
 import { deleteSalesInOrg } from '@/lib/sale-delete.server';
 
+async function saleIdFrom(context: unknown): Promise<string | undefined> {
+  const resolved = await Promise.resolve(context as unknown);
+  // Next 15 passes params as a Promise (sync property access is only a
+  // deprecated fallback) — await it rather than reading it directly.
+  const params = resolved && typeof resolved === 'object' ? await (resolved as Record<string, unknown>)['params'] : undefined;
+  const id = params && typeof params === 'object' ? (params as Record<string, unknown>)['id'] : undefined;
+  return typeof id === 'string' ? id : undefined;
+}
+
+/**
+ * GET /api/portal/sales/[id]
+ * One sale line item, for the edit form's prefill (/sales/new?saleId=…).
+ * Same access rule as PATCH: same org, and the caller's own shop unless admin.
+ * Adds shopStockId (not a SalesEntry column) — the form selects by stock row.
+ */
+export async function GET(request: NextRequest, context: unknown) {
+  try {
+    const saleId = await saleIdFrom(context);
+    if (!saleId) return jsonResponse({ success: false, error: 'Missing sale id' }, 400);
+
+    const auth = requireTenantUser(request);
+    if (auth instanceof NextResponse) return auth;
+    const payload = auth;
+
+    const { data: sale } = await supabaseAdmin
+      .from('SalesEntry')
+      .select('*')
+      .eq('id', saleId)
+      .is('deletedAt', null)
+      .maybeSingle();
+    if (!sale || (payload.organizationId && sale.organizationId !== payload.organizationId)) {
+      return jsonResponse({ success: false, error: 'Sale not found' }, 404);
+    }
+
+    const { data: portalUser } = await supabaseAdmin
+      .from('PortalUser')
+      .select('shopId')
+      .eq('userId', payload.userId)
+      .maybeSingle();
+    if (!portalUser) return jsonResponse({ success: false, error: 'Portal user not found' }, 403);
+    if (portalUser.shopId !== sale.shopId && payload.role !== 'admin' && payload.role !== 'super_admin') {
+      return jsonResponse({ success: false, error: 'Forbidden' }, 403);
+    }
+
+    const { data: stock } = await supabaseAdmin
+      .from('ShopStock')
+      .select('id')
+      .eq('shopId', sale.shopId)
+      .eq('productId', sale.productId)
+      .maybeSingle();
+
+    return jsonResponse({ success: true, data: { ...sale, shopStockId: stock?.id ?? null } }, 200);
+  } catch (error) {
+    logger.error('Portal sale fetch error', { error: error instanceof Error ? error.message : String(error) });
+    return jsonResponse({ success: false, error: 'Internal server error' }, 500);
+  }
+}
+
 /**
  * DELETE /api/portal/sales/[id]
  * Delete one sale line item — admins only. See POST /api/portal/sales/bulk-delete
