@@ -54,6 +54,9 @@ describe('findOrProvisionUserForSocialIdentity', () => {
 
     const newUser = mockTables.User.find((u) => u.id === result.userId)!;
     expect(newUser).toMatchObject({ email: 'newperson@gmail.com', role: 'admin', organizationId: newOrg.id });
+    // Google already verified the address — no email round-trip, workspace live straight away.
+    expect(newUser.emailVerifiedAt).toEqual(expect.any(String));
+    expect(newOrg.status).toBe('active');
     expect(newUser.password).toBeTruthy(); // a random password hash was set, not left null
 
     expect(mockTables.Shop).toHaveLength(1);
