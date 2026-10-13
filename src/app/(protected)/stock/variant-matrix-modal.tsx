@@ -1,4 +1,5 @@
 'use client';
+import { optionExample, optionsTitle } from '@/lib/business-types';
 import { useBranding } from '@/lib/branding-context';
 import { currencySymbol } from '@/lib/currency';
 
@@ -50,7 +51,13 @@ export default function VariantMatrixModal({
   onSaved: (stockId: string, newTotal: number) => void;
 }) {
   const product = (stock.product ?? stock.Product) as Product | undefined;
-  const curSym = currencySymbol(useBranding().branding.currency);
+  const { branding } = useBranding();
+  const curSym = currencySymbol(branding.currency);
+  // The workspace's option names (Size/Colour, Strength/Pack size ...); '' = off.
+  const o1 = branding.option1Label;
+  const o2 = branding.option2Label;
+  const title = optionsTitle(o1, o2) || 'Variant';
+  const cellLabel = [o1, o2].filter(Boolean).join(' / ').toLowerCase() || 'variant';
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -155,7 +162,7 @@ export default function VariantMatrixModal({
     const v = norm(newSize);
     if (!v) return;
     if (sizes.some((s) => s.toLowerCase() === v.toLowerCase())) {
-      toast.error('That size is already listed');
+      toast.error(`That ${(o1 || 'value').toLowerCase()} is already listed`);
       return;
     }
     setSizes((prev) => [...prev, v]);
@@ -165,7 +172,7 @@ export default function VariantMatrixModal({
     const v = norm(newColor);
     if (!v) return;
     if (colors.some((c) => c.toLowerCase() === v.toLowerCase())) {
-      toast.error('That colour is already listed');
+      toast.error(`That ${(o2 || 'value').toLowerCase()} is already listed`);
       return;
     }
     setColors((prev) => [...prev, v]);
@@ -212,7 +219,7 @@ export default function VariantMatrixModal({
       const newTotal = Number(json.data?.total ?? 0);
       onSaved(stock.id, newTotal);
       toast.success(
-        clear ? 'Breakdown cleared — shop total is now flat' : 'Size / colour breakdown saved',
+        clear ? 'Breakdown cleared — shop total is now flat' : `${title} breakdown saved`,
       );
       onClose();
     } catch (err) {
@@ -239,7 +246,7 @@ export default function VariantMatrixModal({
         <div className="p-6 border-b dark:border-gray-800">
           <div className="flex items-start justify-between gap-4">
             <div>
-              <h3 className="text-lg font-semibold">Size &amp; colour breakdown</h3>
+              <h3 className="text-lg font-semibold">{title} breakdown</h3>
               <p className="text-sm text-muted-foreground">
                 {product?.name || 'Product'} · {stock.shopName ?? 'this shop'}
               </p>
@@ -257,12 +264,12 @@ export default function VariantMatrixModal({
           ) : (
             <>
               <p className="text-sm text-muted-foreground">
-                Enter how many of each size / colour this shop holds. The shop total
+                Enter how many of each {cellLabel} this shop holds. The shop total
                 becomes the sum of every cell, and each sale takes stock from the
                 matching cell. Leave everything at zero and save (or use{' '}
                 <span className="font-medium">Clear breakdown</span>) to go back to a
                 single flat quantity. Tap <span className="font-medium">Same price</span> under
-                any cell if that size or colour sells for a different amount — leave it alone
+                any cell if that {cellLabel} sells for a different amount — leave it alone
                 to keep using this product&apos;s own price for every cell.
               </p>
 
@@ -271,7 +278,7 @@ export default function VariantMatrixModal({
                   <thead>
                     <tr>
                       <th className="p-2 text-left font-medium text-muted-foreground sticky left-0 bg-white dark:bg-gray-900">
-                        Size \ Colour
+                        {o1 && o2 ? `${o1} \\ ${o2}` : title}
                       </th>
                       {colAxis.map((c) => (
                         <th key={c || '_any'} className="p-2 font-medium min-w-[5rem]">
@@ -282,7 +289,7 @@ export default function VariantMatrixModal({
                                 type="button"
                                 className="p-0.5 rounded hover:bg-gray-200 dark:hover:bg-gray-700"
                                 onClick={() => removeColor(c)}
-                                title="Remove colour from grid"
+                                title={`Remove ${(o2 || 'value').toLowerCase()} from grid`}
                               >
                                 <X className="w-3 h-3" />
                               </button>
@@ -304,7 +311,7 @@ export default function VariantMatrixModal({
                                 type="button"
                                 className="p-0.5 rounded hover:bg-gray-200 dark:hover:bg-gray-700"
                                 onClick={() => removeSize(s)}
-                                title="Remove size from grid"
+                                title={`Remove ${(o1 || 'value').toLowerCase()} from grid`}
                               >
                                 <X className="w-3 h-3" />
                               </button>
@@ -334,7 +341,7 @@ export default function VariantMatrixModal({
                                       : 'text-muted-foreground hover:bg-gray-100 dark:hover:bg-gray-800'
                                   }`}
                                   onClick={() => setPriceEditorCell({ size: s, color: c })}
-                                  title="Set a price/cost just for this size/colour"
+                                  title={`Set a price/cost just for this ${cellLabel}`}
                                 >
                                   <Tag className="w-3 h-3" />
                                   {override?.price !== undefined
@@ -365,34 +372,34 @@ export default function VariantMatrixModal({
 
               {/* Add axes */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div className="flex items-end gap-2">
+                {o1 && <div className="flex items-end gap-2">
                   <div className="flex-1">
-                    <label className="block text-xs text-muted-foreground mb-1">Add a size</label>
+                    <label className="block text-xs text-muted-foreground mb-1">Add a {o1.toLowerCase()}</label>
                     <Input
                       value={newSize}
                       onChange={(e) => setNewSize(e.target.value)}
                       onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addSize(); } }}
-                      placeholder="e.g. XL"
+                      placeholder={optionExample(o1)}
                     />
                   </div>
                   <Button type="button" variant="outline" onClick={addSize} className="gap-1">
                     <Plus className="w-4 h-4" />Add
                   </Button>
-                </div>
-                <div className="flex items-end gap-2">
+                </div>}
+                {o2 && <div className="flex items-end gap-2">
                   <div className="flex-1">
-                    <label className="block text-xs text-muted-foreground mb-1">Add a colour</label>
+                    <label className="block text-xs text-muted-foreground mb-1">Add a {o2.toLowerCase()}</label>
                     <Input
                       value={newColor}
                       onChange={(e) => setNewColor(e.target.value)}
                       onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addColor(); } }}
-                      placeholder="e.g. Navy"
+                      placeholder={optionExample(o2)}
                     />
                   </div>
                   <Button type="button" variant="outline" onClick={addColor} className="gap-1">
                     <Plus className="w-4 h-4" />Add
                   </Button>
-                </div>
+                </div>}
               </div>
 
               <div

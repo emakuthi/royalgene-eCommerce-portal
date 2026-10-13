@@ -15,6 +15,12 @@ export interface TenantBranding {
   currency: string;
   /** Organization.usdRate — owner-set units of base currency per 1 USD; null => no "≈ $" label. */
   usdRate: number | null;
+  /** Organization.businessType — see business-types.ts. */
+  businessType: string;
+  /** Name of product option 1 (stored in the size columns); '' = off. */
+  option1Label: string;
+  /** Name of product option 2 (stored in the color columns); '' = off. */
+  option2Label: string;
 }
 
 export const BRANDING_DEFAULTS: TenantBranding = {
@@ -24,6 +30,9 @@ export const BRANDING_DEFAULTS: TenantBranding = {
   faviconUrl: null,
   currency: 'KES',
   usdRate: null,
+  businessType: 'boutique',
+  option1Label: 'Size',
+  option2Label: 'Colour',
 };
 
 /** <link rel="icon"> hrefs shipped by default, restored when a tenant clears its custom favicon. */

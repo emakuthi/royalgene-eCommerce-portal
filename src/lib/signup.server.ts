@@ -9,6 +9,8 @@ import { RESERVED_SUBDOMAINS } from './tenant';
 import { sendVerificationEmail } from './email/verification-email';
 import { registerDevice, type DeviceInfo } from './device-registry.server';
 import { isValidEmail, normalizeEmail } from './email-validation';
+import { DEFAULT_BUSINESS_TYPE, getBusinessType, isBusinessTypeId } from './business-types';
+import { seedCategoriesForType } from './business-settings.server';
 
 const VERIFICATION_TOKEN_TTL_MS = 24 * 60 * 60 * 1000;
 
@@ -31,6 +33,8 @@ export interface ProvisionWorkspaceInput {
   sendEmail?: boolean;
   /** Only ever set by the mobile signup route — omitted, the web signup route creates no Device row. */
   device?: DeviceInfo;
+  /** What kind of business (business-types.ts). Omitted → boutique, as before business types existed. */
+  businessType?: string;
 }
 
 export interface ProvisionWorkspaceResult {
@@ -49,12 +53,16 @@ export interface ProvisionWorkspaceResult {
  */
 export async function provisionWorkspace(input: ProvisionWorkspaceInput): Promise<ProvisionWorkspaceResult> {
   const { orgName, name, email, password, requestedSlug, sendEmail = true, device } = input;
+  const businessType = input.businessType === undefined || input.businessType === '' ? DEFAULT_BUSINESS_TYPE : input.businessType;
 
   if (!orgName?.trim() || !name?.trim() || !email?.trim() || !password) {
     throw new SignupError(400, 'orgName, name, email and password are required');
   }
   if (password.length < 8) {
     throw new SignupError(400, 'Password must be at least 8 characters');
+  }
+  if (!isBusinessTypeId(businessType)) {
+    throw new SignupError(400, 'Choose a valid business type');
   }
 
   const slug = slugify(requestedSlug || orgName);
@@ -152,6 +160,15 @@ export async function provisionWorkspace(input: ProvisionWorkspaceInput): Promis
     logger.error('provisionWorkspace: portal user creation failed', { error: portalUserError.message });
     throw new SignupError(500, 'Failed to set up workspace');
   }
+
+  // Business type: its option names and starter categories. Best-effort — the
+  // workspace works without them and the owner can set them in Settings.
+  const typeDef = getBusinessType(businessType);
+  const { error: typeError } = await supabaseAdmin.from('Organization')
+    .update({ businessType: typeDef.id, option1Label: typeDef.option1Label, option2Label: typeDef.option2Label })
+    .eq('id', organization.id);
+  if (typeError) logger.warn('provisionWorkspace: could not set business type', { error: typeError.message });
+  await seedCategoriesForType(organization.id, typeDef.id);
 
   // Email verification token — store only its hash.
   const rawToken = randomBytes(32).toString('hex');

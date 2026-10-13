@@ -7,6 +7,7 @@ import { requireTenantUser } from '@/lib/authorize';
 import { supabaseAdmin } from '@/lib/supabase-client';
 import logger from '@/lib/logger';
 import { createProductForShop } from '@/lib/portal-products';
+import { normalizeProductUpdate } from '@/lib/business-settings.server';
 import { jsonResponse, optionsResponse } from '@/lib/apiResponse';
 import { trackFromRequest } from '@/lib/activity-tracker';
 import { assertCanCreate } from '@/lib/entitlements/enforce.server';
@@ -110,9 +111,8 @@ export async function POST(request: NextRequest) {
       logger.warn('SKU lookup failed', { error: e instanceof Error ? e.message : String(e) });
     }
 
-    // Category validation
-    const allowedCategories = ['dresses', 'shoes', 'trousers', 'textiles'];
-    if (productData.category && typeof productData.category === 'string' && !allowedCategories.includes(productData.category)) {
+    // Category: any workspace category (createProductForShop resolves it, adding an unknown one).
+    if (productData.category !== undefined && typeof productData.category !== 'string') {
       return jsonResponse({ success: false, error: 'Invalid category' }, 400);
     }
 
@@ -362,10 +362,15 @@ export async function PUT(request: NextRequest) {
     }
 
     // Build update object from allowed fields
-    const allowedFields = ['name', 'description', 'price', 'costPrice', 'brand', 'sizes', 'colors', 'images', 'sku', 'featured', 'trending'];
+    const allowedFields = ['name', 'description', 'price', 'costPrice', 'brand', 'sizes', 'colors', 'images', 'sku', 'featured', 'trending', 'category', 'unit'];
     const updates: Record<string, unknown> = {};
     for (const k of allowedFields) {
       if (Object.prototype.hasOwnProperty.call(body, k)) updates[k] = (body as Record<string, unknown>)[k] as unknown;
+    }
+    if ('category' in updates || 'unit' in updates) {
+      const productOrgId = payload.organizationId
+        ?? ((await supabaseAdmin.from('Product').select('organizationId').eq('id', productId).maybeSingle()).data?.organizationId as string | undefined);
+      await normalizeProductUpdate(productOrgId, updates);
     }
 
     // Cost price is owner-level (see cost-visibility.server.ts) — a caller
@@ -402,7 +407,7 @@ export async function PUT(request: NextRequest) {
     }
 
     // Snapshot old scalar values for the product-history edit audit.
-    const auditFields = ['name', 'description', 'price', 'costPrice', 'brand', 'sku', 'featured', 'trending'];
+    const auditFields = ['name', 'description', 'price', 'costPrice', 'brand', 'sku', 'category', 'unit', 'featured', 'trending'];
     const changedAuditKeys = auditFields.filter((k) => Object.prototype.hasOwnProperty.call(updates, k));
     let oldProductForAudit: Record<string, unknown> | null = null;
     if (changedAuditKeys.length > 0) {

@@ -3,9 +3,16 @@ import { supabaseAdmin } from './supabase-client';
 import { BRANDING_DEFAULTS, MAX_BRANDING_DATA_URI_BYTES, type TenantBranding } from './branding';
 import logger from './logger';
 
-const SELECT = 'name, tagline, logoUrl, faviconUrl, currency, usdRate';
+const BASE_SELECT = 'name, tagline, logoUrl, faviconUrl, currency, usdRate';
+const SELECT = `${BASE_SELECT}, businessType, option1Label, option2Label`;
 
-function rowToBranding(row: { name?: string | null; tagline?: string | null; logoUrl?: string | null; faviconUrl?: string | null; currency?: string | null; usdRate?: number | string | null } | null): TenantBranding {
+type OrgBrandingRow = {
+  name?: string | null; tagline?: string | null; logoUrl?: string | null; faviconUrl?: string | null;
+  currency?: string | null; usdRate?: number | string | null;
+  businessType?: string | null; option1Label?: string | null; option2Label?: string | null;
+};
+
+function rowToBranding(row: OrgBrandingRow | null): TenantBranding {
   if (!row) return BRANDING_DEFAULTS;
   const rawRate = row.usdRate;
   const usdRate = typeof rawRate === 'number' ? rawRate : rawRate == null ? null : Number(rawRate) || null;
@@ -16,6 +23,9 @@ function rowToBranding(row: { name?: string | null; tagline?: string | null; log
     faviconUrl: row.faviconUrl || null,
     currency: row.currency?.trim() || BRANDING_DEFAULTS.currency,
     usdRate,
+    businessType: row.businessType || BRANDING_DEFAULTS.businessType,
+    option1Label: row.option1Label ?? BRANDING_DEFAULTS.option1Label,
+    option2Label: row.option2Label ?? BRANDING_DEFAULTS.option2Label,
   };
 }
 
@@ -27,12 +37,15 @@ function rowToBranding(row: { name?: string | null; tagline?: string | null; log
 export async function getTenantBranding(organizationId: string | null | undefined): Promise<TenantBranding> {
   if (!organizationId) return BRANDING_DEFAULTS;
   try {
-    const { data } = await supabaseAdmin
+    const { data, error } = await supabaseAdmin
       .from('Organization')
       .select(SELECT)
       .eq('id', organizationId)
       .maybeSingle();
-    return rowToBranding(data);
+    if (!error) return rowToBranding(data);
+    // Business-type columns not migrated yet (20261014_01) — keep the rest of the branding.
+    const fallback = await supabaseAdmin.from('Organization').select(BASE_SELECT).eq('id', organizationId).maybeSingle();
+    return rowToBranding(fallback.data as OrgBrandingRow | null);
   } catch (err) {
     logger.warn('[branding] getTenantBranding failed', { organizationId, error: err instanceof Error ? err.message : String(err) });
     return BRANDING_DEFAULTS;
@@ -76,8 +89,9 @@ export async function updateTenantBranding(organizationId: string, patch: Brandi
     .from('Organization')
     .update(update)
     .eq('id', organizationId)
-    .select(SELECT)
+    .select('id')
     .maybeSingle();
   if (error) throw new Error(error.message);
-  return rowToBranding(data);
+  if (!data) return rowToBranding(null);
+  return getTenantBranding(organizationId);
 }

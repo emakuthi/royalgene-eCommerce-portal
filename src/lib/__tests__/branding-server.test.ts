@@ -38,7 +38,18 @@ describe('getTenantBranding', () => {
       faviconUrl: null,
       currency: BRANDING_DEFAULTS.currency,
       usdRate: null,
+      businessType: 'boutique',
+      option1Label: 'Size',
+      option2Label: 'Colour',
     });
+  });
+
+  it('maps a business type and its option names, keeping an emptied option off', async () => {
+    mock.row = { name: 'Dawa Pharmacy', businessType: 'pharmacy', option1Label: 'Strength', option2Label: '' };
+    const b = await getTenantBranding('org-1');
+    expect(b.businessType).toBe('pharmacy');
+    expect(b.option1Label).toBe('Strength');
+    expect(b.option2Label).toBe('');
   });
 
   it('maps currency and a numeric-string usdRate from the org row', async () => {

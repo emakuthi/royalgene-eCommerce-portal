@@ -397,7 +397,7 @@ function PortalUsersContent() {
       <PortalHeader
         backHref="/dashboard"
         title="User Management"
-        description="Manage users, roles, and access permissions across your boutique"
+        description="Manage users, roles, and access permissions across your business"
         breadcrumbs={[{ label: 'Portal', href: '/portal' }, { label: 'Users' }]}
         actions={(
           <Button

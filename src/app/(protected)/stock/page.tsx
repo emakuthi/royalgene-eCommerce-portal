@@ -19,6 +19,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import type { ShopStock, Product } from '@/lib/types';
 import { formatMoneyMajor } from '@/lib/format';
+import { optionsTitle } from '@/lib/business-types';
 import { useBranding } from '@/lib/branding-context';
 import StockViewModal from './stock-view-modal';
 import StockTransferModal from './stock-transfer-modal';
@@ -58,6 +59,8 @@ type ViewFormType = {
   description: string;
   costPrice: string;
   sellingPrice: string;
+  category: string;
+  unit: string;
   sizes: string[];
   colors: string[];
   images: string[];
@@ -67,7 +70,8 @@ type ViewFormType = {
 
 function StockManagementContent() {
   const { token, user: authUser } = useHydratedAuth();
-  const cur = useBranding().branding.currency;
+  const { branding } = useBranding();
+  const cur = branding.currency;
   const { currentShop, _hasHydrated } = usePortalStore();
   const [mounted, setMounted] = useState(false);
   const [stocks, setStocks] = useState<ApiShopStock[]>([]);
@@ -114,6 +118,8 @@ function StockManagementContent() {
     description: '',
     costPrice: '',
     sellingPrice: '',
+    category: '',
+    unit: '',
     sizes: [] as string[],
     colors: [] as string[],
     images: [] as string[],
@@ -419,6 +425,8 @@ function StockManagementContent() {
       description: prod?.description ?? '',
       costPrice: prod?.costPrice != null ? String(prod.costPrice) : '',
       sellingPrice: prod?.price != null ? String(prod.price) : '',
+      category: prod?.category ?? '',
+      unit: prod?.unit ?? 'piece',
       sizes: prod?.sizes ?? [],
       colors: prod?.colors ?? [],
       images: prod?.images ?? [],
@@ -714,7 +722,7 @@ function StockManagementContent() {
                             onClick={() => { setVariantStock(stock); setIsVariantModalOpen(true); }}
                             className="cursor-pointer gap-2"
                           >
-                            <Grid3x3 className="h-4 w-4 text-gray-500" />Size / colour breakdown
+                            <Grid3x3 className="h-4 w-4 text-gray-500" />{optionsTitle(branding.option1Label, branding.option2Label) || 'Variant'} breakdown
                           </DropdownMenuItem>
                           <DropdownMenuSeparator />
                           <DropdownMenuItem
@@ -927,6 +935,7 @@ function StockManagementContent() {
           stock={selectedStock}
           open={isViewModalOpen}
           onClose={() => { if (!viewSaving && !viewDeleting) closeViewModal(); }}
+          token={token}
           viewForm={viewForm}
           setViewForm={setViewForm}
           onImageAdd={handleAddViewImage}

@@ -30,6 +30,8 @@ import {
 import PortalHeader from '@/components/portal/PortalHeader';
 import { ImageUpload } from '@/components/image-upload';
 import type { Shop } from '@/lib/types';
+import { useBusinessSettings } from '@/lib/use-business-settings';
+import { getBusinessType, optionExample, optionsTitle } from '@/lib/business-types';
 
 /* ------------------------------------------------------------------ */
 /*  Form shape                                                        */
@@ -37,6 +39,7 @@ import type { Shop } from '@/lib/types';
 type AddForm = {
   name: string;
   category: string;
+  unit: string;
   brand: string;
   sku: string;
   description: string;
@@ -52,7 +55,8 @@ type AddForm = {
 
 const EMPTY_FORM: AddForm = {
   name: '',
-  category: 'dresses',
+  category: '',
+  unit: '',
   brand: '',
   sku: '',
   description: '',
@@ -66,12 +70,6 @@ const EMPTY_FORM: AddForm = {
   shopId: '',
 };
 
-const CATEGORIES = [
-  { value: 'dresses', label: 'Dresses' },
-  { value: 'shoes', label: 'Shoes' },
-  { value: 'trousers', label: 'Trousers' },
-  { value: 'textiles', label: 'Textiles' },
-] as const;
 
 /* ------------------------------------------------------------------ */
 /*  Page                                                              */
@@ -79,6 +77,9 @@ const CATEGORIES = [
 export default function AddNewProductPage() {
   const { token, user: authUser } = useHydratedAuth();
   const cur = useBranding().branding.currency;
+  const business = useBusinessSettings(token);
+  const { option1Label, option2Label } = business;
+  const variantsTitle = optionsTitle(option1Label, option2Label);
   const { currentShop, setCurrentShop } = usePortalStore();
   const router = useRouter();
 
@@ -197,7 +198,8 @@ export default function AddNewProductPage() {
           price: sellingPriceFinal,
           costPrice: costPriceFinal,
           brand: addForm.brand,
-          category: addForm.category,
+          category: addForm.category || business.activeCategories[0]?.slug || 'other',
+          unit: addForm.unit || getBusinessType(business.businessType).defaultUnit,
           images: addForm.images,
           sizes: addForm.sizesArray,
           colors: addForm.colorsArray,
@@ -334,8 +336,8 @@ export default function AddNewProductPage() {
                   />
                 </div>
 
-                {/* Category + Brand */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {/* Category + Unit + Brand */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                   <div className="space-y-1.5">
                     <Label htmlFor="category">
                       Category <span className="text-red-500">*</span>
@@ -350,9 +352,25 @@ export default function AddNewProductPage() {
                       <option value="" disabled>
                         Select category
                       </option>
-                      {CATEGORIES.map(c => (
-                        <option key={c.value} value={c.value}>
-                          {c.label}
+                      {business.activeCategories.map(c => (
+                        <option key={c.slug} value={c.slug}>
+                          {c.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="unit">Sold by</Label>
+                    <select
+                      id="unit"
+                      aria-label="Select unit"
+                      className="block w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-950 px-3 py-2.5 text-sm text-gray-900 dark:text-gray-100 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
+                      value={addForm.unit || getBusinessType(business.businessType).defaultUnit}
+                      onChange={e => handleChange('unit', e.target.value)}
+                    >
+                      {business.units.map(u => (
+                        <option key={u} value={u}>
+                          {u}
                         </option>
                       ))}
                     </select>
@@ -484,24 +502,24 @@ export default function AddNewProductPage() {
               </CardContent>
             </Card>
 
-            {/* ---- Variants (Sizes + Colors) ---- */}
-            <Card>
+            {/* ---- Variants (the workspace's options; hidden when both are off) ---- */}
+            {variantsTitle && <Card>
               <CardHeader>
                 <div className="flex items-center gap-2">
                   <Ruler className="h-5 w-5 text-purple-600 dark:text-purple-400" />
-                  <CardTitle>Variants</CardTitle>
+                  <CardTitle>{variantsTitle}</CardTitle>
                 </div>
-                <CardDescription>Add available sizes and colors for this product</CardDescription>
+                <CardDescription>Add the {variantsTitle.toLowerCase()} options this product comes in</CardDescription>
               </CardHeader>
               <CardContent className="space-y-6">
-                {/* Sizes */}
-                <div className="space-y-2">
-                  <Label>Sizes</Label>
+                {/* Option 1 (stored as sizes) */}
+                {option1Label && <div className="space-y-2">
+                  <Label>{option1Label}</Label>
                   <div className="flex gap-2">
                     <Input
                       value={sizeInput}
                       onChange={e => setSizeInput(e.target.value)}
-                      placeholder="e.g. S, M, L, XL"
+                      placeholder={optionExample(option1Label)}
                       onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addSize(); } }}
                     />
                     <Button type="button" variant="outline" onClick={addSize} className="shrink-0 gap-1.5">
@@ -515,7 +533,7 @@ export default function AddNewProductPage() {
                         <Badge key={s} className="gap-1 pl-3 pr-1 py-1 text-sm bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-200">
                           {s}
                           <button
-                            aria-label={`Remove size ${s}`}
+                            aria-label={`Remove ${option1Label} ${s}`}
                             type="button"
                             onClick={() => removeSize(s)}
                             className="ml-0.5 p-0.5 rounded-full hover:bg-blue-200 dark:hover:bg-blue-800 transition-colors"
@@ -526,16 +544,16 @@ export default function AddNewProductPage() {
                       ))}
                     </div>
                   )}
-                </div>
+                </div>}
 
-                {/* Colors */}
-                <div className="space-y-2">
-                  <Label>Colors</Label>
+                {/* Option 2 (stored as colors) */}
+                {option2Label && <div className="space-y-2">
+                  <Label>{option2Label}</Label>
                   <div className="flex gap-2">
                     <Input
                       value={colorInput}
                       onChange={e => setColorInput(e.target.value)}
-                      placeholder="e.g. Red, Blue, Green"
+                      placeholder={optionExample(option2Label)}
                       onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addColor(); } }}
                     />
                     <Button type="button" variant="outline" onClick={addColor} className="shrink-0 gap-1.5">
@@ -549,7 +567,7 @@ export default function AddNewProductPage() {
                         <Badge key={c} className="gap-1 pl-3 pr-1 py-1 text-sm bg-pink-100 dark:bg-pink-900 text-pink-700 dark:text-pink-200">
                           {c}
                           <button
-                            aria-label={`Remove color ${c}`}
+                            aria-label={`Remove ${option2Label} ${c}`}
                             type="button"
                             onClick={() => removeColor(c)}
                             className="ml-0.5 p-0.5 rounded-full hover:bg-pink-200 dark:hover:bg-pink-800 transition-colors"
@@ -560,9 +578,9 @@ export default function AddNewProductPage() {
                       ))}
                     </div>
                   )}
-                </div>
+                </div>}
               </CardContent>
-            </Card>
+            </Card>}
 
             {/* ---- Images ---- */}
             <Card>
@@ -652,7 +670,7 @@ export default function AddNewProductPage() {
                     </div>
                     <div className="flex justify-between">
                       <dt className="text-gray-500 dark:text-gray-400">Category</dt>
-                      <dd className="capitalize">{addForm.category || '—'}</dd>
+                      <dd>{business.categoryName(addForm.category) || '—'}</dd>
                     </div>
 
                     <hr className="border-gray-200 dark:border-gray-700" />
@@ -678,14 +696,14 @@ export default function AddNewProductPage() {
                       <dt className="text-gray-500 dark:text-gray-400">Images</dt>
                       <dd>{addForm.images.length}</dd>
                     </div>
-                    <div className="flex justify-between">
-                      <dt className="text-gray-500 dark:text-gray-400">Sizes</dt>
+                    {option1Label && <div className="flex justify-between">
+                      <dt className="text-gray-500 dark:text-gray-400">{option1Label}</dt>
                       <dd>{addForm.sizesArray.length}</dd>
-                    </div>
-                    <div className="flex justify-between">
-                      <dt className="text-gray-500 dark:text-gray-400">Colors</dt>
+                    </div>}
+                    {option2Label && <div className="flex justify-between">
+                      <dt className="text-gray-500 dark:text-gray-400">{option2Label}</dt>
                       <dd>{addForm.colorsArray.length}</dd>
-                    </div>
+                    </div>}
                   </dl>
                 </CardContent>
               </Card>

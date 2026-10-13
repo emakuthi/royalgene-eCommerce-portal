@@ -27,7 +27,8 @@ export async function POST(request: NextRequest) {
       return jsonResponse({ success: false, error: 'orgName, name, email and password are required' }, 400);
     }
 
-    const result = await provisionWorkspace({ orgName, name, email, password, requestedSlug });
+    const businessType = typeof body.businessType === 'string' ? body.businessType : undefined;
+    const result = await provisionWorkspace({ orgName, name, email, password, requestedSlug, businessType });
 
     logger.info('Signup successful', {
       userId: result.userId, organizationId: result.organization.id, slug: result.organization.slug,

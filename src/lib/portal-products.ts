@@ -6,6 +6,8 @@ import logger from '@/lib/logger';
 import util from 'util';
 import { createShopStock, db } from '@/lib/db';
 import type { Product, ShopStock } from '@/lib/types';
+import { resolveCategorySlug } from '@/lib/business-settings.server';
+import { normalizeUnit } from '@/lib/business-types';
 
 export type IncomingStock = { quantity?: number; lowStockThreshold?: number };
 export type ShopStockWithProduct = ShopStock & { Product?: Product };
@@ -52,15 +54,12 @@ export async function createProductForShop(
   // create product then shop stock; try Supabase createProduct, fallback to in-memory DB
   let newProduct: Product | null;
 
-  const allowedCategories = ['dresses', 'shoes', 'trousers', 'textiles'] as Product['category'][];
   let productCreatedInSupabase = true;
 
   try {
-    // Coerce and validate category before calling createProduct
-    const categoryRaw = productData['category'];
-    const category = typeof categoryRaw === 'string' && allowedCategories.includes(categoryRaw as Product['category'])
-      ? (categoryRaw as Product['category'])
-      : 'dresses';
+    // The workspace's own category: a slug or a display name is accepted, and
+    // an unknown one is added to the workspace's list rather than rejected.
+    const category = await resolveCategorySlug(organizationId, productData['category']);
 
     // Store price exactly as entered (major currency units). Do NOT convert to cents.
     const priceValue = asNumber(productData['price']);
@@ -82,6 +81,8 @@ export async function createProductForShop(
       // to (see [[critical-product-creation-silently-broken]] in memory).
       ...(typeof productData['costPrice'] === 'number' ? { costPrice: productData['costPrice'] as number } : {}),
       category,
+      // Omitted when not sent so the column default ("piece") applies.
+      ...(typeof productData['unit'] === 'string' && productData['unit'].trim() ? { unit: normalizeUnit(productData['unit']) } : {}),
       images: (Array.isArray(productData['images']) ? (productData['images'] as unknown as string[]) : []) || [],
       sizes: (Array.isArray(productData['sizes']) ? (productData['sizes'] as unknown as string[]) : []) || [],
       colors: (Array.isArray(productData['colors']) ? (productData['colors'] as unknown as string[]) : []) || [],
@@ -121,7 +122,8 @@ export async function createProductForShop(
       description: asString(productData['description']),
       price: asNumber(productData['price']),
       costPrice: typeof productData['costPrice'] === 'number' ? (productData['costPrice'] as number) : undefined,
-      category: (typeof productData['category'] === 'string' ? (productData['category'] as Product['category']) : 'dresses'),
+      category: typeof productData['category'] === 'string' ? productData['category'] : 'other',
+      unit: normalizeUnit(productData['unit']),
       images: (Array.isArray(productData['images']) ? (productData['images'] as unknown as string[]) : []) || [],
       sizes: (Array.isArray(productData['sizes']) ? (productData['sizes'] as unknown as string[]) : []) || [],
       colors: (Array.isArray(productData['colors']) ? (productData['colors'] as unknown as string[]) : []) || [],
