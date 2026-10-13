@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 import { jsonResponse } from '@/lib/apiResponse';
 import { verifyWebhookSignature } from '@/lib/paystack.server';
+import { forwardWebhook, relayTargetFor } from '@/lib/paystack-relay.server';
 import { getPlanById } from '@/lib/billing-plans.server';
 import { applySuccessfulSubscription, recordBillingEvent } from '@/lib/billing.server';
 import logger from '@/lib/logger';
@@ -28,6 +29,16 @@ export async function POST(request: NextRequest) {
   const eventType = event.event || 'unknown';
   const data = event.data || {};
   const reference = typeof data.reference === 'string' ? data.reference : null;
+
+  // This is the Paystack account's only webhook; payments made in other Royal
+  // Gene apps (e.g. FleetTrack, "ft-…") are handed to that app untouched and
+  // never recorded here. A failed hand-off returns 502 so Paystack retries.
+  const relayTo = relayTargetFor(reference);
+  if (relayTo) {
+    const ok = await forwardWebhook(relayTo, rawBody, signature!);
+    if (!ok) logger.warn('[paystack webhook] relay failed', { reference, target: new URL(relayTo).host });
+    return jsonResponse({ success: ok }, ok ? 200 : 502);
+  }
   const metadata = (data.metadata as Record<string, unknown> | undefined) || {};
   const organizationId = typeof metadata.organizationId === 'string' ? metadata.organizationId : null;
 
