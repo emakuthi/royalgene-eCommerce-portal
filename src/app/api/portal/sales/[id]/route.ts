@@ -1,4 +1,4 @@
-import { parseSaleDiscount } from '@/lib/sale-discount';
+import { applySaleEdit, canEditSale, NOT_YOUR_SALE } from '@/lib/sale-edit.server';
 import { NextRequest, NextResponse } from 'next/server';
 import { requireTenantUser } from '@/lib/authorize';
 import { supabaseAdmin } from '@/lib/supabase-client';
@@ -20,7 +20,8 @@ async function saleIdFrom(context: unknown): Promise<string | undefined> {
  * GET /api/portal/sales/[id]
  * One sale line item, for the edit form's prefill (/sales/new?saleId=…).
  * Same access rule as PATCH: same org, and the caller's own shop unless admin.
- * Adds shopStockId (not a SalesEntry column) — the form selects by stock row.
+ * Adds shopStockId (not a SalesEntry column) — the form selects by stock row —
+ * and canEdit, so the form opens read-only on a sale the caller may not change.
  */
 export async function GET(request: NextRequest, context: unknown) {
   try {
@@ -58,7 +59,8 @@ export async function GET(request: NextRequest, context: unknown) {
       .eq('productId', sale.productId)
       .maybeSingle();
 
-    return jsonResponse({ success: true, data: { ...sale, shopStockId: stock?.id ?? null } }, 200);
+    const canEdit = await canEditSale(payload, sale);
+    return jsonResponse({ success: true, data: { ...sale, shopStockId: stock?.id ?? null, canEdit } }, 200);
   } catch (error) {
     logger.error('Portal sale fetch error', { error: error instanceof Error ? error.message : String(error) });
     return jsonResponse({ success: false, error: 'Internal server error' }, 500);
@@ -134,8 +136,7 @@ export async function PATCH(request: NextRequest, context: unknown) {
     if (auth instanceof NextResponse) return auth;
     const payload = auth;
 
-    const body = await request.json();
-    const { quantity, unitPrice, paymentMethod, customerName, customerPhone, notes, discountAmount } = body;
+    const body = await request.json().catch(() => ({}));
 
     // Fetch existing sale
     const { data: existingSale, error: saleErr } = await supabaseAdmin
@@ -168,122 +169,13 @@ export async function PATCH(request: NextRequest, context: unknown) {
       return jsonResponse({ success: false, error: 'Forbidden' }, 403);
     }
 
-    // Prepare updates with explicit typed shape
-    type UpdatePayload = Partial<{
-      quantity: number;
-      unitPrice: number;
-      paymentMethod: string;
-      paymentBreakdown: null;
-      discountAmount: number;
-      customerName: string | null;
-      customerPhone: string | null;
-      notes: string | null;
-      totalAmount: number;
-      updatedAt: string;
-    }>;
-
-    const updates: UpdatePayload = {};
-    if (typeof quantity === 'number') updates.quantity = quantity;
-    if (typeof unitPrice === 'number') updates.unitPrice = unitPrice;
-    if (paymentMethod) updates.paymentMethod = paymentMethod;
-    // Re-picking the method on a split sale replaces the split — keeping the
-    // old breakdown would contradict the new single method. Only touched
-    // when one exists, so a plain edit never depends on the column.
-    if (paymentMethod && existingSale.paymentBreakdown != null) updates.paymentBreakdown = null;
-    if (typeof customerName !== 'undefined') updates.customerName = customerName;
-    if (typeof customerPhone !== 'undefined') updates.customerPhone = customerPhone;
-    if (typeof notes !== 'undefined') updates.notes = notes;
-
-    // Recompute totalAmount if quantity or unitPrice changed
-    const newQuantity = typeof updates.quantity === 'number' ? updates.quantity : existingSale.quantity;
-    const newUnitPrice = typeof updates.unitPrice === 'number' ? updates.unitPrice : existingSale.unitPrice;
-    // A discount sent with the edit replaces the old one; otherwise keep the
-    // sale's existing discount (capped at the new gross, in case quantity or
-    // price dropped below it) — recomputing a plain quantity * unitPrice
-    // would silently undo it.
-    const oldDiscount = Number(existingSale.discountAmount) || 0;
-    let keptDiscount = Math.min(oldDiscount, newQuantity * newUnitPrice);
-    if (discountAmount !== undefined) {
-      const requested = parseSaleDiscount(discountAmount, newQuantity * newUnitPrice);
-      if (typeof requested !== 'number') return jsonResponse({ success: false, error: requested.error }, 400);
-      keptDiscount = requested;
-    }
-    if (keptDiscount !== oldDiscount) updates.discountAmount = keptDiscount;
-    const newTotalAmount = newQuantity * newUnitPrice - keptDiscount;
-    updates.totalAmount = newTotalAmount;
-
-    const now = new Date().toISOString();
-    updates.updatedAt = now;
-
-    // Update the sale
-    const { data: updatedSale, error: updateErr } = await supabaseAdmin
-      .from('SalesEntry')
-      .update(updates)
-      .eq('id', saleId)
-      .select()
-      .single();
-
-    if (updateErr) {
-      logger.error('Failed to update SalesEntry', { error: updateErr.message });
-      return jsonResponse({ success: false, error: 'Failed to update sale' }, 500);
+    if (!(await canEditSale(payload, existingSale))) {
+      return jsonResponse({ success: false, error: NOT_YOUR_SALE }, 403);
     }
 
-    // Update ProfitMargin record if present
-    const { data: profit, error: profitErr } = await supabaseAdmin
-      .from('ProfitMargin')
-      .select('*')
-      .eq('salesEntryId', saleId)
-      .single();
-
-    if (!profitErr && profit) {
-      // fetch product cost price
-      const { data: product } = await supabaseAdmin
-        .from('Product')
-        .select('*')
-        .eq('id', existingSale.productId)
-        .single();
-
-      const costPrice = product?.price || 0;
-      const sellingPrice = newTotalAmount;
-      const profitValue = sellingPrice - (costPrice * newQuantity);
-      const marginPercentage = sellingPrice > 0 ? (profitValue / sellingPrice) * 100 : 0;
-
-      await supabaseAdmin
-        .from('ProfitMargin')
-        .update({
-          costPrice: costPrice * newQuantity,
-          sellingPrice,
-          profit: profitValue,
-          marginPercentage,
-          updatedAt: now,
-        })
-        .eq('salesEntryId', saleId);
-    }
-
-    // Update ShopStock if exists: adjust by delta (oldQuantity -> newQuantity)
-    const delta = newQuantity - existingSale.quantity;
-    if (delta !== 0) {
-      const { data: shopStock } = await supabaseAdmin
-        .from('ShopStock')
-        .select('*')
-        .eq('shopId', existingSale.shopId)
-        .eq('productId', existingSale.productId)
-        .single();
-
-      if (shopStock) {
-        // subtract delta since a positive delta means more sold (decrease stock)
-        const newQty = Math.max(0, shopStock.quantity - delta);
-        await supabaseAdmin
-          .from('ShopStock')
-          .update({ quantity: newQty, updatedAt: now })
-          .eq('id', shopStock.id);
-
-        // record transaction
-        await supabaseAdmin
-          .from('StockTransaction')
-          .insert([{ id: cryptoRandomId(), organizationId: existingSale.organizationId, shopStockId: shopStock.id, portalUserId: portalUser.id, type: 'adjustment', quantity: -delta, reason: 'Sale update', reference: saleId, createdAt: now }]);
-      }
-    }
+    const result = await applySaleEdit(existingSale, body, portalUser.id ?? null);
+    if (!result.ok) return jsonResponse({ success: false, error: result.error }, result.status);
+    const updatedSale = result.sale;
 
     logger.info('Sales entry updated', { saleId, userId: payload.userId, duration: Date.now() - start });
 
@@ -296,9 +188,4 @@ export async function PATCH(request: NextRequest, context: unknown) {
 
 export function OPTIONS() {
   return optionsResponse('PATCH,DELETE,OPTIONS');
-}
-
-function cryptoRandomId() {
-  // Simple unique id for transactions (not cryptographically required here)
-  return 'tx_' + Math.random().toString(36).slice(2, 11);
 }

@@ -13,6 +13,7 @@ import { generateTaxInvoiceForSale } from '@/lib/etims/tax-invoice.server';
 import { syncSaleToQuickBooks } from '@/lib/accounting/sync-sale-to-quickbooks.server';
 import { assertCanCreate } from '@/lib/entitlements/enforce.server';
 import { canViewCostData } from '@/lib/cost-visibility.server';
+import { editableSaleIds } from '@/lib/sale-edit.server';
 import { getOrgCurrency } from '@/lib/currency.server';
 import { getRate } from '@/lib/exchange-rates.server';
 
@@ -479,11 +480,15 @@ export async function GET(request: NextRequest) {
       return jsonResponse({ success: false, error: 'Failed to fetch sales' }, 500);
     }
 
+    // canEdit: staff may edit only the sales they recorded (sale-edit.server.ts).
+    const editable = await editableSaleIds(payload, (sales ?? []) as { id: string; portalUserId?: string | null }[]);
+    const rows = (sales ?? []).map((sale) => ({ ...sale, canEdit: editable.has((sale as { id: string }).id) }));
+
     // Cost/profit are owner-only — strip the embedded ProfitMargin rows, the
     // per-sale cost snapshot and the product's cost price for everyone else
     // (see cost-visibility.server.ts).
     if (!(await canViewCostData(payload))) {
-      const redacted = (sales ?? []).map((sale) => {
+      const redacted = rows.map((sale) => {
         const row = sale as Record<string, unknown>;
         const product = row.product as Record<string, unknown> | null;
         return {
@@ -496,7 +501,7 @@ export async function GET(request: NextRequest) {
       return jsonResponse({ success: true, data: redacted }, 200);
     }
 
-    return jsonResponse({ success: true, data: sales || [] }, 200);
+    return jsonResponse({ success: true, data: rows }, 200);
   } catch (error) {
     logger.error('Sales fetch error', {
       error: error instanceof Error ? error.message : String(error),

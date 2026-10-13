@@ -90,6 +90,13 @@ async function loadCallerPosition(userId: string): Promise<string | null> {
   return (data && data[0] && (data[0] as { position?: string }).position) || null;
 }
 
+/** True for an admin/super_admin token or a shop_owner position — see class doc. */
+export async function isOwnerLevelCaller(payload: VerifiedPayload): Promise<boolean> {
+  if (isOwnerLevel(payload.role ?? null, null)) return true;
+  if (!payload.userId) return false;
+  return isOwnerLevel(payload.role ?? null, await loadCallerPosition(payload.userId));
+}
+
 /**
  * True when this caller may exercise [capability]. Owner-level callers
  * (admin/super_admin JWT role, or shop_owner position) always pass. Anyone

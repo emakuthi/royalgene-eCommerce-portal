@@ -117,21 +117,35 @@ export function removePlatformOrgDomain(token: string | null | undefined, id: st
   });
 }
 
+export interface PlatformSettingsData {
+  selfSignupEnabled: boolean;
+  allowAllMobileLogins: boolean;
+  /** App builds older than this versionCode must update before use. 0 = no minimum. */
+  minAppVersionCode: number;
+}
+
 export function getPlatformSelfSignupEnabled(token?: string | null) {
-  return request<{ selfSignupEnabled: boolean; allowAllMobileLogins: boolean }>('/api/platform/settings', token);
+  return request<PlatformSettingsData>('/api/platform/settings', token);
 }
 
 export function setPlatformSelfSignupEnabled(token: string | null | undefined, selfSignupEnabled: boolean) {
-  return request<{ selfSignupEnabled: boolean; allowAllMobileLogins: boolean }>('/api/platform/settings', token, {
+  return request<PlatformSettingsData>('/api/platform/settings', token, {
     method: 'PATCH',
     body: JSON.stringify({ selfSignupEnabled }),
   });
 }
 
 export function setPlatformAllowAllMobileLogins(token: string | null | undefined, allowAllMobileLogins: boolean) {
-  return request<{ selfSignupEnabled: boolean; allowAllMobileLogins: boolean }>('/api/platform/settings', token, {
+  return request<PlatformSettingsData>('/api/platform/settings', token, {
     method: 'PATCH',
     body: JSON.stringify({ allowAllMobileLogins }),
+  });
+}
+
+export function setPlatformMinAppVersionCode(token: string | null | undefined, minAppVersionCode: number) {
+  return request<PlatformSettingsData>('/api/platform/settings', token, {
+    method: 'PATCH',
+    body: JSON.stringify({ minAppVersionCode }),
   });
 }
 

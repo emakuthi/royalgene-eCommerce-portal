@@ -56,6 +56,9 @@ export default function NewSalePage() {
   const [loadingStocks, setLoadingStocks] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [editingSaleId, setEditingSaleId] = useState<string | null>(null);
+  // False when the sale was recorded by someone else and the caller isn't an
+  // owner — the server rejects the save anyway; this just says so up front.
+  const [canEditSale, setCanEditSale] = useState(true);
   const [originalPaymentMethod, setOriginalPaymentMethod] = useState<string | null>(null);
 
   // recent sales + stats
@@ -161,6 +164,7 @@ export default function NewSalePage() {
             };
             setFormData(newForm);
             setOriginalPaymentMethod(newForm.paymentMethod);
+            setCanEditSale(s.canEdit !== false);
           }
         } catch (err) {
           console.warn('Failed to fetch sale for edit', err);
@@ -452,9 +456,14 @@ export default function NewSalePage() {
           <div className="sm:col-span-2">
             <Card className="mt-6">
              <CardHeader>
-               <CardTitle>{editingSaleId ? 'Edit Sale' : 'Record New Sale'}</CardTitle>
+               <CardTitle>{editingSaleId ? (canEditSale ? 'Edit Sale' : 'Sale details') : 'Record New Sale'}</CardTitle>
              </CardHeader>
              <CardContent>
+              {editingSaleId && !canEditSale && (
+                <p className="mb-4 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-200">
+                  This sale was recorded by someone else. Only the shop owner can change it — you can view it here.
+                </p>
+              )}
               <form onSubmit={handleSubmit} className="space-y-4">
                 <div>
                   <Label>Product (select from shop stock) *</Label>
@@ -636,7 +645,7 @@ export default function NewSalePage() {
                 </div>
 
                 <div className="flex gap-3 pt-4">
-                  <Button type="submit" disabled={submitting} className="flex-1 bg-[hsl(var(--primary))] text-white hover:opacity-90">{submitting ? (editingSaleId ? 'Saving...' : 'Recording sale...') : (editingSaleId ? 'Save changes' : 'Record Sale')}</Button>
+                  <Button type="submit" disabled={submitting || (!!editingSaleId && !canEditSale)} className="flex-1 bg-[hsl(var(--primary))] text-white hover:opacity-90">{submitting ? (editingSaleId ? 'Saving...' : 'Recording sale...') : (editingSaleId ? 'Save changes' : 'Record Sale')}</Button>
                   <Button variant="outline" type="button" onClick={() => router.push('/sales')}>{editingSaleId ? 'Cancel' : 'Back'}</Button>
                 </div>
               </form>
