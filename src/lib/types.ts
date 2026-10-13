@@ -180,7 +180,10 @@ export interface Product {
   // costPrice stored in cents (optional in types to keep backward compatibility)
   costPrice?: number;
   brand?: string | null;
-  category: 'dresses' | 'shoes' | 'trousers' | 'textiles';
+  /** ProductCategory slug for this workspace (see business-settings.server.ts). */
+  category: string;
+  /** What one unit of stock is: piece, kg, litre, pack ... */
+  unit?: string;
   images: string[];
   sizes: string[];
   colors: string[];

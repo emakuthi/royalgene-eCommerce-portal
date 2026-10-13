@@ -33,7 +33,8 @@ export async function POST(request: NextRequest) {
     }
 
     const device = deviceInfoFromBody(body as Record<string, unknown>);
-    const result = await provisionWorkspace({ orgName, name, email, password, requestedSlug: slug, device });
+    const businessType = typeof body.businessType === 'string' ? body.businessType : undefined;
+    const result = await provisionWorkspace({ orgName, name, email, password, requestedSlug: slug, device, businessType });
 
     void trackActivity({
       userId: result.userId,

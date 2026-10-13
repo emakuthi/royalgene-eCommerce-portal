@@ -7,7 +7,8 @@ export interface ParsedProductRow {
   name: string;
   description: string;
   price: number;
-  category: 'dresses' | 'shoes' | 'trousers' | 'textiles';
+  /** Any category name or slug; the server files it under the workspace's own categories. */
+  category: string;
   images?: string[];
   sizes?: string[];
   colors?: string[];
@@ -30,7 +31,7 @@ interface ValidationError {
  * - name (required)
  * - description (required)
  * - price (required)
- * - category (required: dresses, shoes, trousers, textiles)
+ * - category (required: any of your categories; a new one is added)
  * - sku (required)
  * - stockQuantity (required)
  * - sizes (optional: comma-separated, e.g., "XS,S,M,L,XL")
@@ -185,12 +186,11 @@ function parseProductRow(
 
   // Validate category
   const category = getString('category');
-  const validCategories = ['dresses', 'shoes', 'trousers', 'textiles'];
-  if (!validCategories.includes(category)) {
+  if (!category) {
     rowErrors.push({
       row: rowNumber,
       field: 'category',
-      error: `Category must be one of: ${validCategories.join(', ')}, got "${category}"`,
+      error: 'Category is required',
       value: getValue('category'),
     });
   }
@@ -248,7 +248,7 @@ function parseProductRow(
     name,
     description,
     price,
-    category: category as 'dresses' | 'shoes' | 'trousers' | 'textiles',
+    category,
     images: [],
     sizes: sizes.length > 0 ? sizes : [''],
     colors: colors.length > 0 ? colors : [''],

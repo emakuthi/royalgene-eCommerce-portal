@@ -1,4 +1,5 @@
 import { NextRequest } from 'next/server';
+import { normalizeProductUpdate } from '@/lib/business-settings.server';
 import { supabaseAdmin } from '@/lib/supabase-client';
 import logger from '@/lib/logger';
 import { jsonResponse } from '@/lib/apiResponse';
@@ -99,6 +100,7 @@ export async function GET(
           name: prod.name,
           sku: prod.sku,
           category: prod.category,
+          unit: prod.unit ?? 'piece',
           brand: prod.brand ?? null,
           description: prod.description,
           price: prod.price,
@@ -247,13 +249,14 @@ export async function PUT(
     const resolvedProductId = shopStock.productId as string;
 
     // ── Update Product table fields ──────────────────────────────────────────
-    const allowedProductFields = ['name', 'description', 'price', 'costPrice', 'brand', 'images', 'sizes', 'colors', 'sku', 'category', 'featured', 'trending'];
+    const allowedProductFields = ['name', 'description', 'price', 'costPrice', 'brand', 'images', 'sizes', 'colors', 'sku', 'category', 'unit', 'featured', 'trending'];
     const productUpdates: Record<string, unknown> = {};
     for (const k of allowedProductFields) {
       if (Object.prototype.hasOwnProperty.call(body, k)) {
         productUpdates[k] = body[k];
       }
     }
+    await normalizeProductUpdate(auth.payload.organizationId, productUpdates);
 
     // Cost price is owner-level (see cost-visibility.server.ts): a caller
     // without the capability can't set it even if their client sends one —
@@ -272,7 +275,7 @@ export async function PUT(
 
     // Snapshot old scalar values so we can record a before→after edit in the
     // product history timeline (buildProductHistory reads these from activity_logs).
-    const auditFields = ['name', 'description', 'price', 'costPrice', 'brand', 'sku', 'category', 'featured', 'trending'];
+    const auditFields = ['name', 'description', 'price', 'costPrice', 'brand', 'sku', 'category', 'unit', 'featured', 'trending'];
     const changedAuditKeys = auditFields.filter((k) => Object.prototype.hasOwnProperty.call(productUpdates, k));
     let oldProductForAudit: Record<string, unknown> | null = null;
     if (changedAuditKeys.length > 0) {

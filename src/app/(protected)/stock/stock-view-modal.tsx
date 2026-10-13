@@ -7,6 +7,7 @@ import { ImageUpload } from '@/components/image-upload';
 import { X } from 'lucide-react';
 import ProductHistoryModal from './product-history-modal';
 import { useBranding } from '@/lib/branding-context';
+import { useBusinessSettings } from '@/lib/use-business-settings';
 import type { Product, ShopStock } from '@/lib/types';
 type ApiShopStock = ShopStock & { Product?: Product; product?: Product; shopName?: string };
 type ViewFormType = {
@@ -15,6 +16,8 @@ type ViewFormType = {
   description: string;
   costPrice: string;
   sellingPrice: string;
+  category: string;
+  unit: string;
   sizes: string[];
   colors: string[];
   images: string[];
@@ -26,6 +29,7 @@ type ViewFormType = {
 export default ({
                   stock,
                   open,
+                  token,
                   onClose,
                   viewForm,
                   setViewForm,
@@ -38,6 +42,7 @@ export default ({
                 }: {
   stock: ApiShopStock;
   open: boolean;
+  token?: string | null;
   onClose: () => void;
   viewForm: ViewFormType;
   setViewForm: (v: ViewFormType) => void;
@@ -50,6 +55,8 @@ export default ({
 }) => {
   const [historyOpen, setHistoryOpen] = React.useState(false);
   const cur = useBranding().branding.currency;
+  const business = useBusinessSettings(open ? token : null);
+  const { option1Label, option2Label } = business;
 
   if (!open) return null;
 
@@ -66,6 +73,8 @@ export default ({
       images: viewForm.images,
       sizes: viewForm.sizes,
       colors: viewForm.colors,
+      ...(viewForm.category ? { category: viewForm.category } : {}),
+      ...(viewForm.unit ? { unit: viewForm.unit } : {}),
     };
 
     const stockPayload: Record<string, unknown> = {
@@ -110,13 +119,32 @@ export default ({
               <label className="block text-sm text-gray-600 mt-2">Description</label>
               <Input value={viewForm.description} onChange={(e) => setViewForm({ ...viewForm, description: e.target.value })} />
 
+              <div className="grid grid-cols-2 gap-3 mt-2">
+                <div>
+                  <label className="block text-sm text-gray-600">Category</label>
+                  <select aria-label="Category" className="block w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-950 px-3 py-2 text-sm" value={viewForm.category} onChange={(e) => setViewForm({ ...viewForm, category: e.target.value })}>
+                    {viewForm.category && !business.activeCategories.some(c => c.slug === viewForm.category) && (
+                      <option value={viewForm.category}>{business.categoryName(viewForm.category)}</option>
+                    )}
+                    {business.activeCategories.map(c => <option key={c.slug} value={c.slug}>{c.name}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm text-gray-600">Sold by</label>
+                  <select aria-label="Unit" className="block w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-950 px-3 py-2 text-sm" value={viewForm.unit || 'piece'} onChange={(e) => setViewForm({ ...viewForm, unit: e.target.value })}>
+                    {!business.units.includes(viewForm.unit || 'piece') && <option value={viewForm.unit}>{viewForm.unit}</option>}
+                    {business.units.map(u => <option key={u} value={u}>{u}</option>)}
+                  </select>
+                </div>
+              </div>
+
               <div className="mt-4">
                 <p className="text-sm text-gray-600">Images</p>
                 <ImageUpload images={viewForm.images} onImageUpload={(u) => { onImageAdd(u); setViewForm({ ...viewForm, images: [...viewForm.images, u] }); }} onRemove={(u) => { onImageRemove(u); setViewForm({ ...viewForm, images: viewForm.images.filter(x => x !== u) }); }} />
               </div>
 
-              <div className="mt-4">
-                <p className="text-sm text-gray-600 dark:text-gray-400">Sizes</p>
+              {option1Label && <div className="mt-4">
+                <p className="text-sm text-gray-600 dark:text-gray-400">{option1Label}</p>
                 <div className="flex flex-wrap gap-2 mt-2">
                   {(viewForm.sizes || []).map(s => (
                     <div key={s} className="inline-flex items-center gap-2 bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-full px-2 py-1 text-xs">
@@ -126,12 +154,12 @@ export default ({
                   ))}
                 </div>
                 <div className="flex gap-2 mt-2">
-                  <Input placeholder="Add size and press Enter" onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); const v = (e.target as HTMLInputElement).value.trim(); if (v) { setViewForm({ ...viewForm, sizes: Array.from(new Set([...viewForm.sizes, v])) }); (e.target as HTMLInputElement).value = ''; } } }} />
+                  <Input placeholder={`Add ${option1Label.toLowerCase()} and press Enter`} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); const v = (e.target as HTMLInputElement).value.trim(); if (v) { setViewForm({ ...viewForm, sizes: Array.from(new Set([...viewForm.sizes, v])) }); (e.target as HTMLInputElement).value = ''; } } }} />
                 </div>
-              </div>
+              </div>}
 
-              <div className="mt-4">
-                <p className="text-sm text-gray-600 dark:text-gray-400">Colors</p>
+              {option2Label && <div className="mt-4">
+                <p className="text-sm text-gray-600 dark:text-gray-400">{option2Label}</p>
                 <div className="flex flex-wrap gap-2 mt-2">
                   {(viewForm.colors || []).map(c => (
                     <div key={c} className="inline-flex items-center gap-2 bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-full px-2 py-1 text-xs">
@@ -141,9 +169,9 @@ export default ({
                   ))}
                 </div>
                 <div className="flex gap-2 mt-2">
-                  <Input placeholder="Add color and press Enter" onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); const v = (e.target as HTMLInputElement).value.trim(); if (v) { setViewForm({ ...viewForm, colors: Array.from(new Set([...viewForm.colors, v])) }); (e.target as HTMLInputElement).value = ''; } } }} />
+                  <Input placeholder={`Add ${option2Label.toLowerCase()} and press Enter`} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); const v = (e.target as HTMLInputElement).value.trim(); if (v) { setViewForm({ ...viewForm, colors: Array.from(new Set([...viewForm.colors, v])) }); (e.target as HTMLInputElement).value = ''; } } }} />
                 </div>
-              </div>
+              </div>}
             </div>
 
             <div>

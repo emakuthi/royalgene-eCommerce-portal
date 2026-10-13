@@ -31,6 +31,11 @@ export interface MobileAuthPayload {
     currency: string;
     /** Owner-set units of base currency per 1 USD — drives the app's "≈ $" label. Null => none. */
     usdRate: number | null;
+    /** What kind of business (business-types.ts). */
+    businessType: string;
+    /** Names of the two product options (stored as size/color); '' = off. */
+    option1Label: string;
+    option2Label: string;
   } | null;
   shop: ReturnType<typeof formatShop> | null;
   shops?: ReturnType<typeof formatShop>[];
@@ -140,6 +145,21 @@ export async function buildMobileAuthResponse(
         const r = (curRow as { usdRate?: number | null }).usdRate;
         usdRate = typeof r === 'number' ? r : (r == null ? null : Number(r) || null);
       }
+      // Same soft-fail approach for the business-type columns (20261014_01).
+      let business = { businessType: 'boutique', option1Label: 'Size', option2Label: 'Colour' };
+      const { data: bizRow } = await supabaseAdmin
+        .from('Organization')
+        .select('businessType, option1Label, option2Label')
+        .eq('id', user.organizationId)
+        .maybeSingle();
+      if (bizRow) {
+        const b = bizRow as { businessType?: string | null; option1Label?: string | null; option2Label?: string | null };
+        business = {
+          businessType: b.businessType || 'boutique',
+          option1Label: b.option1Label ?? 'Size',
+          option2Label: b.option2Label ?? 'Colour',
+        };
+      }
       organization = {
         id: orgRow.id,
         name: orgRow.name,
@@ -148,6 +168,7 @@ export async function buildMobileAuthResponse(
         customDomainStatus: (orgRow.customDomainStatus as string | null) ?? null,
         currency,
         usdRate,
+        ...business,
       };
     }
   }

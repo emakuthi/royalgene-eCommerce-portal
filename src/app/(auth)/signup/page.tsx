@@ -12,6 +12,7 @@ import { useTheme } from '@/lib/theme-context';
 import { checkSlugAvailable } from '@/lib/organizations';
 import { getOrgUrl } from '@/lib/urls';
 import { ROOT_DOMAIN } from '@/lib/tenant';
+import { BUSINESS_TYPES } from '@/lib/business-types';
 
 type SlugStatus = 'idle' | 'checking' | 'available' | 'unavailable';
 
@@ -26,6 +27,7 @@ export default function SignupPage() {
   const [signupOpen, setSignupOpen] = useState<boolean | null>(null); // null = still checking
   const [formData, setFormData] = useState({
     orgName: '',
+    businessType: 'boutique',
     slug: '',
     name: '',
     email: '',
@@ -91,6 +93,7 @@ export default function SignupPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           orgName: formData.orgName,
+          businessType: formData.businessType,
           slug: formData.slug,
           name: formData.name,
           email: formData.email,
@@ -151,6 +154,24 @@ export default function SignupPage() {
                   onChange={(e) => handleOrgNameChange(e.target.value)}
                   disabled={loading}
                 />
+              </div>
+
+              <div>
+                <Label htmlFor="businessType">Type of Business</Label>
+                <select
+                  id="businessType"
+                  value={formData.businessType}
+                  onChange={(e) => setFormData({ ...formData, businessType: e.target.value })}
+                  disabled={loading}
+                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+                >
+                  {BUSINESS_TYPES.map((t) => (
+                    <option key={t.id} value={t.id}>{t.label}</option>
+                  ))}
+                </select>
+                <p className="text-xs text-gray-500 mt-1">
+                  {BUSINESS_TYPES.find((t) => t.id === formData.businessType)?.description} — you can change this later in Settings.
+                </p>
               </div>
 
               <div>

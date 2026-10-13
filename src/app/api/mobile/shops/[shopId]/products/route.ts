@@ -106,6 +106,7 @@ export async function GET(
           name: product.name,
           sku: product.sku,
           category: product.category,
+          unit: product.unit ?? 'piece',
           description: product.description,
           price: product.price,
           costPrice: showCost ? ((product.costPrice as number) || 0) : null,
@@ -245,6 +246,7 @@ export async function POST(
       price: body.price,
       costPrice: typeof body.costPrice === 'number' ? body.costPrice : undefined,
       category: body.category, // createProductForShop will normalise/validate this
+      unit: body.unit,
       images: Array.isArray(body.images) ? body.images : [],
       sizes: Array.isArray(body.sizes) ? body.sizes : [],
       colors: Array.isArray(body.colors) ? body.colors : [],
@@ -315,6 +317,7 @@ export async function POST(
           name: product?.name ?? productData.name,
           sku: product?.sku ?? productData.sku,
           category: product?.category ?? productData.category,
+          unit: product?.unit ?? 'piece',
           description: product?.description ?? productData.description,
           price: product?.price ?? productData.price,
           costPrice: product?.costPrice ?? productData.costPrice,

@@ -16,6 +16,8 @@ vi.mock('@/lib/auth.server', () => ({
 vi.mock('@/lib/email/verification-email', () => ({ sendVerificationEmail: async () => ({ ok: true }) }));
 
 const inserts: Record<string, unknown[]> = {};
+const updates: Record<string, unknown[]> = {};
+const upserts: Record<string, unknown[]> = {};
 let existingEmailRows: unknown[] = [];
 vi.mock('@/lib/supabase-client', () => ({
   supabaseAdmin: {
@@ -26,6 +28,14 @@ vi.mock('@/lib/supabase-client', () => ({
           return { error: null };
         },
         delete: () => ({ eq: async () => ({ error: null }) }),
+        update: (row: unknown) => {
+          (updates[table] ??= []).push(row);
+          return { eq: async () => ({ error: null }) };
+        },
+        upsert: async (rows: unknown[]) => {
+          (upserts[table] ??= []).push(...rows);
+          return { error: null };
+        },
         // provisionWorkspace's "is this email already taken?" pre-check:
         //   from('User').select('id').eq('email', ...).limit(1)
         select: () => ({
@@ -41,7 +51,7 @@ vi.mock('@/lib/supabase-client', () => ({
 import { provisionWorkspace } from '@/lib/signup.server';
 
 beforeEach(() => {
-  for (const k of Object.keys(inserts)) delete inserts[k];
+  for (const bucket of [inserts, updates, upserts]) for (const k of Object.keys(bucket)) delete bucket[k];
   existingEmailRows = [];
   slugAvailable.mockResolvedValue(true);
 });
@@ -57,6 +67,10 @@ describe('provisionWorkspace validation', () => {
   it('rejects a taken slug with 409', async () => {
     slugAvailable.mockResolvedValue(false);
     await expect(provisionWorkspace(base)).rejects.toMatchObject({ status: 409 });
+  });
+
+  it('rejects an unknown business type with 400', async () => {
+    await expect(provisionWorkspace({ ...base, businessType: 'casino' })).rejects.toMatchObject({ status: 400 });
   });
 
   it('rejects an email already registered anywhere with 409', async () => {
@@ -79,5 +93,20 @@ describe('provisionWorkspace happy path', () => {
     expect(inserts.Shop[0]).toMatchObject({ name: 'Acme', organizationId: 'org-1' });
     expect(inserts.PortalUser[0]).toMatchObject({ position: 'shop_owner', mobileAccess: true });
     expect(inserts.EmailVerificationToken).toHaveLength(1);
+  });
+
+  it('defaults to a boutique, as every workspace was before business types', async () => {
+    await provisionWorkspace(base);
+    expect(updates.Organization[0]).toEqual({ businessType: 'boutique', option1Label: 'Size', option2Label: 'Colour' });
+    expect(upserts.ProductCategory).toContainEqual(expect.objectContaining({ organizationId: 'org-1', slug: 'dresses', name: 'Dresses' }));
+  });
+
+  it('sets up a pharmacy with its option names and starter categories', async () => {
+    await provisionWorkspace({ ...base, businessType: 'pharmacy' });
+    expect(updates.Organization[0]).toEqual({ businessType: 'pharmacy', option1Label: 'Strength', option2Label: 'Pack size' });
+    const slugs = (upserts.ProductCategory as { slug: string }[]).map((c) => c.slug);
+    expect(slugs).toContain('over-the-counter');
+    expect(slugs).toContain('vitamins-and-supplements');
+    expect(slugs).not.toContain('dresses');
   });
 });

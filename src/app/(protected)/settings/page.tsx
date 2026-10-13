@@ -35,6 +35,7 @@ import {
   CreditCard,
   Globe,
   Plug,
+  Briefcase,
 } from 'lucide-react';
 import { useSignOut } from '@/components/portal/SignOutProvider';
 import { BRANDING_DEFAULTS, type TenantBranding } from '@/lib/branding';
@@ -64,6 +65,7 @@ import {
   getQuickBooksStatus, getQuickBooksAuthorizationUrl, disconnectQuickBooks, type QuickBooksStatus,
 } from '@/lib/integrations';
 import PermissionsTab from '@/components/settings/PermissionsTab';
+import BusinessTab from '@/components/settings/BusinessTab';
 import CurrencyRatesPanel from '@/components/settings/CurrencyRatesPanel';
 
 // ── Tab config ────────────────────────────────────────────────────────────────
@@ -72,6 +74,7 @@ const TABS = [
   { id: 'appearance',  label: 'Appearance',   icon: Palette },
   { id: 'security',    label: 'Security',     icon: Lock },
   { id: 'shop',        label: 'Shop Info',    icon: Store },
+  { id: 'business',    label: 'Business',     icon: Briefcase },
   { id: 'notifications', label: 'Notifications', icon: Bell },
   { id: 'permissions', label: 'Permissions',  icon: Users },
   { id: 'billing',     label: 'Billing',      icon: CreditCard },
@@ -246,6 +249,7 @@ export default function PortalSettingsPage() {
     if (typeof window === 'undefined') return;
     const params = new URLSearchParams(window.location.search);
     if (params.get('tab') === 'billing') setActiveTab('billing');
+    if (params.get('tab') === 'business') setActiveTab('business');
     const reference = params.get('reference');
     if (reference && token) {
       verifyBillingReference(token, reference).then((res) => {
@@ -1320,6 +1324,7 @@ export default function PortalSettingsPage() {
         )}
 
         {/* ── PERMISSIONS ────────────────────────────────────────── */}
+        {activeTab === 'business' && <BusinessTab token={token} canEdit={isBillingAdmin} />}
         {activeTab === 'permissions' && <PermissionsTab token={token} />}
 
         {/* ── BILLING ────────────────────────────────────────────── */}
