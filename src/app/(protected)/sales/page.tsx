@@ -75,6 +75,8 @@ function SalesEntryContent() {
     createdAt: string;
     shopId?: string | null;
     portalUserId?: string | null;
+    /** Server-decided: staff may edit only the sales they recorded. */
+    canEdit?: boolean;
     productId: string;
     product?: { name?: string; price?: number; costPrice?: number } | null;
     customerName?: string | null;
@@ -533,10 +535,10 @@ function SalesEntryContent() {
                             <Plus className="h-4 w-4" />
                           </button>
                           <button
-                            aria-label="View/Edit"
+                            aria-label={s.canEdit === false ? 'View' : 'View/Edit'}
                             className={`p-2 rounded hover:bg-opacity-50 transition ${theme === 'dark' ? 'hover:bg-gray-700' : 'hover:bg-gray-200'}`}
                             onClick={() => { router.push(`/sales/new?saleId=${encodeURIComponent(s.id)}`); }}
-                            title="Edit sale"
+                            title={s.canEdit === false ? 'View sale (recorded by someone else)' : 'Edit sale'}
                           >
                             <Eye className="h-4 w-4" />
                           </button>

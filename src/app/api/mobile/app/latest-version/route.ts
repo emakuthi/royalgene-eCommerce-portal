@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase-client';
+import { getMinAppVersionCode } from '@/lib/platform-settings.server';
+
+const PLAY_STORE_URL = 'https://play.google.com/store/apps/details?id=com.royalgenegroup.royaltrack';
 
 interface LatestVersionResponse {
   success: boolean;
@@ -11,6 +14,12 @@ interface LatestVersionResponse {
     changelog: string | null;
     releasedAt: string;
   } | null;
+  /**
+   * Force-update policy, separate from `data` so it's served even before any
+   * release exists. Builds with versionCode < minVersionCode must update
+   * before they can be used (0 = no minimum). Older app builds ignore it.
+   */
+  policy?: { minVersionCode: number; playStoreUrl: string };
 }
 
 /**
@@ -23,13 +32,13 @@ export async function GET(request: NextRequest) {
   try {
     const platform = request.nextUrl.searchParams.get('platform') || 'android';
 
-    const { data, error } = await supabaseAdmin
+    const [{ data, error }, minVersionCode] = await Promise.all([supabaseAdmin
       .from('AppRelease')
       .select('versionCode, versionName, apkUrl, changelog, createdAt')
       .eq('platform', platform)
       .order('versionCode', { ascending: false })
       .limit(1)
-      .maybeSingle();
+      .maybeSingle(), getMinAppVersionCode()]);
 
     if (error) {
       return NextResponse.json<LatestVersionResponse>(
@@ -49,6 +58,7 @@ export async function GET(request: NextRequest) {
             releasedAt: data.createdAt,
           }
         : null,
+      policy: { minVersionCode, playStoreUrl: PLAY_STORE_URL },
     });
   } catch (err) {
     console.error('[latest-version] Unexpected error:', err instanceof Error ? err.message : String(err));

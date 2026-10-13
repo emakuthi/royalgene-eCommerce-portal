@@ -105,6 +105,10 @@ export async function GET(request: NextRequest) {
           // "portal_user" for everyone else, but cost-visibility.server.ts
           // (and now permissions.server.ts) treat shop_owner as owner-level.
           position: portalUser?.position ?? null,
+          // This user's PortalUser ids (one per assigned shop) — a sale's
+          // portalUserId is one of these when they recorded it. The app
+          // offers Edit only on its own sales unless the user is owner-level.
+          portalUserIds: (portalUsers ?? []).map((pu: Record<string, unknown>) => pu.id as string),
           shop: portalUser?.Shop ? {
             id: portalUser.Shop.id,
             name: portalUser.Shop.name,

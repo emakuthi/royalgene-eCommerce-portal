@@ -29,6 +29,7 @@ import {
   setPlatformOrgDomain,
   setPlatformSelfSignupEnabled,
   setPlatformAllowAllMobileLogins,
+  setPlatformMinAppVersionCode,
   syncPlatformPlanBilling,
   updatePlanEntitlements,
   updatePlatformOrganization,
@@ -115,6 +116,11 @@ function PlatformAdminConsole() {
   const [signupToggleBusy, setSignupToggleBusy] = useState(false);
   const [allowAllMobileLogins, setAllowAllMobileLoginsState] = useState(false);
   const [mobileGateToggleBusy, setMobileGateToggleBusy] = useState(false);
+  // Force update: builds below minAppVersionCode are blocked until updated.
+  const [minAppVersionCode, setMinAppVersionCodeState] = useState(0);
+  const [minVersionDraft, setMinVersionDraft] = useState('');
+  const [latestRelease, setLatestRelease] = useState<{ versionCode: number; versionName: string } | null>(null);
+  const [minVersionBusy, setMinVersionBusy] = useState(false);
   const [orgBusyId, setOrgBusyId] = useState<string | null>(null);
   const [plans, setPlans] = useState<PlatformPlan[]>([]);
   const [planDialogOpen, setPlanDialogOpen] = useState(false);
@@ -178,7 +184,15 @@ function PlatformAdminConsole() {
     if (settingsRes.success && settingsRes.data) {
       setSelfSignupEnabledState(settingsRes.data.selfSignupEnabled);
       setAllowAllMobileLoginsState(Boolean(settingsRes.data.allowAllMobileLogins));
+      const min = Number(settingsRes.data.minAppVersionCode) || 0;
+      setMinAppVersionCodeState(min);
+      setMinVersionDraft(min > 0 ? String(min) : '');
     }
+    // Public feed — the newest published build, to offer "require latest".
+    fetch('/api/mobile/app/latest-version?platform=android')
+      .then((r) => r.json())
+      .then((j) => setLatestRelease(j?.data ? { versionCode: j.data.versionCode, versionName: j.data.versionName } : null))
+      .catch(() => setLatestRelease(null));
     if (plansRes.success && plansRes.data) setPlans(plansRes.data);
     if (!overviewRes.success || !capacityRes.success || !orgsRes.success || !settingsRes.success || !plansRes.success) {
       toast.error('Failed to load some platform data');
@@ -210,6 +224,20 @@ function PlatformAdminConsole() {
       toast.error(res.error || 'Failed to update setting');
     }
     setMobileGateToggleBusy(false);
+  };
+
+  const saveMinAppVersion = async (next: number) => {
+    setMinVersionBusy(true);
+    const res = await setPlatformMinAppVersionCode(token, next);
+    if (res.success && res.data) {
+      const min = Number(res.data.minAppVersionCode) || 0;
+      setMinAppVersionCodeState(min);
+      setMinVersionDraft(min > 0 ? String(min) : '');
+      toast.success(min > 0 ? `Apps older than build ${min} must now update` : 'Force update turned off');
+    } else {
+      toast.error(res.error || 'Failed to update minimum version');
+    }
+    setMinVersionBusy(false);
   };
 
   const updateOrgStatus = async (org: OrganizationWithCounts, status: Organization['status']) => {
@@ -576,6 +604,47 @@ function PlatformAdminConsole() {
               </p>
             </div>
             <Toggle checked={allowAllMobileLogins} onChange={toggleAllowAllMobileLogins} disabled={mobileGateToggleBusy || loading} />
+          </div>
+        </Section>
+
+        {/* Force update */}
+        <Section title="Force App Update" description="Block app builds older than a minimum version until the user updates — Play Store installs are sent to Google Play, direct installs download the new APK. Only require a build once it is live on Google Play, or Play users will have nothing to update to.">
+          <div className="space-y-3">
+            <p className="text-sm font-medium text-gray-900 dark:text-white">
+              {minAppVersionCode > 0 ? `Builds older than ${minAppVersionCode} must update` : 'No minimum — every build can be used'}
+            </p>
+            <p className="text-xs text-gray-500 dark:text-gray-400">
+              {latestRelease ? `Latest published build: ${latestRelease.versionCode} (v${latestRelease.versionName}).` : 'No published build found.'}
+            </p>
+            <div className="flex flex-wrap items-center gap-2">
+              <Input
+                type="number"
+                min={0}
+                inputMode="numeric"
+                placeholder="Minimum build, e.g. 220"
+                value={minVersionDraft}
+                onChange={(e) => setMinVersionDraft(e.target.value)}
+                className="w-56"
+                disabled={minVersionBusy || loading}
+              />
+              <Button
+                variant="outline"
+                disabled={minVersionBusy || loading || !/^\d+$/.test(minVersionDraft) || Number(minVersionDraft) === minAppVersionCode}
+                onClick={() => saveMinAppVersion(Number(minVersionDraft))}
+              >
+                Save
+              </Button>
+              {latestRelease && latestRelease.versionCode !== minAppVersionCode && (
+                <Button disabled={minVersionBusy || loading} onClick={() => saveMinAppVersion(latestRelease.versionCode)}>
+                  Require latest ({latestRelease.versionCode})
+                </Button>
+              )}
+              {minAppVersionCode > 0 && (
+                <Button variant="outline" disabled={minVersionBusy || loading} onClick={() => saveMinAppVersion(0)}>
+                  Turn off
+                </Button>
+              )}
+            </div>
           </div>
         </Section>
 

@@ -1,4 +1,4 @@
-import { parseSaleDiscount } from '@/lib/sale-discount';
+import { applySaleEdit, canEditSale, NOT_YOUR_SALE } from '@/lib/sale-edit.server';
 import { NextRequest } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase-client';
 import logger from '@/lib/logger';
@@ -128,6 +128,7 @@ export async function GET(
           customerPhone: sale.customerPhone,
           notes: sale.notes,
           recordedBy: recordedByName,
+          canEdit: await canEditSale(auth.payload, sale),
           updatedAt: sale.updatedAt
         }
       }
@@ -171,63 +172,14 @@ export async function PATCH(
       return jsonResponse({ success: false, error: 'Sale not found', code: 'NOT_FOUND' }, 404);
     }
 
-    const body = await request.json();
-    const { quantity, unitPrice, paymentMethod, customerName, customerPhone, notes, discountAmount } = body;
-
-    type UpdatePayload = Partial<{
-      quantity: number;
-      unitPrice: number;
-      paymentMethod: string;
-      paymentBreakdown: null;
-      discountAmount: number;
-      customerName: string | null;
-      customerPhone: string | null;
-      notes: string | null;
-      totalAmount: number;
-      updatedAt: string;
-    }>;
-
-    const updates: UpdatePayload = {};
-    if (typeof quantity === 'number') updates.quantity = quantity;
-    if (typeof unitPrice === 'number') updates.unitPrice = unitPrice;
-    if (paymentMethod) updates.paymentMethod = paymentMethod;
-    // Re-picking the method on a split sale replaces the split — keeping the
-    // old breakdown would contradict the new single method. Only touched
-    // when one exists, so a plain edit never depends on the column.
-    if (paymentMethod && existingSale.paymentBreakdown != null) updates.paymentBreakdown = null;
-    if (typeof customerName !== 'undefined') updates.customerName = customerName;
-    if (typeof customerPhone !== 'undefined') updates.customerPhone = customerPhone;
-    if (typeof notes !== 'undefined') updates.notes = notes;
-
-    // Recompute totalAmount
-    const newQuantity = typeof updates.quantity === 'number' ? updates.quantity : existingSale.quantity;
-    const newUnitPrice = typeof updates.unitPrice === 'number' ? updates.unitPrice : existingSale.unitPrice;
-    // A discount sent with the edit replaces the old one; otherwise keep the
-    // sale's existing discount (capped at the new gross, in case quantity or
-    // price dropped below it) — recomputing a plain quantity * unitPrice
-    // would silently undo it.
-    const oldDiscount = Number(existingSale.discountAmount) || 0;
-    let keptDiscount = Math.min(oldDiscount, newQuantity * newUnitPrice);
-    if (discountAmount !== undefined) {
-      const requested = parseSaleDiscount(discountAmount, newQuantity * newUnitPrice);
-      if (typeof requested !== 'number') return jsonResponse({ success: false, error: requested.error, code: 'VALIDATION_ERROR' }, 400);
-      keptDiscount = requested;
+    if (!(await canEditSale(auth.payload, existingSale))) {
+      return jsonResponse({ success: false, error: NOT_YOUR_SALE, code: 'FORBIDDEN' }, 403);
     }
-    if (keptDiscount !== oldDiscount) updates.discountAmount = keptDiscount;
-    updates.totalAmount = newQuantity * newUnitPrice - keptDiscount;
-    updates.updatedAt = new Date().toISOString();
 
-    const { data: updatedSale, error: updateErr } = await supabaseAdmin
-      .from('SalesEntry')
-      .update(updates)
-      .eq('id', saleId)
-      .select()
-      .single();
-
-    if (updateErr) {
-      logger.error('Mobile sale update failed', { error: updateErr.message, saleId, shopId });
-      return jsonResponse({ success: false, error: 'Failed to update sale', code: 'INTERNAL_ERROR' }, 500);
-    }
+    const body = await request.json().catch(() => ({}));
+    const result = await applySaleEdit(existingSale, body, auth.portalUserId ?? null);
+    if (!result.ok) return jsonResponse({ success: false, error: result.error, code: result.code }, result.status);
+    const updatedSale = result.sale;
 
     logger.info('Mobile sale updated', {
       userId: auth.payload.userId,
