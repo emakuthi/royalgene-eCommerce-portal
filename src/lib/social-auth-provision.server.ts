@@ -3,7 +3,7 @@ import { randomBytes } from 'node:crypto';
 import { v4 as uuidv4 } from 'uuid';
 import { supabaseAdmin } from './supabase-client';
 import { hashPassword } from './auth.server';
-import { createOrganization, isSlugAvailable, isValidSlug, slugify } from './organizations.server';
+import { activateOrganization, createOrganization, isSlugAvailable, isValidSlug, slugify } from './organizations.server';
 import { uniqueShopNameFor } from './shops.server';
 import { RESERVED_SUBDOMAINS } from './tenant';
 import logger from './logger';
@@ -73,6 +73,10 @@ export async function findOrProvisionUserForSocialIdentity(
     role: 'admin',
     twoFactorEnabled: false,
     organizationId: organization.id,
+    // Google/Facebook already confirmed this address — no verification email
+    // is sent for social sign-up, so without this the workspace stayed
+    // "pending verification" forever.
+    emailVerifiedAt: now,
     createdAt: now,
     updatedAt: now,
   }]);
@@ -121,6 +125,8 @@ export async function findOrProvisionUserForSocialIdentity(
     logger.error('Social sign-in: portal user creation failed', { provider: identity.provider, error: portalUserError.message });
     throw new Error('Failed to set up workspace');
   }
+
+  await activateOrganization(organization.id);
 
   logger.info('Social sign-in: auto-provisioned new tenant', {
     provider: identity.provider, userId, organizationId: organization.id, slug,
