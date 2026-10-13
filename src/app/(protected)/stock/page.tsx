@@ -884,7 +884,7 @@ function StockManagementContent() {
             </div>
             <div className="mt-4">
               <label className={`block text-sm ${textSecondary}`}>Quantity to set</label>
-              <Input type="number" value={restockQuantity} onChange={(e) => setRestockQuantity(e.target.value === '' ? '' : Number(e.target.value))} placeholder="Enter new stock quantity" />
+              <Input type="number" min={0} step="any" value={restockQuantity} onChange={(e) => setRestockQuantity(e.target.value === '' ? '' : Number(e.target.value))} placeholder="Enter new stock quantity" />
 
               <label className={`block text-sm mt-3 ${textSecondary}`}>Purchase unit cost (optional)</label>
               <div className="flex items-center gap-2">

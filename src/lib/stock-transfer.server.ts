@@ -1,4 +1,5 @@
 import 'server-only';
+import { quantityError, roundQuantity } from './business-types';
 import { supabaseAdmin } from './supabase-client';
 import { syncProductStockFromShopStocks } from './supabase-db';
 import logger from './logger';
@@ -62,6 +63,8 @@ export interface TransferCell {
  */
 export function normalizeTransferCells(
   input: unknown,
+  /** Product.unit — fractions only for measured units (kg, litre ...). */
+  unit: string = 'piece',
 ): { ok: true; cells: TransferCell[]; total: number } | { ok: false; error: string } {
   if (!Array.isArray(input) || input.length === 0) {
     return { ok: false, error: 'This product is tracked by size/colour — choose how many of each size/colour to transfer.' };
@@ -71,9 +74,8 @@ export function normalizeTransferCells(
     const size = typeof raw?.size === 'string' ? raw.size.trim() : '';
     const color = typeof raw?.color === 'string' ? raw.color.trim() : '';
     const qty = Number(raw?.quantity);
-    if (!Number.isInteger(qty) || qty < 0) {
-      return { ok: false, error: 'Each size/colour quantity must be a whole number.' };
-    }
+    const problem = quantityError(qty, unit, { allowZero: true });
+    if (problem) return { ok: false, error: problem };
     if (qty === 0) continue;
     const key = `${size}\u0000${color}`;
     const existing = merged.get(key);
@@ -82,7 +84,7 @@ export function normalizeTransferCells(
   }
   const cells = [...merged.values()];
   if (cells.length === 0) return { ok: false, error: 'Choose at least one unit to transfer.' };
-  return { ok: true, cells, total: cells.reduce((sum, c) => sum + c.quantity, 0) };
+  return { ok: true, cells, total: roundQuantity(cells.reduce((sum, c) => sum + c.quantity, 0)) };
 }
 
 /**

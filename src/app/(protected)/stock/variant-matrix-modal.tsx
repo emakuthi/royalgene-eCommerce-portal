@@ -134,7 +134,7 @@ export default function VariantMatrixModal({
     (size: string, color: string) => {
       const raw = cells[cellKey(size, color)];
       const n = Number(raw);
-      return Number.isFinite(n) && n > 0 ? Math.floor(n) : 0;
+      return Number.isFinite(n) && n > 0 ? Math.round(n * 1000) / 1000 : 0;
     },
     [cells],
   );

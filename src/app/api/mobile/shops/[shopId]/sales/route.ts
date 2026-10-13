@@ -1,4 +1,6 @@
 import { parseSaleDiscount } from '@/lib/sale-discount';
+import { productUnit } from '@/lib/business-settings.server';
+import { quantityError } from '@/lib/business-types';
 import { NextRequest } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase-client';
 import logger from '@/lib/logger';
@@ -226,6 +228,12 @@ export async function POST(
         }, 404);
       }
       shopStock = ss;
+    }
+
+    // Whole numbers unless the product is sold by weight/volume (kg, litre ...).
+    const qtyProblem = quantityError(quantity, await productUnit(shopStock?.productId ?? productId));
+    if (qtyProblem) {
+      return jsonResponse({ success: false, error: qtyProblem, code: 'VALIDATION_ERROR' }, 400);
     }
 
     // Validate stock availability (flat total — still a valid ceiling even with variants)

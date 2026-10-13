@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { productUnit } from '@/lib/business-settings.server';
+import { quantityError } from '@/lib/business-types';
 import { supabaseAdmin } from '@/lib/supabase-client';
 import { requireTenantUser } from '@/lib/authorize';
 import logger from '@/lib/logger';
@@ -194,6 +196,8 @@ export async function PUT(request: NextRequest) {
     if (stockError || !oldStock) {
       return jsonResponse({ success: false, error: 'Stock not found' }, 404);
     }
+    const qtyProblem = quantityError(quantity, await productUnit(oldStock.productId), { allowZero: true });
+    if (qtyProblem) return jsonResponse({ success: false, error: qtyProblem }, 400);
 
     if (await hasVariantStock(stockId)) {
       return jsonResponse({

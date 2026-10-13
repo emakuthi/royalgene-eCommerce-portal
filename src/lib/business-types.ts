@@ -148,3 +148,31 @@ export function optionsTitle(option1Label: string, option2Label: string): string
   if (parts.length === 2) return `${parts[0]} & ${parts[1].toLowerCase()}`;
   return parts[0] ?? '';
 }
+
+/** Units that can be sold in fractions (0.5 kg, 1.25 litre). Everything else is counted in whole items. */
+export const MEASURED_UNITS = ['kg', 'g', 'litre', 'ml', 'metre'] as const;
+
+export function isMeasuredUnit(unit: string | null | undefined): boolean {
+  return MEASURED_UNITS.includes(normalizeUnit(unit) as (typeof MEASURED_UNITS)[number]);
+}
+
+/** Quantities are stored with 3 decimals (numeric(14,3)) — grams / millilitres. */
+export function roundQuantity(n: number): number {
+  return Math.round(n * 1000) / 1000;
+}
+
+/**
+ * Why a quantity isn't acceptable for a product counted in `unit`, or null if
+ * it is. Fractions only for measured units, so piece-counted stock stays whole
+ * (older app builds read those as integers).
+ */
+export function quantityError(q: unknown, unit: string | null | undefined, opts: { allowZero?: boolean } = {}): string | null {
+  const n = typeof q === 'number' ? q : Number(q);
+  if (!Number.isFinite(n)) return 'Quantity must be a number';
+  if (opts.allowZero ? n < 0 : n <= 0) return opts.allowZero ? 'Quantity cannot be negative' : 'Quantity must be more than 0';
+  if (!isMeasuredUnit(unit) && !Number.isInteger(n)) {
+    return `Quantity must be a whole number for items sold by the ${normalizeUnit(unit)}`;
+  }
+  if (roundQuantity(n) !== n && Math.abs(roundQuantity(n) - n) > 1e-9) return 'Use at most 3 decimal places';
+  return null;
+}

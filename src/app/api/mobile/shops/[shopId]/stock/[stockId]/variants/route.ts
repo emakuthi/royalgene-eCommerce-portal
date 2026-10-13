@@ -1,4 +1,6 @@
 import { NextRequest } from 'next/server';
+import { productUnit } from '@/lib/business-settings.server';
+import { quantityError } from '@/lib/business-types';
 import { v4 as uuidv4 } from 'uuid';
 import { supabaseAdmin } from '@/lib/supabase-client';
 import { jsonResponse } from '@/lib/apiResponse';
@@ -75,12 +77,14 @@ export async function PUT(request: NextRequest, ctx: { params: Promise<{ shopId:
     productPrice = typeof product?.price === 'number' ? product.price : null;
   }
 
+  const unit = await productUnit(stock.productId as string | undefined);
   const cells: VariantCellInput[] = [];
   for (const c of rawCells) {
     if (typeof c !== 'object' || c === null) continue;
     const cell = c as Record<string, unknown>;
     const q = Number(cell.quantity);
-    if (!Number.isFinite(q) || q < 0) return jsonResponse({ success: false, error: 'Each cell needs a quantity >= 0', code: 'VALIDATION_ERROR' }, 400);
+    const qtyProblem = quantityError(q, unit, { allowZero: true });
+    if (qtyProblem) return jsonResponse({ success: false, error: qtyProblem, code: 'VALIDATION_ERROR' }, 400);
     const cellPrice = typeof cell.price === 'number' ? cell.price : null;
     const cellCostPrice = canSetCostPrice && typeof cell.costPrice === 'number' ? cell.costPrice : null;
     if (cellCostPrice != null) {

@@ -238,3 +238,11 @@ export async function normalizeProductUpdate(organizationId: string | null | und
   }
   if (Object.prototype.hasOwnProperty.call(updates, 'unit')) updates.unit = normalizeUnit(updates.unit);
 }
+
+/** Product.unit, or "piece" when unknown / not migrated yet. */
+export async function productUnit(productId: string | null | undefined): Promise<string> {
+  if (!productId) return 'piece';
+  const { data, error } = await supabaseAdmin.from('Product').select('unit').eq('id', productId).maybeSingle();
+  if (error || !data) return 'piece';
+  return normalizeUnit((data as { unit?: string }).unit);
+}
