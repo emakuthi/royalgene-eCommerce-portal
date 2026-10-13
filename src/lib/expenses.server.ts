@@ -3,6 +3,18 @@ import { supabaseAdmin } from './supabase-client';
 import { getOrgCurrency } from './currency.server';
 import { getRate } from './exchange-rates.server';
 import logger from './logger';
+import { isOwnerLevelCaller } from './permissions.server';
+import type { VerifiedPayload } from './auth.server';
+
+/**
+ * Whose expenses this caller may see and change: owner-level (admin or
+ * shop_owner) — everyone's, so null; shop managers, shopkeepers, cashiers and
+ * other staff — only the ones they recorded, so their user id (matched
+ * against Expense.recordedBy). Pass the result as `recordedBy` below.
+ */
+export async function expenseScopeFor(payload: VerifiedPayload): Promise<string | null> {
+  return (await isOwnerLevelCaller(payload)) ? null : payload.userId;
+}
 
 export interface ExpenseCategory {
   id: string;
@@ -105,7 +117,7 @@ export async function categoryNameMap(organizationId: string, ids: (string | nul
 
 export async function listExpenses(
   organizationId: string,
-  opts: { shopId?: string | null; from?: string; to?: string; categoryId?: string } = {},
+  opts: { shopId?: string | null; from?: string; to?: string; categoryId?: string; recordedBy?: string | null } = {},
 ): Promise<Expense[]> {
   let q = supabaseAdmin
     .from('Expense')
@@ -113,6 +125,7 @@ export async function listExpenses(
     .eq('organizationId', organizationId)
     .is('deletedAt', null);
   if (opts.shopId) q = q.eq('shopId', opts.shopId);
+  if (opts.recordedBy) q = q.eq('recordedBy', opts.recordedBy);
   if (opts.categoryId) q = q.eq('categoryId', opts.categoryId);
   if (opts.from) q = q.gte('expenseDate', opts.from);
   if (opts.to) q = q.lte('expenseDate', opts.to);
@@ -170,6 +183,8 @@ export async function updateExpense(
   id: string,
   organizationId: string,
   patch: { shopId?: string | null; categoryId?: string | null; amount?: number; currency?: string; description?: string | null; expenseDate?: string },
+  /** Non-null limits the change to an expense this user recorded — see [expenseScopeFor]. */
+  recordedBy: string | null = null,
 ): Promise<Expense | null> {
   const updates: Record<string, unknown> = { updatedAt: new Date().toISOString() };
   if (patch.shopId !== undefined) updates.shopId = patch.shopId;
@@ -179,7 +194,9 @@ export async function updateExpense(
 
   // If amount or currency changes, re-resolve the frozen rate + baseAmount.
   if (patch.amount !== undefined || patch.currency !== undefined) {
-    const { data: existing } = await supabaseAdmin.from('Expense').select('amount, currency').eq('id', id).eq('organizationId', organizationId).maybeSingle();
+    let existingQ = supabaseAdmin.from('Expense').select('amount, currency').eq('id', id).eq('organizationId', organizationId);
+    if (recordedBy) existingQ = existingQ.eq('recordedBy', recordedBy);
+    const { data: existing } = await existingQ.maybeSingle();
     if (!existing) return null;
     const { currency: baseCurrency } = await getOrgCurrency(organizationId);
     const currency = (patch.currency ?? (existing as { currency?: string }).currency ?? baseCurrency).toUpperCase();
@@ -195,13 +212,13 @@ export async function updateExpense(
     updates.baseAmount = amount * rate;
   }
 
-  const { data, error } = await supabaseAdmin
+  let updateQ = supabaseAdmin
     .from('Expense')
     .update(updates)
     .eq('id', id)
-    .eq('organizationId', organizationId)
-    .select('*')
-    .maybeSingle();
+    .eq('organizationId', organizationId);
+  if (recordedBy) updateQ = updateQ.eq('recordedBy', recordedBy);
+  const { data, error } = await updateQ.select('*').maybeSingle();
   if (error) { logger.warn('updateExpense failed', { error: error.message }); return null; }
   if (!data) return null;
   const r = data as Record<string, unknown>;
@@ -209,12 +226,16 @@ export async function updateExpense(
   return mapExpense(r, names.get(r.categoryId as string) ?? null);
 }
 
-export async function deleteExpense(id: string, organizationId: string): Promise<boolean> {
-  const { error } = await supabaseAdmin
+/** False when nothing matched — missing, or (with [recordedBy]) someone else's expense. */
+export async function deleteExpense(id: string, organizationId: string, recordedBy: string | null = null): Promise<boolean> {
+  let q = supabaseAdmin
     .from('Expense')
     .update({ deletedAt: new Date().toISOString() })
     .eq('id', id)
-    .eq('organizationId', organizationId);
+    .eq('organizationId', organizationId)
+    .is('deletedAt', null);
+  if (recordedBy) q = q.eq('recordedBy', recordedBy);
+  const { data, error } = await q.select('id');
   if (error) { logger.warn('deleteExpense failed', { error: error.message }); return false; }
-  return true;
+  return ((data as unknown[]) ?? []).length > 0;
 }

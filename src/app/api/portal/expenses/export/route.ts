@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireTenantUser } from '@/lib/authorize';
 import { jsonResponse, optionsResponse } from '@/lib/apiResponse';
-import { listExpenses } from '@/lib/expenses.server';
+import { listExpenses, expenseScopeFor } from '@/lib/expenses.server';
 import { getOrgCurrency } from '@/lib/currency.server';
 import { supabaseAdmin } from '@/lib/supabase-client';
 
@@ -26,6 +26,7 @@ export async function GET(request: NextRequest) {
       from: p.get('from') || undefined,
       to: p.get('to') || undefined,
       categoryId: p.get('categoryId') || undefined,
+      recordedBy: await expenseScopeFor(auth),
     }),
     getOrgCurrency(auth.organizationId),
     supabaseAdmin.from('Shop').select('id, name').eq('organizationId', auth.organizationId),

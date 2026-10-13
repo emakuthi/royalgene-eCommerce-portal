@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireTenantUser } from '@/lib/authorize';
 import { jsonResponse, optionsResponse } from '@/lib/apiResponse';
-import { updateExpense, deleteExpense } from '@/lib/expenses.server';
+import { updateExpense, deleteExpense, expenseScopeFor } from '@/lib/expenses.server';
 
-// PATCH /api/portal/expenses/{id}
+// PATCH /api/portal/expenses/{id} — staff may change only expenses they recorded.
 export async function PATCH(request: NextRequest, context: { params: Promise<{ id: string }> }) {
   const auth = requireTenantUser(request);
   if (auth instanceof NextResponse) return auth;
@@ -17,7 +17,7 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
     currency: typeof body.currency === 'string' ? body.currency : undefined,
     description: body.description === undefined ? undefined : (typeof body.description === 'string' ? body.description : null),
     expenseDate: typeof body.expenseDate === 'string' ? body.expenseDate : undefined,
-  });
+  }, await expenseScopeFor(auth));
   if (!data) return jsonResponse({ success: false, error: 'Expense not found' }, 404);
   return jsonResponse({ success: true, data });
 }
@@ -28,8 +28,8 @@ export async function DELETE(request: NextRequest, context: { params: Promise<{ 
   if (auth instanceof NextResponse) return auth;
   if (!auth.organizationId) return jsonResponse({ success: false, error: 'No organization' }, 400);
   const { id } = await context.params;
-  const ok = await deleteExpense(id, auth.organizationId);
-  return jsonResponse({ success: ok, ...(ok ? {} : { error: 'Delete failed' }) }, ok ? 200 : 500);
+  const ok = await deleteExpense(id, auth.organizationId, await expenseScopeFor(auth));
+  return jsonResponse({ success: ok, ...(ok ? {} : { error: 'Expense not found' }) }, ok ? 200 : 404);
 }
 
 export function OPTIONS() {
