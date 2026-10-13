@@ -83,6 +83,8 @@ export async function createProductForShop(
       category,
       // Omitted when not sent so the column default ("piece") applies.
       ...(typeof productData['unit'] === 'string' && productData['unit'].trim() ? { unit: normalizeUnit(productData['unit']) } : {}),
+      // Restaurant menu item (made to order, uses ingredients). Omitted = column default 'stock'.
+      ...(productData['kind'] === 'menu' ? { kind: 'menu' } : {}),
       images: (Array.isArray(productData['images']) ? (productData['images'] as unknown as string[]) : []) || [],
       sizes: (Array.isArray(productData['sizes']) ? (productData['sizes'] as unknown as string[]) : []) || [],
       colors: (Array.isArray(productData['colors']) ? (productData['colors'] as unknown as string[]) : []) || [],

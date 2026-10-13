@@ -40,6 +40,8 @@ type AddForm = {
   name: string;
   category: string;
   unit: string;
+  /** Restaurant: made to order from a recipe, no stock of its own. */
+  menuItem: boolean;
   brand: string;
   sku: string;
   description: string;
@@ -57,6 +59,7 @@ const EMPTY_FORM: AddForm = {
   name: '',
   category: '',
   unit: '',
+  menuItem: false,
   brand: '',
   sku: '',
   description: '',
@@ -200,6 +203,7 @@ export default function AddNewProductPage() {
           brand: addForm.brand,
           category: addForm.category || business.activeCategories[0]?.slug || 'other',
           unit: addForm.unit || getBusinessType(business.businessType).defaultUnit,
+          ...(addForm.menuItem ? { kind: 'menu' } : {}),
           images: addForm.images,
           sizes: addForm.sizesArray,
           colors: addForm.colorsArray,
@@ -385,6 +389,22 @@ export default function AddNewProductPage() {
                     />
                   </div>
                 </div>
+
+                {/* Menu item (restaurant) */}
+                <label className="flex items-start gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    className="mt-0.5"
+                    checked={addForm.menuItem}
+                    onChange={e => setAddForm(prev => ({ ...prev, menuItem: e.target.checked }))}
+                  />
+                  <span>
+                    <span className="font-medium">Menu item (made to order)</span>
+                    <span className="block text-xs text-gray-500 dark:text-gray-400">
+                      No stock of its own — after saving, open it in Stock to add its recipe; each sale then uses up those ingredients.
+                    </span>
+                  </span>
+                </label>
 
                 {/* SKU */}
                 <div className="space-y-1.5">

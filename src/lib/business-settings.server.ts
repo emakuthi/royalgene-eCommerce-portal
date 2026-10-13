@@ -237,6 +237,9 @@ export async function normalizeProductUpdate(organizationId: string | null | und
     else delete updates.category;
   }
   if (Object.prototype.hasOwnProperty.call(updates, 'unit')) updates.unit = normalizeUnit(updates.unit);
+  if (Object.prototype.hasOwnProperty.call(updates, 'kind')) {
+    if (updates.kind !== 'stock' && updates.kind !== 'menu') delete updates.kind;
+  }
 }
 
 /** Product.unit, or "piece" when unknown / not migrated yet. */

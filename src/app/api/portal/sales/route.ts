@@ -1,3 +1,4 @@
+import { moveIngredients, productKind } from '@/lib/recipes.server';
 import { parseSaleDiscount } from '@/lib/sale-discount';
 import { productUnit } from '@/lib/business-settings.server';
 import { quantityError } from '@/lib/business-types';
@@ -218,9 +219,13 @@ export async function POST(request: NextRequest) {
     const qtyProblem = quantityError(quantity, await productUnit(shopStock?.productId ?? payloadProductId));
     if (qtyProblem) return jsonResponse({ success: false, error: qtyProblem }, 400);
 
+    // A menu item (restaurant) has no stock of its own — its ingredients are
+    // used up below instead, and a short ingredient never blocks the sale.
+    const isMenuItem = (await productKind(shopStock?.productId ?? payloadProductId)) === 'menu';
+
     // Server-side stock availability validation to prevent over-selling
     let salesUsesVariant = false;
-    if (shopStock) {
+    if (shopStock && !isMenuItem) {
       if (quantity > shopStock.quantity) {
         logger.warn('Attempt to create sale exceeding stock', { shopStockId: shopStock.id, available: shopStock.quantity, requested: quantity });
         return jsonResponse({ success: false, error: `Insufficient stock: only ${shopStock.quantity} available` }, 400);
@@ -324,8 +329,20 @@ export async function POST(request: NextRequest) {
         createdAt: now,
       }]);
 
+    if (isMenuItem) {
+      await moveIngredients({
+        organizationId,
+        shopId,
+        productId,
+        menuQuantity: quantity,
+        portalUserId: portalUser.id,
+        reference: `sale-${saleId}`,
+        reason: 'Used in sale',
+      });
+    }
+
     // Update shop stock if exists
-    if (shopStock) {
+    if (shopStock && !isMenuItem) {
       if (salesUsesVariant) {
         // Decrement the size × colour cell — the DB trigger rolls it down to
         // ShopStock.quantity, then syncProductStockFromShopStocks to Product.

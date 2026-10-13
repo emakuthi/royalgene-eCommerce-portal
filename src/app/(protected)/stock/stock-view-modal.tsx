@@ -8,6 +8,7 @@ import { X } from 'lucide-react';
 import ProductHistoryModal from './product-history-modal';
 import { useBranding } from '@/lib/branding-context';
 import { useBusinessSettings } from '@/lib/use-business-settings';
+import RecipeEditor, { type IngredientOption } from '@/components/stock/RecipeEditor';
 import type { Product, ShopStock } from '@/lib/types';
 type ApiShopStock = ShopStock & { Product?: Product; product?: Product; shopName?: string };
 type ViewFormType = {
@@ -18,6 +19,7 @@ type ViewFormType = {
   sellingPrice: string;
   category: string;
   unit: string;
+  kind: 'stock' | 'menu';
   sizes: string[];
   colors: string[];
   images: string[];
@@ -30,6 +32,7 @@ export default ({
                   stock,
                   open,
                   token,
+                  ingredientOptions = [],
                   onClose,
                   viewForm,
                   setViewForm,
@@ -43,6 +46,8 @@ export default ({
   stock: ApiShopStock;
   open: boolean;
   token?: string | null;
+  /** Stocked products a menu item's recipe can use. */
+  ingredientOptions?: IngredientOption[];
   onClose: () => void;
   viewForm: ViewFormType;
   setViewForm: (v: ViewFormType) => void;
@@ -75,6 +80,7 @@ export default ({
       colors: viewForm.colors,
       ...(viewForm.category ? { category: viewForm.category } : {}),
       ...(viewForm.unit ? { unit: viewForm.unit } : {}),
+      kind: viewForm.kind,
     };
 
     const stockPayload: Record<string, unknown> = {
@@ -142,6 +148,27 @@ export default ({
                 <p className="text-sm text-gray-600">Images</p>
                 <ImageUpload images={viewForm.images} onImageUpload={(u) => { onImageAdd(u); setViewForm({ ...viewForm, images: [...viewForm.images, u] }); }} onRemove={(u) => { onImageRemove(u); setViewForm({ ...viewForm, images: viewForm.images.filter(x => x !== u) }); }} />
               </div>
+
+              <label className="mt-4 flex items-start gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  className="mt-0.5"
+                  checked={viewForm.kind === 'menu'}
+                  onChange={(e) => setViewForm({ ...viewForm, kind: e.target.checked ? 'menu' : 'stock' })}
+                />
+                <span>
+                  <span className="font-medium">Menu item (made to order)</span>
+                  <span className="block text-xs text-gray-500">No stock of its own — selling it uses up its recipe&apos;s ingredients.</span>
+                </span>
+              </label>
+              {viewForm.kind === 'menu' && prod?.id && (
+                <div className="mt-3 rounded-lg border border-gray-200 dark:border-gray-700 p-3">
+                  <p className="text-sm font-medium mb-2">Recipe</p>
+                  {(prod as Product & { kind?: string }).kind === 'menu'
+                    ? <RecipeEditor productId={prod.id} token={token} ingredients={ingredientOptions.filter((o) => o.id !== prod.id)} />
+                    : <p className="text-xs text-gray-500">Save first, then add the ingredients here.</p>}
+                </div>
+              )}
 
               {option1Label && <div className="mt-4">
                 <p className="text-sm text-gray-600 dark:text-gray-400">{option1Label}</p>

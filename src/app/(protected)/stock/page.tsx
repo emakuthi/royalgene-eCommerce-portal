@@ -43,8 +43,12 @@ const getProductFromRow = (row: ApiShopStock): Product | undefined => {
 };
 
 /** Status badge for one stock row — 0 always reads as "out of stock", even if lowStockThreshold is also 0. */
-function stockStatusBadge(quantity: number, lowStockThreshold: number, isDark: boolean): { label: string; className: string } {
-  if (quantity === 0) {
+function stockStatusBadge(quantity: number, lowStockThreshold: number, isDark: boolean, madeToOrder = false): { label: string; className: string } {
+  // A restaurant menu item has no stock of its own — its ingredients do.
+  if (madeToOrder) {
+    return { label: 'made to order', className: isDark ? 'bg-sky-900 text-sky-300' : 'bg-sky-100 text-sky-800' };
+  }
+  if (quantity <= 0) {
     return { label: 'out of stock', className: isDark ? 'bg-red-900 text-red-300' : 'bg-red-100 text-red-800' };
   }
   if (quantity <= lowStockThreshold) {
@@ -61,6 +65,7 @@ type ViewFormType = {
   sellingPrice: string;
   category: string;
   unit: string;
+  kind: 'stock' | 'menu';
   sizes: string[];
   colors: string[];
   images: string[];
@@ -75,6 +80,15 @@ function StockManagementContent() {
   const { currentShop, _hasHydrated } = usePortalStore();
   const [mounted, setMounted] = useState(false);
   const [stocks, setStocks] = useState<ApiShopStock[]>([]);
+  // Stocked products a menu item's recipe can use (restaurant mode).
+  const ingredientOptions = useMemo(() => {
+    const seen = new Map<string, { id: string; name: string; unit: string }>();
+    for (const s of stocks) {
+      const p = getProductFromRow(s);
+      if (p?.id && p.kind !== 'menu' && !seen.has(p.id)) seen.set(p.id, { id: p.id, name: p.name, unit: p.unit ?? 'piece' });
+    }
+    return [...seen.values()].sort((a, b) => a.name.localeCompare(b.name));
+  }, [stocks]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [shopName, setShopName] = useState('Stock Management');
@@ -120,6 +134,7 @@ function StockManagementContent() {
     sellingPrice: '',
     category: '',
     unit: '',
+    kind: 'stock',
     sizes: [] as string[],
     colors: [] as string[],
     images: [] as string[],
@@ -305,8 +320,9 @@ function StockManagementContent() {
     // sync by a DB trigger), so this needs no per-cell awareness the way
     // stockValue below does.
     const totalItems = rows.reduce((sum, s: ShopStock & { product?: Product }) => sum + (Number(s.quantity) || 0), 0);
-    const lowStock = rows.filter((s: ShopStock & { product?: Product }) => s.quantity <= s.lowStockThreshold).length;
-    const outOfStock = rows.filter((s: ShopStock & { product?: Product }) => s.quantity === 0).length;
+    const counted = rows.filter((s: ShopStock & { product?: Product }) => s.product?.kind !== 'menu'); // menu items carry no stock
+    const lowStock = counted.filter((s: ShopStock & { product?: Product }) => s.quantity <= s.lowStockThreshold).length;
+    const outOfStock = counted.filter((s: ShopStock & { product?: Product }) => s.quantity <= 0).length;
 
     let stockValue: number;
     if (inventoryValue) {
@@ -427,6 +443,7 @@ function StockManagementContent() {
       sellingPrice: prod?.price != null ? String(prod.price) : '',
       category: prod?.category ?? '',
       unit: prod?.unit ?? 'piece',
+      kind: prod?.kind === 'menu' ? 'menu' : 'stock',
       sizes: prod?.sizes ?? [],
       colors: prod?.colors ?? [],
       images: prod?.images ?? [],
@@ -667,7 +684,7 @@ function StockManagementContent() {
               <div className={`text-center py-8 ${muted}`}>{stocks.length === 0 ? 'No stock items found' : 'No matching items'}</div>
             )}
             {filteredStocks.map((stock) => {
-              const status = stockStatusBadge(stock.quantity, stock.lowStockThreshold, theme === 'dark');
+              const status = stockStatusBadge(stock.quantity, stock.lowStockThreshold, theme === 'dark', getProductFromRow(stock)?.kind === 'menu');
               const productWithCost = stock.product as (Product & { costPrice?: number }) | undefined;
               const sellPrice = Number(productWithCost?.price ?? 0);
               // null = hidden for this role (server nulls it). Was `?? sellPrice`, which showed
@@ -785,7 +802,7 @@ function StockManagementContent() {
               </thead>
               <tbody>
                 {filteredStocks.map(stock => {
-                  const status = stockStatusBadge(stock.quantity, stock.lowStockThreshold, theme === 'dark');
+                  const status = stockStatusBadge(stock.quantity, stock.lowStockThreshold, theme === 'dark', getProductFromRow(stock)?.kind === 'menu');
                   // price values are stored in major units (KES), no conversion needed
                   const productWithCost = stock.product as (Product & { costPrice?: number }) | undefined;
                   const sellPrice = Number(productWithCost?.price ?? 0);
@@ -936,6 +953,7 @@ function StockManagementContent() {
           open={isViewModalOpen}
           onClose={() => { if (!viewSaving && !viewDeleting) closeViewModal(); }}
           token={token}
+          ingredientOptions={ingredientOptions}
           viewForm={viewForm}
           setViewForm={setViewForm}
           onImageAdd={handleAddViewImage}
