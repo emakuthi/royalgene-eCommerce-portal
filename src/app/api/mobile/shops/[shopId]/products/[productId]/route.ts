@@ -101,6 +101,7 @@ export async function GET(
           sku: prod.sku,
           category: prod.category,
           unit: prod.unit ?? 'piece',
+          kind: prod.kind ?? 'stock',
           brand: prod.brand ?? null,
           description: prod.description,
           price: prod.price,
@@ -249,7 +250,7 @@ export async function PUT(
     const resolvedProductId = shopStock.productId as string;
 
     // ── Update Product table fields ──────────────────────────────────────────
-    const allowedProductFields = ['name', 'description', 'price', 'costPrice', 'brand', 'images', 'sizes', 'colors', 'sku', 'category', 'unit', 'featured', 'trending'];
+    const allowedProductFields = ['name', 'description', 'price', 'costPrice', 'brand', 'images', 'sizes', 'colors', 'sku', 'category', 'unit', 'kind', 'featured', 'trending'];
     const productUpdates: Record<string, unknown> = {};
     for (const k of allowedProductFields) {
       if (Object.prototype.hasOwnProperty.call(body, k)) {

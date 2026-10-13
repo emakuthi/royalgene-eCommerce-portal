@@ -184,6 +184,8 @@ export interface Product {
   category: string;
   /** What one unit of stock is: piece, kg, litre, pack ... */
   unit?: string;
+  /** 'menu' = restaurant item made to order from a recipe; 'stock' (default) = counted stock. */
+  kind?: 'stock' | 'menu';
   images: string[];
   sizes: string[];
   colors: string[];

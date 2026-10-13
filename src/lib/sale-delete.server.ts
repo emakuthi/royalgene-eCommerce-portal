@@ -2,6 +2,7 @@ import 'server-only';
 import { supabaseAdmin } from './supabase-client';
 import { syncProductStockFromShopStocks } from './supabase-db';
 import { incrementCell, decrementCell, hasVariantStock } from './variant-stock.server';
+import { moveIngredients, productKind } from './recipes.server';
 import { v4 as uuidv4 } from 'uuid';
 import logger from './logger';
 
@@ -116,6 +117,15 @@ async function restoreSoldStock(
   portalUserId: string | null,
   now: string,
 ): Promise<void> {
+  // A menu item's sale used up its ingredients, not its own stock — put those back.
+  if ((await productKind(sale.productId)) === 'menu') {
+    await moveIngredients({
+      organizationId, shopId: sale.shopId, productId: sale.productId, menuQuantity: -sale.quantity,
+      portalUserId, reference: `sale-delete-${sale.id}`, reason: 'Sale deleted — ingredients restored',
+    });
+    return;
+  }
+
   const { data: shopStock } = await supabaseAdmin
     .from('ShopStock')
     .select('id, quantity')
@@ -244,6 +254,18 @@ export async function restoreSaleFromTrash(
 
   if (fetchError || !sale || !sale.deletedAt) {
     return { ok: false, error: 'Deleted sale not found', code: 'NOT_FOUND' };
+  }
+
+  // A menu item: un-delete, then use its ingredients up again (never blocked).
+  if ((await productKind(sale.productId)) === 'menu') {
+    const { error: undeleteError } = await supabaseAdmin
+      .from('SalesEntry').update({ deletedAt: null, updatedAt: new Date().toISOString() }).eq('id', saleId);
+    if (undeleteError) return { ok: false, error: undeleteError.message };
+    await moveIngredients({
+      organizationId, shopId: sale.shopId, productId: sale.productId, menuQuantity: sale.quantity,
+      portalUserId: restoredByPortalUserId, reference: `sale-restore-${saleId}`, reason: 'Deleted sale restored',
+    });
+    return { ok: true };
   }
 
   const { data: shopStock } = await supabaseAdmin

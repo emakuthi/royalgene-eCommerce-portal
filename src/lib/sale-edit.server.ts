@@ -9,6 +9,7 @@ import type { VerifiedPayload } from './auth.server';
 import logger from './logger';
 import { quantityError } from './business-types';
 import { productUnit } from './business-settings.server';
+import { moveIngredients, productKind } from './recipes.server';
 
 /**
  * Editing a recorded sale — shared by the portal (PATCH /api/portal/sales/[id])
@@ -133,7 +134,7 @@ export async function applySaleEdit(
     .single();
   if (error || !updated) {
     logger.error('Sale edit: update failed', { saleId: sale.id, error: error?.message });
-    if (stock?.ok) await moveStock(sale, -delta);
+    if (stock?.ok || (delta !== 0 && (await productKind(sale.productId)) === 'menu')) await moveStock(sale, -delta);
     return fail(500, 'Failed to update sale', 'INTERNAL_ERROR');
   }
 
@@ -168,6 +169,15 @@ type StockMove =
 
 /** Takes [delta] more units out of the shop (negative = puts them back). */
 async function moveStock(sale: SaleRow, delta: number): Promise<StockMove | null> {
+  // A menu item moves its ingredients instead; never blocked, so always "ok"
+  // with nothing of its own to record (moveIngredients writes its own rows).
+  if ((await productKind(sale.productId)) === 'menu') {
+    await moveIngredients({
+      organizationId: sale.organizationId, shopId: sale.shopId, productId: sale.productId, menuQuantity: delta,
+      portalUserId: null, reference: `sale-edit-${sale.id}`, reason: 'Sale edited',
+    });
+    return null;
+  }
   const { data: shopStock } = await supabaseAdmin
     .from('ShopStock')
     .select('id, quantity')

@@ -1,3 +1,4 @@
+import { moveIngredients, productKind } from '@/lib/recipes.server';
 import { parseSaleDiscount } from '@/lib/sale-discount';
 import { productUnit } from '@/lib/business-settings.server';
 import { quantityError } from '@/lib/business-types';
@@ -236,8 +237,12 @@ export async function POST(
       return jsonResponse({ success: false, error: qtyProblem, code: 'VALIDATION_ERROR' }, 400);
     }
 
+    // A menu item (restaurant) has no stock of its own — its ingredients are
+    // used up below instead, and a short ingredient never blocks the sale.
+    const isMenuItem = (await productKind(shopStock?.productId ?? productId)) === 'menu';
+
     // Validate stock availability (flat total — still a valid ceiling even with variants)
-    if (!shopStock || shopStock.quantity < quantity) {
+    if (!shopStock || (!isMenuItem && shopStock.quantity < quantity)) {
       const available = shopStock?.quantity || 0;
       logger.warn('Mobile sale insufficient stock', {
         userId: auth.payload.userId,
@@ -256,7 +261,9 @@ export async function POST(
 
     // Size × colour matrix: when this product has a breakdown at the shop,
     // the sale is against a specific cell and must name size/colour.
-    const variantCheck = await validateVariantRemoval(shopStock.id, size, color, quantity);
+    const variantCheck = isMenuItem
+      ? ({ needsVariant: false } as const)
+      : await validateVariantRemoval(shopStock.id, size, color, quantity);
     if (variantCheck.needsVariant && variantCheck.error) {
       return jsonResponse({
         success: false,
@@ -372,7 +379,17 @@ export async function POST(
     // cell — the DB trigger rolls that down to ShopStock.quantity (and
     // syncProductStockFromShopStocks to Product.stockQuantity). Otherwise
     // decrement the flat ShopStock.quantity as before.
-    if (variantCheck.needsVariant) {
+    if (isMenuItem) {
+      await moveIngredients({
+        organizationId: sRow['organizationId'] as string,
+        shopId,
+        productId,
+        menuQuantity: quantity,
+        portalUserId: auth.portalUserId ?? null,
+        reference: `sale-${saleId}`,
+        reason: 'Used in sale',
+      });
+    } else if (variantCheck.needsVariant) {
       const dec = await decrementCell(shopStock.id, size || '', color || '', quantity);
       if (!dec.ok) {
         logger.error('Mobile sale variant decrement failed', {

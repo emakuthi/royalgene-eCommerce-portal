@@ -362,12 +362,12 @@ export async function PUT(request: NextRequest) {
     }
 
     // Build update object from allowed fields
-    const allowedFields = ['name', 'description', 'price', 'costPrice', 'brand', 'sizes', 'colors', 'images', 'sku', 'featured', 'trending', 'category', 'unit'];
+    const allowedFields = ['name', 'description', 'price', 'costPrice', 'brand', 'sizes', 'colors', 'images', 'sku', 'featured', 'trending', 'category', 'unit', 'kind'];
     const updates: Record<string, unknown> = {};
     for (const k of allowedFields) {
       if (Object.prototype.hasOwnProperty.call(body, k)) updates[k] = (body as Record<string, unknown>)[k] as unknown;
     }
-    if ('category' in updates || 'unit' in updates) {
+    if ('category' in updates || 'unit' in updates || 'kind' in updates) {
       const productOrgId = payload.organizationId
         ?? ((await supabaseAdmin.from('Product').select('organizationId').eq('id', productId).maybeSingle()).data?.organizationId as string | undefined);
       await normalizeProductUpdate(productOrgId, updates);
