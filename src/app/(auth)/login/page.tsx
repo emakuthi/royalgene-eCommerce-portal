@@ -13,7 +13,7 @@ import { toast } from 'sonner';
 import { Eye, EyeOff, Store, ShieldCheck, BarChart3, Package } from 'lucide-react';
 import { useBranding } from '@/lib/branding-context';
 import { extractSubdomain, ROOT_DOMAIN } from '@/lib/tenant';
-import { getGoogleStartUrl, getFacebookStartUrl } from '@/lib/social-auth-urls';
+import { getGoogleStartUrl } from '@/lib/social-auth-urls';
 
 const OAUTH_ERROR_MESSAGES: Record<string, string> = {
 	google_not_configured: 'Google sign-in isn’t set up yet. Contact your administrator.',
@@ -254,16 +254,7 @@ function PortalLoginPageInner() {
 									<path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.44-3.44C17.94 1.19 15.24 0 12 0 7.31 0 3.26 2.69 1.3 6.58l4.01 3.09C6.25 6.85 8.89 4.75 12 4.75z" />
 								</svg>
 							</a>
-							<a
-								href={getFacebookStartUrl(currentTenantSlug)}
-								aria-label="Sign in with Facebook"
-								className="flex h-11 w-11 items-center justify-center rounded-full transition hover:brightness-95"
-								style={{ backgroundColor: '#1877F2' }}
-							>
-								<svg viewBox="0 0 24 24" className="h-5 w-5 fill-white" aria-hidden="true">
-									<path d="M22 12.06C22 6.5 17.52 2 12 2S2 6.5 2 12.06c0 5 3.66 9.15 8.44 9.94v-7.03H7.9v-2.91h2.54V9.85c0-2.51 1.49-3.9 3.77-3.9 1.09 0 2.24.2 2.24.2v2.46h-1.26c-1.24 0-1.63.77-1.63 1.56v1.89h2.78l-.44 2.91h-2.34V22c4.78-.79 8.44-4.94 8.44-9.94z" />
-								</svg>
-							</a>
+							{/* Facebook sign-in is hidden until a Facebook app is configured. */}
 						</div>
 					</div>
 
