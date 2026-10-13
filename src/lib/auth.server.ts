@@ -61,19 +61,45 @@ export function signAuthToken(payload: AuthTokenPayload, opts?: { expiresInSecon
   return jwt.sign(payload as jwt.JwtPayload, JWT_SECRET, { expiresIn });
 }
 
+/**
+ * How long an app-issued token (one carrying a deviceId claim — see
+ * AuthTokenPayload.deviceId) is still accepted after it expires. Builds up to
+ * 1.0.222 can't renew their token (their refresh path called a Supabase auth
+ * flow this backend never used), so after 7 days every phone silently
+ * stopped syncing and queued sales were eventually rolled back. Within this
+ * window the app keeps working and newer builds swap the token for a fresh
+ * one via POST /api/mobile/auth/refresh. Web portal tokens never get it.
+ */
+export const MOBILE_TOKEN_GRACE_SECONDS = 60 * 60 * 24 * 30;
+
+function toVerifiedPayload(raw: unknown): VerifiedPayload | null {
+  if (typeof raw !== 'object' || raw === null) return null;
+  const obj = raw as Record<string, unknown>;
+  const maybeUserId = typeof obj.userId === 'string' ? obj.userId : (typeof obj.id === 'string' ? obj.id : undefined);
+  if (!maybeUserId) return null;
+  const result: VerifiedPayload = { userId: maybeUserId };
+  if (typeof obj.role === 'string') result.role = obj.role;
+  Object.keys(obj).forEach((k) => { if (k !== 'userId') result[k] = obj[k]; });
+  return result;
+}
+
 export function verifyToken(token: string | null | undefined): VerifiedPayload | null {
   if (!token) return null;
   try {
-	const raw = jwt.verify(token, JWT_SECRET) as unknown;
-	if (typeof raw !== 'object' || raw === null) return null;
-	const obj = raw as Record<string, unknown>;
-	const maybeUserId = typeof obj.userId === 'string' ? obj.userId : (typeof obj.id === 'string' ? obj.id : undefined);
-	if (!maybeUserId) return null;
-	const result: VerifiedPayload = { userId: maybeUserId };
-	if (typeof obj.role === 'string') result.role = obj.role;
-	Object.keys(obj).forEach((k) => { if (k !== 'userId') result[k] = obj[k]; });
-	return result;
+	return toVerifiedPayload(jwt.verify(token, JWT_SECRET));
   } catch (err) {
+	if (err instanceof jwt.TokenExpiredError) {
+	  try {
+		// Signature still checked — only the expiry is relaxed, and only for app tokens.
+		const raw = jwt.verify(token, JWT_SECRET, { ignoreExpiration: true }) as Record<string, unknown>;
+		const exp = typeof raw?.exp === 'number' ? raw.exp : 0;
+		if ('deviceId' in raw && Date.now() / 1000 - exp < MOBILE_TOKEN_GRACE_SECONDS) {
+		  const payload = toVerifiedPayload(raw);
+		  if (payload) payload.expiredWithinGrace = true;
+		  return payload;
+		}
+	  } catch { /* fall through to the warning below */ }
+	}
 	logger.warn('verifyToken failed', { err });
 	return null;
   }
