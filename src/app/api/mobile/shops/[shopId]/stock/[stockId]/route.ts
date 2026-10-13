@@ -1,4 +1,6 @@
 import { NextRequest } from 'next/server';
+import { productUnit } from '@/lib/business-settings.server';
+import { quantityError } from '@/lib/business-types';
 import { verifyToken } from '@/lib/auth.server';
 import { supabaseAdmin } from '@/lib/supabase-client';
 import logger from '@/lib/logger';
@@ -98,6 +100,10 @@ export async function PUT(
         error: 'Stock item not found',
         code: 'NOT_FOUND',
       }, 404);
+    }
+    const qtyProblem = quantityError(quantity, await productUnit(currentStock.productId), { allowZero: true });
+    if (qtyProblem) {
+      return jsonResponse({ success: false, error: qtyProblem, code: 'VALIDATION_ERROR' }, 400);
     }
 
     // When this product is tracked by size × colour, the flat total is

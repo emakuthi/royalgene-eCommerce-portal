@@ -18,6 +18,8 @@
  * Auth: verifyMobileShopAccess (portal_user must own the source shop; admins are bypassed)
  */
 
+import { productUnit } from '@/lib/business-settings.server';
+import { quantityError } from '@/lib/business-types';
 import { NextRequest } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase-client';
 import logger from '@/lib/logger';
@@ -100,16 +102,17 @@ export async function POST(
     // A product tracked by size/colour moves cell by cell — the client says
     // how many of each size/colour, and the total becomes the transfer quantity.
     let variantCells: TransferCell[] | null = null;
+    const unit = await productUnit(srcStock.productId as string);
     if (await hasVariantStock(srcStock.id as string)) {
-      const parsed = normalizeTransferCells(body.variants);
+      const parsed = normalizeTransferCells(body.variants, unit);
       if (!parsed.ok) {
         return jsonResponse({ success: false, error: parsed.error, code: 'VARIANTS_REQUIRED' }, 400);
       }
       variantCells = parsed.cells;
       transferQty = parsed.total;
-    } else if (!Number.isFinite(transferQty) || transferQty <= 0) {
+    } else if (quantityError(transferQty, unit)) {
       return jsonResponse(
-        { success: false, error: 'quantity must be a positive number', code: 'VALIDATION_ERROR' },
+        { success: false, error: quantityError(transferQty, unit), code: 'VALIDATION_ERROR' },
         400,
       );
     }

@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { productUnit } from '@/lib/business-settings.server';
+import { quantityError } from '@/lib/business-types';
 import { requireTenantUser } from '@/lib/authorize';
 import { supabaseAdmin } from '@/lib/supabase-client';
 import { v4 as uuidv4 } from 'uuid';
@@ -32,6 +34,8 @@ export async function PUT(
     if (stockError || !currentStock) {
       return jsonResponse({ success: false, error: 'Stock not found' }, 404);
     }
+    const qtyProblem = quantityError(quantity, await productUnit(currentStock.productId), { allowZero: true });
+    if (qtyProblem) return jsonResponse({ success: false, error: qtyProblem }, 400);
 
     // When this product's stock is broken down by size × colour, the flat
     // total is derived — edit the breakdown, not this number.

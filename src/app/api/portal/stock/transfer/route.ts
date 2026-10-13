@@ -20,6 +20,8 @@
  *   • portal_user          → can only transfer FROM their own shop
  */
 
+import { productUnit } from '@/lib/business-settings.server';
+import { quantityError } from '@/lib/business-types';
 import { NextRequest, NextResponse } from 'next/server';
 import { requireTenantUser } from '@/lib/authorize';
 import { supabaseAdmin } from '@/lib/supabase-client';
@@ -120,6 +122,9 @@ export async function POST(request: NextRequest) {
         code: 'VARIANT_STOCK',
       }, 409);
     }
+
+    const qtyProblem = quantityError(transferQty, await productUnit(src.productId));
+    if (qtyProblem) return jsonResponse({ success: false, error: qtyProblem }, 400);
 
     // ── Guard: sufficient stock in source ───────────────────────────────────
     if (src.quantity < transferQty) {

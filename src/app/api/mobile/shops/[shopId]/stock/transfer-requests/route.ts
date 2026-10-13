@@ -12,6 +12,8 @@
  * each row tagged with `direction: 'outgoing' | 'incoming'` so one call
  * covers both "what did I send" and "what's waiting for me to confirm".
  */
+import { productUnit } from '@/lib/business-settings.server';
+import { quantityError } from '@/lib/business-types';
 import { NextRequest } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase-client';
 import logger from '@/lib/logger';
@@ -104,6 +106,8 @@ export async function POST(
     }
 
     const resolvedProductId = srcStock.productId as string;
+    const qtyProblem = quantityError(qty, await productUnit(resolvedProductId));
+    if (qtyProblem) return jsonResponse({ success: false, error: qtyProblem, code: 'VALIDATION_ERROR' }, 400);
     const transferId = isValidClientId(body.id) ? (body.id as string) : uuidv4();
     const now = new Date().toISOString();
 

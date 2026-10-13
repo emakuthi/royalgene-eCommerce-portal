@@ -1,5 +1,6 @@
 'use client';
 
+import { roundQuantity } from '@/lib/business-types';
 import { useEffect, useState } from 'react';
 import { paymentKind } from '@/lib/payment-breakdown';
 import { useSearchParams, useRouter } from 'next/navigation';
@@ -74,7 +75,7 @@ export default function NewSalePage() {
   const [formData, setFormData] = useState({
     shopStockId: searchParams?.get('shopStockId') || '',
     productId: searchParams?.get('productId') || '',
-    quantity: parseInt(searchParams?.get('quantity') || '1', 10) || 1,
+    quantity: parseFloat(searchParams?.get('quantity') || '1') || 1,
     unitPrice: Number(searchParams?.get('unitPrice') || '0') || 0,
     discount: Number(searchParams?.get('discount') || '0') || 0,
     paymentMethod: searchParams?.get('paymentMethod') || 'cash',
@@ -336,7 +337,7 @@ export default function NewSalePage() {
   }, [formData.quantity, formData.unitPrice, formData.discount]);
 
   // derive totals from the typed input values (not forcing numeric parsing while typing)
-  const parsedQuantity = Math.max(0, parseInt(quantityInput || '0', 10) || 0);
+  const parsedQuantity = Math.max(0, roundQuantity(parseFloat(quantityInput || '0') || 0));
   const parsedUnitPrice = parseFloat(unitPriceInput || '0') || 0;
   const parsedDiscount = parseFloat(discountInput || '0') || 0;
   const totalAmount = Math.max(0, parsedUnitPrice * parsedQuantity - parsedDiscount);
@@ -356,7 +357,7 @@ export default function NewSalePage() {
   const handleSubmit = async (e?: React.FormEvent) => {
     e?.preventDefault();
     // parse latest typed values into numbers for validation/submission
-    const quantity = Math.max(0, parseInt(quantityInput || '0', 10) || 0);
+    const quantity = Math.max(0, roundQuantity(parseFloat(quantityInput || '0') || 0));
     const unitPrice = parseFloat(unitPriceInput || '0') || 0;
     const discount = parseFloat(discountInput || '0') || 0;
 
@@ -566,7 +567,7 @@ export default function NewSalePage() {
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <Label>Quantity *</Label>
-                    <Input type="number" min={1} value={quantityInput} onChange={(e) => setQuantityInput(e.target.value)} onBlur={() => setFormData(prev => ({ ...prev, quantity: parseInt(quantityInput || '1', 10) || 1 }))} />
+                    <Input type="number" min={0} step="any" value={quantityInput} onChange={(e) => setQuantityInput(e.target.value)} onBlur={() => setFormData(prev => ({ ...prev, quantity: roundQuantity(parseFloat(quantityInput || '1') || 1) }))} />
                   </div>
                   {activeCurrencies.length > 1 && (
                     <div>

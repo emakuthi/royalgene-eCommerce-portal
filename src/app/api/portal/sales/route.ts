@@ -1,4 +1,6 @@
 import { parseSaleDiscount } from '@/lib/sale-discount';
+import { productUnit } from '@/lib/business-settings.server';
+import { quantityError } from '@/lib/business-types';
 import { NextRequest, NextResponse } from 'next/server';
 import { requireTenantUser } from '@/lib/authorize';
 import { supabaseAdmin } from '@/lib/supabase-client';
@@ -211,6 +213,10 @@ export async function POST(request: NextRequest) {
         shopStock = ss as ShopStock;
       }
     }
+
+    // Whole numbers unless the product is sold by weight/volume (kg, litre ...).
+    const qtyProblem = quantityError(quantity, await productUnit(shopStock?.productId ?? payloadProductId));
+    if (qtyProblem) return jsonResponse({ success: false, error: qtyProblem }, 400);
 
     // Server-side stock availability validation to prevent over-selling
     let salesUsesVariant = false;

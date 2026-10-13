@@ -7,6 +7,8 @@ import { isOwnerLevelCaller } from './permissions.server';
 import { parseSaleDiscount } from './sale-discount';
 import type { VerifiedPayload } from './auth.server';
 import logger from './logger';
+import { quantityError } from './business-types';
+import { productUnit } from './business-settings.server';
 
 /**
  * Editing a recorded sale — shared by the portal (PATCH /api/portal/sales/[id])
@@ -76,8 +78,10 @@ export async function applySaleEdit(
 ): Promise<SaleEditResult> {
   const { quantity, unitPrice, paymentMethod, customerName, customerPhone, notes, discountAmount } = body;
 
-  if (quantity !== undefined && !(typeof quantity === 'number' && Number.isInteger(quantity) && quantity >= 1)) {
-    return fail(400, 'Quantity must be a whole number of at least 1');
+  if (quantity !== undefined) {
+    // Whole numbers unless the product is sold by weight/volume (kg, litre ...).
+    const problem = typeof quantity === 'number' ? quantityError(quantity, await productUnit(sale.productId)) : 'Quantity must be a number';
+    if (problem) return fail(400, problem);
   }
   if (unitPrice !== undefined && !(typeof unitPrice === 'number' && Number.isFinite(unitPrice) && unitPrice >= 0)) {
     return fail(400, 'Unit price must be zero or more');
