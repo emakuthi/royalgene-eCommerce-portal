@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireTenantUser } from '@/lib/authorize';
 import { jsonResponse, optionsResponse } from '@/lib/apiResponse';
-import { listExpenses, createExpense } from '@/lib/expenses.server';
+import { listExpenses, createExpense, expenseScopeFor } from '@/lib/expenses.server';
 
-// GET /api/portal/expenses[?shopId=&from=&to=&categoryId=]
+// GET /api/portal/expenses[?shopId=&from=&to=&categoryId=] — staff see only their own (see expenseScopeFor).
 export async function GET(request: NextRequest) {
   const auth = requireTenantUser(request);
   if (auth instanceof NextResponse) return auth;
@@ -14,6 +14,7 @@ export async function GET(request: NextRequest) {
     from: p.get('from') || undefined,
     to: p.get('to') || undefined,
     categoryId: p.get('categoryId') || undefined,
+    recordedBy: await expenseScopeFor(auth),
   });
   return jsonResponse({ success: true, data });
 }

@@ -1,14 +1,14 @@
 import { NextRequest } from 'next/server';
 import { verifyToken } from '@/lib/auth.server';
 import { jsonResponse, optionsResponse } from '@/lib/apiResponse';
-import { listExpenses, createExpense } from '@/lib/expenses.server';
+import { listExpenses, createExpense, expenseScopeFor } from '@/lib/expenses.server';
 
 function authed(request: NextRequest) {
   const token = request.headers.get('Authorization')?.replace('Bearer ', '');
   return token ? verifyToken(token) : null;
 }
 
-// GET /api/mobile/expenses[?shopId=&from=&to=&categoryId=]
+// GET /api/mobile/expenses[?shopId=&from=&to=&categoryId=] — staff see only their own (see expenseScopeFor).
 export async function GET(request: NextRequest) {
   const payload = authed(request);
   if (!payload?.organizationId) return jsonResponse({ success: false, error: 'Unauthorized', code: 'UNAUTHORIZED' }, 401);
@@ -18,6 +18,7 @@ export async function GET(request: NextRequest) {
     from: p.get('from') || undefined,
     to: p.get('to') || undefined,
     categoryId: p.get('categoryId') || undefined,
+    recordedBy: await expenseScopeFor(payload),
   });
   return jsonResponse({ success: true, data });
 }
