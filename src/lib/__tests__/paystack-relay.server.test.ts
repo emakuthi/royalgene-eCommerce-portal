@@ -16,11 +16,13 @@ describe('relayTargetFor', () => {
     expect(relayTargetFor(null, `ft-=${FT}`)).toBeNull();
   });
 
-  it('defaults to the FleetTrack route', () => {
+  it('defaults to the FleetTrack and Royalhub routes', () => {
     const saved = process.env.PAYSTACK_RELAY_ROUTES;
     delete process.env.PAYSTACK_RELAY_ROUTES;
     try {
       expect(relayTargetFor('ft-9')).toBe('https://fleettrack.royalgenegroup.co.ke/api/v1/billing/webhook');
+      expect(relayTargetFor('rh-9')).toBe('https://royalhub.royalgenegroup.co.ke/api/v1/webhooks/paystack');
+      expect(relayTargetFor('RT_9')).toBeNull();
     } finally {
       if (saved !== undefined) process.env.PAYSTACK_RELAY_ROUTES = saved;
     }

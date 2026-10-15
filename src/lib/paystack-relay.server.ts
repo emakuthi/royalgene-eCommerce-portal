@@ -6,9 +6,12 @@ import 'server-only';
 // body, same x-paystack-signature), so that app verifies the signature itself
 // with the shared secret key.
 //
-// PAYSTACK_RELAY_ROUTES: comma-separated prefix=url pairs. Defaults to
-// FleetTrack, whose references start with "ft-".
-const DEFAULT_ROUTES = 'ft-=https://fleettrack.royalgenegroup.co.ke/api/v1/billing/webhook';
+// PAYSTACK_RELAY_ROUTES: comma-separated prefix=url pairs; setting it replaces
+// the defaults. Defaults to FleetTrack ("ft-…") and Royalhub ("rh-…").
+const DEFAULT_ROUTES = [
+  'ft-=https://fleettrack.royalgenegroup.co.ke/api/v1/billing/webhook',
+  'rh-=https://royalhub.royalgenegroup.co.ke/api/v1/webhooks/paystack',
+].join(',');
 
 export function parseRelayRoutes(config: string | undefined): [prefix: string, url: string][] {
   return (config ?? '')
