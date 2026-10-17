@@ -10,7 +10,7 @@ import { Label } from '@/components/ui/label';
 import { useHydratedAuth } from '@/lib/hooks';
 import { usePortalStore } from '@/lib/store';
 import { toast } from 'sonner';
-import { Eye, EyeOff, Store, ShieldCheck, BarChart3, Package } from 'lucide-react';
+import { Store, ShieldCheck, BarChart3, Package } from 'lucide-react';
 import { useBranding } from '@/lib/branding-context';
 import { extractSubdomain, ROOT_DOMAIN } from '@/lib/tenant';
 import { getGoogleStartUrl } from '@/lib/social-auth-urls';
@@ -46,7 +46,6 @@ function PortalLoginPageInner() {
 	const { setAuth, mounted } = useHydratedAuth();
 	const { setCurrentShop, setCurrentPortalUser } = usePortalStore();
 	const [loading, setLoading] = useState(false);
-	const [showPassword, setShowPassword] = useState(false);
 	const [formData, setFormData] = useState({ email: '', password: '' });
 	const { branding } = useBranding();
 
@@ -194,24 +193,15 @@ function PortalLoginPageInner() {
 							<div className="relative">
 								<Input
 									id="password"
-									type={showPassword ? 'text' : 'password'}
+									type="password"
 									required
 									autoComplete="current-password"
 									placeholder="••••••••"
 									value={formData.password}
 									onChange={(e) => setFormData({ ...formData, password: e.target.value })}
 									disabled={loading}
-									className="h-11 pr-10 bg-gray-50 dark:bg-gray-900 border-gray-200 dark:border-gray-700 focus-visible:ring-purple-500"
+									className="h-11 bg-gray-50 dark:bg-gray-900 border-gray-200 dark:border-gray-700 focus-visible:ring-purple-500"
 								/>
-								<button
-									type="button"
-									aria-label={showPassword ? 'Hide password' : 'Show password'}
-									onClick={() => setShowPassword((v) => !v)}
-									className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition"
-									tabIndex={-1}
-								>
-									{showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-								</button>
 							</div>
 							<div className="text-right">
 								<Link
