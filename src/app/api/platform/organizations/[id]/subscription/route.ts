@@ -6,6 +6,7 @@ import {
   assignPlan,
   extendTrial,
   reactivateSubscription,
+  setBillingExempt,
   suspendSubscription,
 } from '@/lib/entitlements/subscription-status.server';
 import logger from '@/lib/logger';
@@ -25,6 +26,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
 // { action: 'assignPlan', planId, status?, billingInterval? }
 // { action: 'extendTrial', extraDays }
 // { action: 'suspend' } | { action: 'reactivate' }
+// { action: 'setExempt', exempt: boolean }
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const auth = requireRole(request, ['super_admin']);
   if (auth instanceof NextResponse) return auth;
@@ -62,8 +64,13 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         const subscription = await reactivateSubscription(id, auth.userId);
         return jsonResponse({ success: true, data: subscription });
       }
+      case 'setExempt': {
+        if (typeof body.exempt !== 'boolean') return jsonResponse({ success: false, error: 'exempt must be true or false' }, 400);
+        const result = await setBillingExempt(id, body.exempt, auth.userId);
+        return jsonResponse({ success: true, data: result });
+      }
       default:
-        return jsonResponse({ success: false, error: 'Unknown action. Use assignPlan | extendTrial | suspend | reactivate.' }, 400);
+        return jsonResponse({ success: false, error: 'Unknown action. Use assignPlan | extendTrial | suspend | reactivate | setExempt.' }, 400);
     }
   } catch (err) {
     logger.error('[platform subscription] action failed', {

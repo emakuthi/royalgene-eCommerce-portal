@@ -265,7 +265,8 @@ export type SubscriptionAction =
   | { action: 'assignPlan'; planId: string; status?: string; billingInterval?: 'monthly' | 'annually' | null }
   | { action: 'extendTrial'; extraDays: number }
   | { action: 'suspend' }
-  | { action: 'reactivate' };
+  | { action: 'reactivate' }
+  | { action: 'setExempt'; exempt: boolean };
 
 export function manageOrganizationSubscription(token: string | null | undefined, organizationId: string, body: SubscriptionAction) {
   return request<unknown>(`/api/platform/organizations/${encodeURIComponent(organizationId)}/subscription`, token, {
