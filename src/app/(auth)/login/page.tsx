@@ -67,6 +67,12 @@ function PortalLoginPageInner() {
 				body: JSON.stringify(formData),
 			});
 			const data = await response.json();
+			if (data.success && data.data.redirectUrl) {
+				// Account belongs to another workspace: continue on its own address.
+				toast.success('Welcome back! Opening your workspace…');
+				window.location.assign(data.data.redirectUrl);
+				return;
+			}
 			if (data.success) {
 				setAuth(data.data.user, data.data.token);
 				if (data.data.portalUser) setCurrentPortalUser(data.data.portalUser);
