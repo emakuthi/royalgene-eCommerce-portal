@@ -375,6 +375,21 @@ function PlatformAdminConsole() {
     setSubBusy(false);
   };
 
+  const toggleBillingExempt = async (exempt: boolean) => {
+    if (!subDialogOrg) return;
+    setSubBusy(true);
+    const res = await manageOrganizationSubscription(token, subDialogOrg.id, { action: 'setExempt', exempt });
+    if (res.success) {
+      const planTier = (res.data as { planTier: Organization['planTier'] }).planTier;
+      toast.success(exempt ? `${subDialogOrg.name} is exempt from billing` : `${subDialogOrg.name} is billed again (${planTier} plan)`);
+      setSubDialogOrg((prev) => (prev ? { ...prev, planTier } : prev));
+      void loadAll();
+    } else {
+      toast.error(res.error || 'Failed to update billing exemption');
+    }
+    setSubBusy(false);
+  };
+
   // ── Manage-tenant dialog ────────────────────────────────────────────────
   const openManage = (org: OrganizationWithCounts) => {
     setManageOrg(org);
@@ -697,6 +712,9 @@ function PlatformAdminConsole() {
                         <Badge className={`text-xs px-2 py-0.5 ${STATUS_STYLES[org.status]}`}>
                           {org.status.replace('_', ' ')}
                         </Badge>
+                        {org.planTier === 'legacy' && (
+                          <Badge className="ml-1 text-xs px-2 py-0.5 bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300">exempt</Badge>
+                        )}
                       </td>
                       <td className="py-4">
                         <select
@@ -1036,6 +1054,17 @@ function PlatformAdminConsole() {
             <DialogDescription>Full subscription lifecycle control. Assigning a plan or reactivating sets the subscription to active immediately.</DialogDescription>
           </DialogHeader>
           <div className="space-y-5 mt-1">
+            <div className="flex items-center justify-between gap-4 rounded-md border border-[hsl(var(--border))] p-3">
+              <div>
+                <p className="text-sm font-medium text-gray-900 dark:text-white">Exempt from billing</p>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                  {subDialogOrg?.planTier === 'legacy'
+                    ? 'Never locked by an ended trial and no plan limits. Turning this off bills it again; if its trial has ended and it has no paid plan, it locks straight away.'
+                    : 'Free use with no trial end and no plan limits, e.g. for your own or partner workspaces.'}
+                </p>
+              </div>
+              <Toggle checked={subDialogOrg?.planTier === 'legacy'} onChange={(v) => toggleBillingExempt(v)} disabled={subBusy} />
+            </div>
             <div>
               <Label>Assign plan</Label>
               <div className="flex gap-2 mt-1">

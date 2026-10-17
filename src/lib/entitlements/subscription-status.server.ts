@@ -66,7 +66,9 @@ export async function extendTrial(organizationId: string, extraDays: number, act
   const trialEnd = new Date(base.getTime() + extraDays * 24 * 60 * 60 * 1000).toISOString();
 
   const subscription = await writeSubscription(organizationId, { status: 'trialing', trialEnd });
-  await syncOrganization(organizationId, { trialEndsAt: trialEnd, planTier: 'free' });
+  // An exempt workspace stays exempt; only its trial date moves.
+  const exempt = (await getOrganizationPlanTier(organizationId)) === 'legacy';
+  await syncOrganization(organizationId, exempt ? { trialEndsAt: trialEnd } : { trialEndsAt: trialEnd, planTier: 'free' });
 
   await recordBillingEvent({
     eventType: 'trial.extended',
@@ -75,6 +77,34 @@ export async function extendTrial(organizationId: string, extraDays: number, act
   });
 
   return subscription;
+}
+
+async function getOrganizationPlanTier(organizationId: string): Promise<string | null> {
+  const { data } = await supabaseAdmin.from('Organization').select('planTier').eq('id', organizationId).maybeSingle();
+  return (data?.planTier as string | undefined) ?? null;
+}
+
+/**
+ * Super-admin action: exempt a workspace from billing, or end the exemption.
+ * Exempt is the `legacy` plan tier, which middleware and the entitlement
+ * service already treat as never locked and unlimited. Ending it returns the
+ * workspace to its paid plan when its subscription is active, else to `free`,
+ * where its trial date applies again (a past date locks it straight away).
+ */
+export async function setBillingExempt(organizationId: string, exempt: boolean, actorUserId?: string | null): Promise<{ planTier: string }> {
+  let planTier = 'legacy';
+  if (!exempt) {
+    const existing = await getSubscriptionRow(organizationId);
+    const plan = existing?.status === 'active' && existing.planId ? await getPlan(existing.planId) : null;
+    planTier = plan?.tier ?? 'free';
+  }
+  await syncOrganization(organizationId, { planTier: planTier as PlatformPlan['tier'] });
+  await recordBillingEvent({
+    eventType: exempt ? 'billing.exempted' : 'billing.exemption_removed',
+    organizationId,
+    payload: { planTier, actorUserId: actorUserId ?? null },
+  });
+  return { planTier };
 }
 
 /** Super-admin action: block new premium usage without touching Organization.status (account-level suspend is a separate, existing control). */
