@@ -2,7 +2,8 @@ import { NextRequest } from 'next/server';
 import { jsonResponse } from '@/lib/apiResponse';
 import { verifyWebhookSignature } from '@/lib/paystack.server';
 import { forwardWebhook, relayTargetFor } from '@/lib/paystack-relay.server';
-import { getPlanById } from '@/lib/billing-plans.server';
+import { getPlanById, getPlanByPaystackCode } from '@/lib/billing-plans.server';
+import { supabaseAdmin } from '@/lib/supabase-client';
 import { applySuccessfulSubscription, recordBillingEvent } from '@/lib/billing.server';
 import logger from '@/lib/logger';
 
@@ -40,7 +41,13 @@ export async function POST(request: NextRequest) {
     return jsonResponse({ success: ok }, ok ? 200 : 502);
   }
   const metadata = (data.metadata as Record<string, unknown> | undefined) || {};
-  const organizationId = typeof metadata.organizationId === 'string' ? metadata.organizationId : null;
+  const customer = data.customer as { customer_code?: string } | undefined;
+  const paystackPlan = data.plan as { plan_code?: string } | undefined;
+  // Renewal charges Paystack makes on its own don't carry our checkout
+  // metadata; they're matched by the customer and plan codes instead.
+  const organizationId = typeof metadata.organizationId === 'string'
+    ? metadata.organizationId
+    : await organizationIdForCustomer(customer?.customer_code);
 
   await recordBillingEvent({ eventType, reference, organizationId, payload: event });
 
@@ -49,11 +56,14 @@ export async function POST(request: NextRequest) {
   // change Organization state yet, per the plan's non-goals.
   if (eventType === 'charge.success' && reference && organizationId) {
     const planId = typeof metadata.planId === 'string' ? metadata.planId : null;
-    const interval = metadata.interval === 'annually' ? 'annually' : 'monthly';
-    const plan = planId ? await getPlanById(planId) : null;
+    let interval: 'monthly' | 'annually' = metadata.interval === 'annually' ? 'annually' : 'monthly';
+    let plan = planId ? await getPlanById(planId) : null;
+    if (!plan && paystackPlan?.plan_code) {
+      const match = await getPlanByPaystackCode(paystackPlan.plan_code);
+      if (match) ({ plan, interval } = match);
+    }
 
     if (plan) {
-      const customer = data.customer as { customer_code?: string } | undefined;
       try {
         await applySuccessfulSubscription({
           organizationId,
@@ -74,4 +84,10 @@ export async function POST(request: NextRequest) {
   }
 
   return jsonResponse({ success: true });
+}
+
+async function organizationIdForCustomer(customerCode: string | undefined): Promise<string | null> {
+  if (!customerCode) return null;
+  const { data } = await supabaseAdmin.from('Organization').select('id').eq('paystackCustomerCode', customerCode).limit(1).maybeSingle();
+  return (data?.id as string | undefined) ?? null;
 }

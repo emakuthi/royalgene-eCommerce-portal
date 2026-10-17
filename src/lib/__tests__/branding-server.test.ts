@@ -41,6 +41,7 @@ describe('getTenantBranding', () => {
       businessType: 'boutique',
       option1Label: 'Size',
       option2Label: 'Colour',
+      readOnly: null,
     });
   });
 

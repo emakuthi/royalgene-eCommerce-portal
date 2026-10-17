@@ -26,6 +26,8 @@ export interface Organization {
   paystackPlanCode?: string | null;
   billingEmail?: string | null;
   billingStatus?: string | null;
+  /** End of the period the last payment covers; null = not tracked. */
+  paidThrough?: string | null;
   trialEndsAt?: string | null;
   logoUrl?: string | null;
   tagline?: string | null;

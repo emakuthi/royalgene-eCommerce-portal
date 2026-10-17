@@ -49,6 +49,10 @@ export async function assignPlan(input: AssignPlanInput): Promise<TenantSubscrip
     planTier: plan.tier,
     billingStatus: status === 'active' ? 'active' : undefined,
   });
+  // A plan given by hand has no paid period to run out; drop any old one so
+  // a lapsed workspace comes back to full use. Separate update: paidThrough
+  // may not be migrated yet (20261017_01) and must not block the plan change.
+  await supabaseAdmin.from('Organization').update({ paidThrough: null }).eq('id', input.organizationId);
 
   await recordBillingEvent({
     eventType: 'plan.assigned',
@@ -107,9 +111,11 @@ export async function setBillingExempt(organizationId: string, exempt: boolean, 
   return { planTier };
 }
 
-/** Super-admin action: block new premium usage without touching Organization.status (account-level suspend is a separate, existing control). */
+/** Super-admin action: make the workspace read-only (it can still sign in and view) without touching Organization.status (account-level suspend, which blocks sign-in too, is a separate control). */
 export async function suspendSubscription(organizationId: string, actorUserId?: string | null): Promise<TenantSubscription> {
   const subscription = await writeSubscription(organizationId, { status: 'suspended' });
+  // Makes the workspace read-only (see readOnlyReason in tenant.ts).
+  await syncOrganization(organizationId, { billingStatus: 'suspended' });
   await recordBillingEvent({ eventType: 'subscription.suspended', organizationId, payload: { actorUserId: actorUserId ?? null } });
   return subscription;
 }
@@ -120,7 +126,7 @@ export async function reactivateSubscription(organizationId: string, actorUserId
   const status: SubscriptionStatus = stillInTrial ? 'trialing' : 'active';
 
   const subscription = await writeSubscription(organizationId, { status });
-  await syncOrganization(organizationId, { billingStatus: status === 'active' ? 'active' : undefined });
+  await syncOrganization(organizationId, { billingStatus: status === 'active' ? 'active' : null });
   await recordBillingEvent({ eventType: 'subscription.reactivated', organizationId, payload: { actorUserId: actorUserId ?? null, status } });
   return subscription;
 }

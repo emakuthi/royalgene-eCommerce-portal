@@ -2,6 +2,7 @@ import 'server-only';
 import { supabaseAdmin } from './supabase-client';
 import { BRANDING_DEFAULTS, MAX_BRANDING_DATA_URI_BYTES, type TenantBranding } from './branding';
 import logger from './logger';
+import { getReadOnlyState } from './read-only.server';
 
 const BASE_SELECT = 'name, tagline, logoUrl, faviconUrl, currency, usdRate';
 const SELECT = `${BASE_SELECT}, businessType, option1Label, option2Label`;
@@ -26,6 +27,7 @@ function rowToBranding(row: OrgBrandingRow | null): TenantBranding {
     businessType: row.businessType || BRANDING_DEFAULTS.businessType,
     option1Label: row.option1Label ?? BRANDING_DEFAULTS.option1Label,
     option2Label: row.option2Label ?? BRANDING_DEFAULTS.option2Label,
+    readOnly: null,
   };
 }
 
@@ -42,10 +44,11 @@ export async function getTenantBranding(organizationId: string | null | undefine
       .select(SELECT)
       .eq('id', organizationId)
       .maybeSingle();
-    if (!error) return rowToBranding(data);
+    const readOnly = await getReadOnlyState(organizationId);
+    if (!error) return { ...rowToBranding(data), readOnly };
     // Business-type columns not migrated yet (20261014_01) — keep the rest of the branding.
     const fallback = await supabaseAdmin.from('Organization').select(BASE_SELECT).eq('id', organizationId).maybeSingle();
-    return rowToBranding(fallback.data as OrgBrandingRow | null);
+    return { ...rowToBranding(fallback.data as OrgBrandingRow | null), readOnly };
   } catch (err) {
     logger.warn('[branding] getTenantBranding failed', { organizationId, error: err instanceof Error ? err.message : String(err) });
     return BRANDING_DEFAULTS;

@@ -21,6 +21,8 @@ export interface TenantBranding {
   option1Label: string;
   /** Name of product option 2 (stored in the color columns); '' = off. */
   option2Label: string;
+  /** Set while the workspace is read-only (trial ended / plan lapsed); null = full use. */
+  readOnly: { reason: string; message: string } | null;
 }
 
 export const BRANDING_DEFAULTS: TenantBranding = {
@@ -33,6 +35,7 @@ export const BRANDING_DEFAULTS: TenantBranding = {
   businessType: 'boutique',
   option1Label: 'Size',
   option2Label: 'Colour',
+  readOnly: null,
 };
 
 /** <link rel="icon"> hrefs shipped by default, restored when a tenant clears its custom favicon. */
