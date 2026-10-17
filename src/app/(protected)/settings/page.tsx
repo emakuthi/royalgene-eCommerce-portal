@@ -17,8 +17,6 @@ import {
   Bell,
   Info,
   Check,
-  Eye,
-  EyeOff,
   Sun,
   Moon,
   Monitor,
@@ -185,8 +183,6 @@ export default function PortalSettingsPage() {
   const [activeTab, setActiveTab] = useState<TabId>('profile');
   const [loading, setLoading] = useState(false);
   const [saved, setSaved] = useState(false);
-  const [showCurrentPw, setShowCurrentPw] = useState(false);
-  const [showNewPw, setShowNewPw] = useState(false);
   const [themeMode, setThemeMode] = useState<'light' | 'dark' | 'system'>('dark');
   const [accentHsl, setAccentHsl] = useState<string>('271 81% 56%');
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
@@ -1151,31 +1147,23 @@ export default function PortalSettingsPage() {
                 <FieldRow label="Current Password">
                   <div className="relative">
                     <Input
-                      type={showCurrentPw ? 'text' : 'password'}
+                      type="password"
                       value={pwForm.current}
                       onChange={e => setPwForm(p => ({ ...p, current: e.target.value }))}
                       disabled={loading}
                       placeholder="••••••••"
-                      className="pr-10"
                     />
-                    <button type="button" tabIndex={-1} onClick={() => setShowCurrentPw(v => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
-                      {showCurrentPw ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                    </button>
                   </div>
                 </FieldRow>
                 <FieldRow label="New Password" hint="Min. 8 characters">
                   <div className="relative">
                     <Input
-                      type={showNewPw ? 'text' : 'password'}
+                      type="password"
                       value={pwForm.next}
                       onChange={e => setPwForm(p => ({ ...p, next: e.target.value }))}
                       disabled={loading}
                       placeholder="••••••••"
-                      className="pr-10"
                     />
-                    <button type="button" tabIndex={-1} onClick={() => setShowNewPw(v => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
-                      {showNewPw ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                    </button>
                   </div>
                   {/* Password strength bar */}
                   {pwForm.next && (

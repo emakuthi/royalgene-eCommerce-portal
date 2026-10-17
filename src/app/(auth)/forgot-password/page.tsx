@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
-import { Eye, EyeOff, ArrowLeft } from 'lucide-react';
+import { ArrowLeft } from 'lucide-react';
 import { useBranding } from '@/lib/branding-context';
 
 function ForgotPasswordInner() {
@@ -19,7 +19,6 @@ function ForgotPasswordInner() {
   const [email, setEmail] = useState(params.get('email') ?? '');
   const [code, setCode] = useState('');
   const [password, setPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
 
   const requestCode = async (e: React.FormEvent) => {
@@ -121,24 +120,15 @@ function ForgotPasswordInner() {
               <div className="relative">
                 <Input
                   id="new-password"
-                  type={showPassword ? 'text' : 'password'}
+                  type="password"
                   required
                   autoComplete="new-password"
                   placeholder="At least 8 characters"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   disabled={loading}
-                  className="h-11 pr-10 bg-gray-50 dark:bg-gray-900 border-gray-200 dark:border-gray-700"
+                  className="h-11 bg-gray-50 dark:bg-gray-900 border-gray-200 dark:border-gray-700"
                 />
-                <button
-                  type="button"
-                  aria-label={showPassword ? 'Hide password' : 'Show password'}
-                  onClick={() => setShowPassword((v) => !v)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                  tabIndex={-1}
-                >
-                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                </button>
               </div>
             </div>
             <Button
