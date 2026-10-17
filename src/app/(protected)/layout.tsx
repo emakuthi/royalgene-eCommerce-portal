@@ -393,6 +393,18 @@ function ProfileDropdown() {
 }
 
 // ── Protected Layout ──────────────────────────────────────────────────────────
+/** Shown on every page while the workspace is read-only (trial ended / plan lapsed). */
+function ReadOnlyBanner() {
+  const { branding } = useBranding();
+  if (!branding.readOnly) return null;
+  return (
+    <div role="status" className="flex flex-wrap items-center justify-between gap-2 border-b border-amber-300 bg-amber-50 px-4 py-2 text-sm text-amber-900 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-200">
+      <span>{branding.readOnly.message} You can still view and export everything.</span>
+      <Link href="/settings?tab=billing" className="font-semibold underline">Subscribe</Link>
+    </div>
+  );
+}
+
 export default function ProtectedLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const { token, user } = useHydratedAuth();
@@ -623,6 +635,7 @@ export default function ProtectedLayout({ children }: { children: React.ReactNod
           {/* Main content */}
           <main className="flex-1 w-full pl-0 md:ml-72 min-h-0">
             <div className="min-h-0 h-full overflow-y-auto">
+              <ReadOnlyBanner />
               {children}
             </div>
           </main>

@@ -1,4 +1,5 @@
 import 'server-only';
+import { getReadOnlyState } from './read-only.server';
 import { jsonResponse } from './apiResponse';
 import logger from './logger';
 import {
@@ -30,7 +31,8 @@ function failure(err: unknown, what: string) {
 }
 
 export async function businessSettingsGet(organizationId: string) {
-  return jsonResponse({ success: true, data: await getBusinessSettings(organizationId) });
+  const [settings, readOnly] = await Promise.all([getBusinessSettings(organizationId), getReadOnlyState(organizationId)]);
+  return jsonResponse({ success: true, data: { ...settings, readOnly } });
 }
 
 /** Body: { businessType?, option1Label?, option2Label? } */

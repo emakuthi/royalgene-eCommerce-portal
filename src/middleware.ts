@@ -4,7 +4,8 @@ import {
   DEV_TENANT_SLUG,
   extractSubdomain,
   isRootDomainHost,
-  isTrialExpired,
+  READ_ONLY_MESSAGES,
+  readOnlyReason,
   resolveOrganizationByCustomDomainEdge,
   resolveOrganizationEdge,
   type ResolvedOrganization,
@@ -52,21 +53,30 @@ function isTenantOptional(pathname: string): boolean {
   return TENANT_OPTIONAL_PATHS.some((p) => pathname === p || pathname.startsWith(`${p}/`));
 }
 
-// Paths that stay reachable even once a trial has expired — the tenant must
-// still be able to see pricing, subscribe, and sign in/out. Everything else
-// in the portal is hard-blocked until they do.
-const TRIAL_EXEMPT_PATHS = [
-  '/settings',
-  '/trial-expired',
-  '/login',
+// Changes still allowed while a workspace is read-only (trial ended, plan
+// lapsed or billing suspended): signing in and out, paying, and the person's
+// own account and device. Everything else that isn't a read is refused with
+// 402 READ_ONLY. The Android sync treats 402 as "try again later", so sales
+// queued on a phone wait there, unchanged, until the workspace is paid up.
+const READ_ONLY_ALLOWED_WRITES = [
+  '/api/portal/auth',
+  '/api/mobile/auth',
   '/api/portal/billing',
-  '/api/portal/organization',
-  '/api/portal/settings',
+  '/api/portal/settings/password',
+  '/api/portal/settings/profile',
+  '/api/mobile/settings/password',
+  '/api/mobile/profile',
+  '/api/mobile/devices',
+  '/api/mobile/crash-reports',
+  '/api/mobile/activity',
+  '/api/currency/convert',
 ];
 
-function isTrialExempt(pathname: string): boolean {
-  return TRIAL_EXEMPT_PATHS.some((p) => pathname === p || pathname.startsWith(`${p}/`));
+function isReadOnlyAllowedWrite(pathname: string): boolean {
+  return READ_ONLY_ALLOWED_WRITES.some((p) => pathname === p || pathname.startsWith(`${p}/`));
 }
+
+const READ_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 
 const DEFAULT_CORS = {
   'Access-Control-Allow-Methods': 'GET,POST,PUT,PATCH,DELETE,OPTIONS',
@@ -139,15 +149,13 @@ export async function middleware(req: NextRequest) {
       }
       return NextResponse.rewrite(new URL('/tenant-suspended', req.url));
     }
-  } else if (isTrialExpired(org)) {
-    if (!isTenantOptional(pathname) && !isTrialExempt(pathname)) {
-      if (isApiRoute) {
-        return new NextResponse(JSON.stringify({ success: false, error: 'Trial expired — please subscribe to continue', code: 'TRIAL_EXPIRED' }), {
-          status: 402,
-          headers: { 'Content-Type': 'application/json' },
-        });
-      }
-      return NextResponse.rewrite(new URL('/trial-expired', req.url));
+  } else {
+    const reason = readOnlyReason(org);
+    if (reason && isApiRoute && !READ_METHODS.has(req.method) && !isTenantOptional(pathname) && !isReadOnlyAllowedWrite(pathname)) {
+      return new NextResponse(JSON.stringify({ success: false, error: READ_ONLY_MESSAGES[reason], code: 'READ_ONLY', reason }), {
+        status: 402,
+        headers: { 'Content-Type': 'application/json' },
+      });
     }
   }
 

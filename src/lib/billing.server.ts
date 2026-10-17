@@ -32,6 +32,14 @@ export async function wasReferenceProcessed(reference: string): Promise<boolean>
   return Boolean(data);
 }
 
+/** One billing period after the later of now and `from`. */
+export function addBillingPeriod(from: string | null, interval: 'monthly' | 'annually', now: Date = new Date()): string {
+  const start = from && new Date(from).getTime() > now.getTime() ? new Date(from) : new Date(now);
+  if (interval === 'annually') start.setUTCFullYear(start.getUTCFullYear() + 1);
+  else start.setUTCMonth(start.getUTCMonth() + 1);
+  return start.toISOString();
+}
+
 export interface ApplySuccessfulSubscriptionInput {
   organizationId: string;
   plan: PlatformPlan;
@@ -51,17 +59,25 @@ export async function applySuccessfulSubscription(input: ApplySuccessfulSubscrip
 
   const planCode = input.interval === 'annually' ? input.plan.paystackAnnualPlanCode : input.plan.paystackMonthlyPlanCode;
 
-  const { error } = await supabaseAdmin
-    .from('Organization')
-    .update({
-      planTier: input.plan.tier,
-      billingStatus: 'active',
-      paystackCustomerCode: input.paystackCustomerCode ?? null,
-      paystackSubscriptionCode: input.paystackSubscriptionCode ?? null,
-      paystackPlanCode: planCode ?? null,
-      updatedAt: new Date().toISOString(),
-    })
-    .eq('id', input.organizationId);
+  // Each payment (first or renewal) covers one more period, counted from the
+  // end of the current one so paying early never loses days.
+  const { data: current } = await supabaseAdmin.from('Organization').select('paidThrough').eq('id', input.organizationId).maybeSingle();
+  const paidThrough = addBillingPeriod((current as { paidThrough?: string | null } | null)?.paidThrough ?? null, input.interval);
+
+  const orgPatch = {
+    planTier: input.plan.tier,
+    billingStatus: 'active',
+    paystackCustomerCode: input.paystackCustomerCode ?? null,
+    paystackSubscriptionCode: input.paystackSubscriptionCode ?? null,
+    paystackPlanCode: planCode ?? null,
+    updatedAt: new Date().toISOString(),
+  };
+  let { error } = await supabaseAdmin.from('Organization').update({ ...orgPatch, paidThrough }).eq('id', input.organizationId);
+  if (error) {
+    // paidThrough not migrated yet (20261017_01): still activate the plan.
+    logger.warn('[billing] paidThrough not saved', { error: error.message, organizationId: input.organizationId });
+    ({ error } = await supabaseAdmin.from('Organization').update(orgPatch).eq('id', input.organizationId));
+  }
 
   if (error) {
     logger.error('[billing] failed to apply subscription', { error: error.message, organizationId: input.organizationId });
@@ -78,6 +94,7 @@ export async function applySuccessfulSubscription(input: ApplySuccessfulSubscrip
     status: 'active',
     billingInterval: input.interval,
     currentPeriodStart: now,
+    currentPeriodEnd: paidThrough,
   });
 
   await recordBillingEvent({

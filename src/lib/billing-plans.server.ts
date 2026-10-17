@@ -17,6 +17,19 @@ export async function getPlanById(id: string): Promise<PlatformPlan | null> {
   return data as PlatformPlan;
 }
 
+/** The plan and interval a Paystack plan code belongs to (renewal charges carry the code, not our metadata). */
+export async function getPlanByPaystackCode(planCode: string): Promise<{ plan: PlatformPlan; interval: 'monthly' | 'annually' } | null> {
+  const { data, error } = await supabaseAdmin
+    .from('PlatformPlan')
+    .select('*')
+    .or(`paystackMonthlyPlanCode.eq.${planCode},paystackAnnualPlanCode.eq.${planCode}`)
+    .limit(1)
+    .maybeSingle();
+  if (error || !data) return null;
+  const plan = data as PlatformPlan;
+  return { plan, interval: plan.paystackAnnualPlanCode === planCode ? 'annually' : 'monthly' };
+}
+
 export async function getPlanByTier(tier: string): Promise<PlatformPlan | null> {
   const { data, error } = await supabaseAdmin.from('PlatformPlan').select('*').eq('tier', tier).maybeSingle();
   if (error || !data) return null;

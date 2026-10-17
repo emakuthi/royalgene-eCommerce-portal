@@ -19,22 +19,64 @@ export interface ResolvedOrganization {
   planTier: 'free' | 'starter' | 'pro' | 'enterprise' | 'legacy';
   trialEndsAt: string | null;
   billingStatus: string | null;
+  /** End of the period the last payment covers; null = not tracked (never lapses). */
+  paidThrough?: string | null;
 }
 
-const ORG_SELECT_FIELDS = 'id,slug,status,planTier,trialEndsAt,billingStatus';
+const ORG_SELECT_FIELDS = 'id,slug,status,planTier,trialEndsAt,billingStatus,paidThrough';
+// Without paidThrough, for a database the 20261017_01 migration hasn't reached
+// yet: tenant resolution must never fail because of a billing column.
+const ORG_SELECT_FIELDS_BASE = 'id,slug,status,planTier,trialEndsAt,billingStatus';
+
+/** Days a workspace keeps full use after its paid period ends, while a renewal comes through. */
+export const PAID_GRACE_DAYS = 3;
+
+export type ReadOnlyReason = 'trial_ended' | 'plan_lapsed' | 'billing_suspended';
+
+type BillingFields = Pick<ResolvedOrganization, 'planTier' | 'trialEndsAt' | 'billingStatus' | 'paidThrough'>;
 
 /**
- * True once a free-tier trial has run out with no active subscription.
- * "legacy" tier (grandfathered orgs, e.g. the original RoyalGene tenant)
- * never trial-gates. Paid tiers don't either — planTier only moves off
- * "free" once a subscription actually succeeds (src/lib/billing.server.ts),
- * so reaching a paid tier already implies billing is in order.
+ * Why a workspace is read-only (it can still sign in, view and export, but
+ * not change anything), or null when it has full use. Exempt (legacy)
+ * workspaces never are.
  */
-export function isTrialExpired(org: ResolvedOrganization): boolean {
-  if (org.planTier !== 'free') return false;
-  if (org.billingStatus === 'active') return false;
-  if (!org.trialEndsAt) return false;
-  return new Date(org.trialEndsAt).getTime() < Date.now();
+export function readOnlyReason(org: BillingFields, now: number = Date.now()): ReadOnlyReason | null {
+  if (org.planTier === 'legacy') return null;
+  if (org.billingStatus === 'suspended') return 'billing_suspended';
+  if (org.planTier === 'free') {
+    if (org.billingStatus === 'active' || !org.trialEndsAt) return null;
+    return new Date(org.trialEndsAt).getTime() < now ? 'trial_ended' : null;
+  }
+  if (!org.paidThrough) return null;
+  const graceEnd = new Date(org.paidThrough).getTime() + PAID_GRACE_DAYS * 24 * 60 * 60 * 1000;
+  return graceEnd < now ? 'plan_lapsed' : null;
+}
+
+export const READ_ONLY_MESSAGES: Record<ReadOnlyReason, string> = {
+  trial_ended: 'Your free trial has ended, so this workspace is read-only. Subscribe to keep recording.',
+  plan_lapsed: 'Your plan has expired, so this workspace is read-only. Renew to keep recording.',
+  billing_suspended: 'Billing for this workspace is suspended, so it is read-only. Contact support to restore it.',
+};
+
+async function fetchOrganizationEdge(filter: string): Promise<ResolvedOrganization | null> {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!supabaseUrl || !serviceKey) return null;
+  for (const fields of [ORG_SELECT_FIELDS, ORG_SELECT_FIELDS_BASE]) {
+    try {
+      const res = await fetch(`${supabaseUrl}/rest/v1/Organization?${filter}&select=${fields}&limit=1`, {
+        headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` },
+        next: { revalidate: 30 },
+      });
+      if (res.status === 400) continue; // unknown column: retry without it
+      if (!res.ok) return null;
+      const rows = (await res.json()) as ResolvedOrganization[];
+      return rows[0] ?? null;
+    } catch {
+      return null;
+    }
+  }
+  return null;
 }
 
 /**
@@ -81,25 +123,8 @@ export function isRootDomainHost(host: string | null | undefined, rootDomain: st
  * import — keeps this module import-safe for Next.js middleware / edge runtime).
  */
 export async function resolveOrganizationEdge(slug: string): Promise<ResolvedOrganization | null> {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!supabaseUrl || !serviceKey || !slug) return null;
-
-  try {
-    const url = `${supabaseUrl}/rest/v1/Organization?slug=eq.${encodeURIComponent(slug)}&select=${ORG_SELECT_FIELDS}&limit=1`;
-    const res = await fetch(url, {
-      headers: {
-        apikey: serviceKey,
-        Authorization: `Bearer ${serviceKey}`,
-      },
-      next: { revalidate: 30 },
-    });
-    if (!res.ok) return null;
-    const rows = (await res.json()) as ResolvedOrganization[];
-    return rows[0] ?? null;
-  } catch {
-    return null;
-  }
+  if (!slug) return null;
+  return fetchOrganizationEdge(`slug=eq.${encodeURIComponent(slug)}`);
 }
 
 /**
@@ -110,24 +135,7 @@ export async function resolveOrganizationEdge(slug: string): Promise<ResolvedOrg
  * domain becomes verified.
  */
 export async function resolveOrganizationByCustomDomainEdge(host: string): Promise<ResolvedOrganization | null> {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   const bareHost = host.split(':')[0].toLowerCase();
-  if (!supabaseUrl || !serviceKey || !bareHost) return null;
-
-  try {
-    const url = `${supabaseUrl}/rest/v1/Organization?customDomain=eq.${encodeURIComponent(bareHost)}&customDomainStatus=eq.verified&select=${ORG_SELECT_FIELDS}&limit=1`;
-    const res = await fetch(url, {
-      headers: {
-        apikey: serviceKey,
-        Authorization: `Bearer ${serviceKey}`,
-      },
-      next: { revalidate: 30 },
-    });
-    if (!res.ok) return null;
-    const rows = (await res.json()) as ResolvedOrganization[];
-    return rows[0] ?? null;
-  } catch {
-    return null;
-  }
+  if (!bareHost) return null;
+  return fetchOrganizationEdge(`customDomain=eq.${encodeURIComponent(bareHost)}&customDomainStatus=eq.verified`);
 }
