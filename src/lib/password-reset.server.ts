@@ -8,6 +8,11 @@ import logger from './logger';
 const CODE_TTL_MS = 30 * 60 * 1000; // 30 minutes
 const MAX_ATTEMPTS = 5;
 const RESEND_THROTTLE_MS = 60 * 1000; // one code per minute per account
+// ... and at most this many per rolling day. Anyone can type an address into
+// "Forgot password", so without a cap an account owner (or the Play review
+// demo account, whose testers tap it all day) gets a code email every minute.
+const DAILY_CODE_LIMIT = 3;
+const DAY_MS = 24 * 60 * 60 * 1000;
 const MIN_PASSWORD_LEN = 8;
 
 const hashCode = (code: string) => createHash('sha256').update(code.trim()).digest('hex');
@@ -34,16 +39,22 @@ export async function requestPasswordReset(rawEmail: string): Promise<void> {
     return;
   }
 
-  // Throttle: skip if a code went out in the last minute.
-  const { data: recent } = await supabaseAdmin
+  // Throttle: skip if a code went out in the last minute, or the day's
+  // allowance is used up. The caller can't tell either way (see above).
+  const { data: recentRows } = await supabaseAdmin
     .from('PasswordResetCode')
     .select('createdAt')
     .eq('userId', user.id)
+    .gte('createdAt', new Date(Date.now() - DAY_MS).toISOString())
     .order('createdAt', { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  if (recent && Date.now() - new Date(recent.createdAt).getTime() < RESEND_THROTTLE_MS) {
+    .limit(DAILY_CODE_LIMIT);
+  const recent = (recentRows ?? []) as { createdAt: string }[];
+  if (recent[0] && Date.now() - new Date(recent[0].createdAt).getTime() < RESEND_THROTTLE_MS) {
     logger.info('[password-reset] throttled', { userId: user.id });
+    return;
+  }
+  if (recent.length >= DAILY_CODE_LIMIT) {
+    logger.info('[password-reset] daily limit reached', { userId: user.id });
     return;
   }
 

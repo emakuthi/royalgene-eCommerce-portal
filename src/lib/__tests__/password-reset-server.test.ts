@@ -19,9 +19,11 @@ function table(name: string) {
     select: () => api,
     eq: (col: string, val: unknown) => { state.rows = state.rows.filter((r) => r[col] === val); return api; },
     is: (col: string, val: unknown) => { state.rows = state.rows.filter((r) => (r[col] ?? null) === val); return api; },
-    order: () => api,
+    gte: (col: string, val: string) => { state.rows = state.rows.filter((r) => String(r[col]) >= val); return api; },
+    order: () => { state.rows.sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt))); return api; },
     limit: (n: number) => { state.rows = state.rows.slice(0, n); return api; },
     maybeSingle: async () => ({ data: state.rows[0] ?? null, error: null }),
+    then: (res: (v: { data: Row[]; error: null }) => void) => res({ data: state.rows, error: null }),
     insert: async (newRows: Row[]) => { store.push(...newRows.map((r) => ({ id: `id-${store.length}`, ...r }))); return { error: null }; },
     update: (patch: Row) => ({
       eq: (col: string, val: unknown) => ({
@@ -57,6 +59,28 @@ describe('requestPasswordReset', () => {
     expect(codes).toHaveLength(1);
     expect(codes[0].codeHash).toMatch(/^[a-f0-9]{64}$/);
     expect(codes[0].consumedAt).toBeUndefined();
+    expect(sendEmail).toHaveBeenCalledOnce();
+  });
+
+  it('sends at most one code a minute', async () => {
+    codes.push({ id: 'c0', userId: 'user-1', createdAt: new Date(Date.now() - 20_000).toISOString() });
+    await requestPasswordReset('jane@acme.io');
+    expect(codes).toHaveLength(1);
+    expect(sendEmail).not.toHaveBeenCalled();
+  });
+
+  it('stops after 3 codes in a day, and allows one again once the oldest is a day old', async () => {
+    const ago = (h: number) => new Date(Date.now() - h * 3_600_000).toISOString();
+    codes.push(
+      { id: 'c1', userId: 'user-1', createdAt: ago(1) },
+      { id: 'c2', userId: 'user-1', createdAt: ago(5) },
+      { id: 'c3', userId: 'user-1', createdAt: ago(23) },
+    );
+    await requestPasswordReset('jane@acme.io');
+    expect(sendEmail).not.toHaveBeenCalled();
+
+    codes[2].createdAt = ago(25);
+    await requestPasswordReset('jane@acme.io');
     expect(sendEmail).toHaveBeenCalledOnce();
   });
 
