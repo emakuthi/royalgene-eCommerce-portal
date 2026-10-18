@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -27,6 +28,7 @@ import VariantMatrixModal from './variant-matrix-modal';
 import * as stockApi from '@/lib/stockApi';
 import PortalHeader from '@/components/portal/PortalHeader';
 import { useTheme } from '@/lib/theme-context';
+import BarcodeScanInput, { scanBeep } from '@/components/barcode-scan-input';
 import Dialog from '@mui/material/Dialog';
 import DialogTitle from '@mui/material/DialogTitle';
 import DialogContent from '@mui/material/DialogContent';
@@ -94,6 +96,7 @@ function StockManagementContent() {
   const [shopName, setShopName] = useState('Stock Management');
 
   // New UI state
+  const router = useRouter();
   const [isRestockModalOpen, setIsRestockModalOpen] = useState(false);
   const [restockStockId, setRestockStockId] = useState<string | null>(null);
   const [restockQuantity, setRestockQuantity] = useState<number | ''>('');
@@ -432,6 +435,60 @@ function StockManagementContent() {
   }
 
   // View / Edit modal handlers
+  // Scan-to-receive: a scan opens the item for restocking (or its size/colour matrix when the
+  // code pins a variant). A code that matches nothing offers to create the product with the
+  // barcode prefilled.
+  const handleScan = async (code: string) => {
+    if (!currentShop?.id || !token) {
+      toast.error('Select a shop first');
+      return;
+    }
+    try {
+      const res = await fetch(
+        `/api/portal/products/by-barcode?shopId=${encodeURIComponent(currentShop.id)}&code=${encodeURIComponent(code)}`,
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
+      const json = await res.json();
+      if (!json?.success) {
+        scanBeep(false);
+        toast.error(json?.error || 'Barcode lookup failed');
+        return;
+      }
+      const hit = json.data as {
+        found: boolean;
+        product?: { name: string };
+        shopStock?: { id: string; quantity: number } | null;
+        variant?: { size: string; color: string } | null;
+      };
+      if (!hit.found || !hit.product) {
+        scanBeep(false);
+        toast.error(`No product found for "${code}"`, {
+          action: { label: 'Add product', onClick: () => router.push(`/stock/add-new?barcode=${encodeURIComponent(code)}`) },
+        });
+        return;
+      }
+      const row = hit.shopStock ? stocks.find(s => s.id === hit.shopStock!.id) : undefined;
+      if (!row) {
+        scanBeep(false);
+        toast.error(`${hit.product.name} isn't stocked in this shop yet`);
+        return;
+      }
+      scanBeep(true);
+      if (hit.variant) {
+        setVariantStock(row);
+        setIsVariantModalOpen(true);
+      } else {
+        setRestockStockId(row.id);
+        setRestockQuantity(row.quantity);
+        setIsRestockModalOpen(true);
+      }
+    } catch (err) {
+      console.error('Barcode scan failed', err);
+      scanBeep(false);
+      toast.error('Barcode lookup failed');
+    }
+  };
+
   const openViewModal = (stock: ApiShopStock) => {
     const prod = getProductFromRow(stock) ?? null;
     setSelectedStock(stock);
@@ -620,7 +677,12 @@ function StockManagementContent() {
               </Button>
             </div>
 
-            <div className="flex items-center gap-3">
+            <div className="flex flex-wrap items-end gap-3">
+              {currentShop?.id && (
+                <div className="w-full sm:w-72">
+                  <BarcodeScanInput label="Scan to receive" placeholder="Scan a barcode / SKU" onScan={handleScan} autoFocus={false} />
+                </div>
+              )}
               <div className="relative">
                 <Search className={`absolute left-3 top-3 h-4 w-4 ${muted}`} />
                 <Input placeholder="Search product or SKU" className="pl-10" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />

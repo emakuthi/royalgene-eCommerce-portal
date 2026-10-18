@@ -44,6 +44,8 @@ type AddForm = {
   menuItem: boolean;
   brand: string;
   sku: string;
+  /** Optional scannable code (EAN/UPC/Code128 …). More can be added later per variant. */
+  barcode: string;
   description: string;
   costPrice: string;
   sellingPrice: string;
@@ -62,6 +64,7 @@ const EMPTY_FORM: AddForm = {
   menuItem: false,
   brand: '',
   sku: '',
+  barcode: '',
   description: '',
   costPrice: '',
   sellingPrice: '',
@@ -100,6 +103,12 @@ export default function AddNewProductPage() {
 
   /* ---- lifecycle ---- */
   useEffect(() => { setMounted(true); }, []);
+
+  // The sales screen links here with ?barcode=… when a scanned code matched nothing.
+  useEffect(() => {
+    const code = new URLSearchParams(window.location.search).get('barcode');
+    if (code) setAddForm(prev => (prev.barcode ? prev : { ...prev, barcode: code.trim() }));
+  }, []);
 
   useEffect(() => {
     if (!mounted || !token) return;
@@ -233,6 +242,25 @@ export default function AddNewProductPage() {
       }
 
       if (json.warning) toast(json.warning);
+
+      const barcode = addForm.barcode.trim();
+      const createdProductId: string | undefined = json.data?.Product?.id ?? json.data?.productId;
+      if (barcode && createdProductId) {
+        try {
+          const bcRes = await fetch(`/api/portal/products/${encodeURIComponent(createdProductId)}/barcodes`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+            body: JSON.stringify({ barcodes: [{ code: barcode }] }),
+          });
+          const bcJson = await bcRes.json();
+          if (!bcRes.ok || !bcJson.success) {
+            toast.error(`Product created, but the barcode wasn't saved: ${bcJson.error || 'unknown error'}`);
+          }
+        } catch {
+          toast.error("Product created, but the barcode wasn't saved. You can add it by editing the product.");
+        }
+      }
+
       toast.success('Product created successfully!');
       router.push('/stock');
     } catch (err) {
@@ -428,6 +456,18 @@ export default function AddNewProductPage() {
                       Generate
                     </Button>
                   </div>
+                </div>
+
+                {/* Barcode */}
+                <div className="space-y-1.5">
+                  <Label htmlFor="barcode">Barcode</Label>
+                  <Input
+                    id="barcode"
+                    value={addForm.barcode}
+                    onChange={e => handleChange('barcode', e.target.value)}
+                    placeholder="Click here, then scan the product's barcode"
+                    helperText="Optional. Lets you scan this product when selling or receiving stock. Scanning also works with the SKU above."
+                  />
                 </div>
 
                 {/* Description */}

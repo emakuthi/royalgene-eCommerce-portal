@@ -18,6 +18,7 @@ import { ImageLightbox } from '@/components/image-lightbox';
 import { computePrefillForm } from '@/lib/sales-prefill';
 import type { Product } from '@/lib/types';
 import { useTheme } from '@/lib/theme-context';
+import BarcodeScanInput, { scanBeep } from '@/components/barcode-scan-input';
 
 // ApiStock represents the shop stock row returned by /api/portal/stock
 type ApiStock = {
@@ -345,6 +346,85 @@ export default function NewSalePage() {
   // Validation errors
   const [errors, setErrors] = useState<{ unitPrice?: string; customerPhone?: string }>({});
 
+  // Size/colour cell pinned by the last scanned barcode (null for a manual or whole-product pick).
+  const [scannedVariant, setScannedVariant] = useState<{ size: string; color: string } | null>(null);
+
+  // A scan fills the form from the shop's own stock. Scanning the same item again adds one
+  // more unit instead of re-selecting it, so a cashier can scan a basket of identical items.
+  const handleScan = async (code: string) => {
+    if (!currentShop?.id || !token) return;
+    try {
+      const res = await fetch(
+        `/api/portal/products/by-barcode?shopId=${encodeURIComponent(currentShop.id)}&code=${encodeURIComponent(code)}`,
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
+      const j = await res.json();
+      if (!j?.success) {
+        scanBeep(false);
+        toast.error(j?.error || 'Barcode lookup failed');
+        return;
+      }
+      const hit = j.data as {
+        found: boolean;
+        product?: { name: string; price: number | null };
+        shopStock?: { id: string; quantity: number } | null;
+        variant?: { size: string; color: string; quantity: number | null } | null;
+      };
+      if (!hit.found || !hit.product) {
+        scanBeep(false);
+        toast.error(`No product found for "${code}"`, {
+          action: { label: 'Add product', onClick: () => router.push(`/stock/add-new?barcode=${encodeURIComponent(code)}`) },
+        });
+        return;
+      }
+      if (!hit.shopStock) {
+        scanBeep(false);
+        toast.error(`${hit.product.name} isn't stocked in ${currentShop.name || 'this shop'} yet`);
+        return;
+      }
+      const available = hit.variant?.quantity ?? hit.shopStock.quantity;
+      if (available <= 0) {
+        scanBeep(false);
+        toast.error(`${hit.product.name} is out of stock`);
+        return;
+      }
+
+      const sameItem =
+        formData.shopStockId === hit.shopStock.id &&
+        (scannedVariant?.size ?? '') === (hit.variant?.size ?? '') &&
+        (scannedVariant?.color ?? '') === (hit.variant?.color ?? '');
+
+      if (sameItem) {
+        const next = roundQuantity((parseFloat(quantityInput || '0') || 0) + 1);
+        if (next > available) {
+          scanBeep(false);
+          toast.error(`Only ${available} of ${hit.product.name} in stock`);
+          return;
+        }
+        setFormData(prev => ({ ...prev, quantity: next }));
+      } else {
+        const price = typeof hit.product.price === 'number' ? hit.product.price : 0;
+        setFormData(prev => ({
+          ...prev,
+          shopStockId: hit.shopStock!.id,
+          productId: stocks.find(st => st.id === hit.shopStock!.id)?.productId ?? prev.productId,
+          unitPrice: price,
+          quantity: 1,
+        }));
+        setScannedVariant(hit.variant ? { size: hit.variant.size, color: hit.variant.color } : null);
+      }
+      scanBeep(true);
+      const variantLabel = hit.variant && (hit.variant.size || hit.variant.color)
+        ? ` (${[hit.variant.size, hit.variant.color].filter(Boolean).join(' / ')})`
+        : '';
+      toast.success(`${hit.product.name}${variantLabel}`);
+    } catch (err) {
+      console.error('Barcode scan failed', err);
+      scanBeep(false);
+      toast.error('Barcode lookup failed');
+    }
+  };
+
   function isValidPhone(phone?: string) {
     if (!phone) return true; // optional
     // allow digits, spaces, +, -, parentheses; require at least 7 digits
@@ -417,6 +497,7 @@ export default function NewSalePage() {
             shopStockId: formData.shopStockId,
             productId: formData.productId,
             quantity,
+            ...(scannedVariant ? { size: scannedVariant.size || undefined, color: scannedVariant.color || undefined } : {}),
             unitPrice,
             discountAmount: Math.min(discount, unitPrice * quantity),
             currency: saleCurrency,
@@ -466,6 +547,9 @@ export default function NewSalePage() {
                 </p>
               )}
               <form onSubmit={handleSubmit} className="space-y-4">
+                {!editingSaleId && (
+                  <BarcodeScanInput onScan={handleScan} disabled={loadingStocks || submitting || !currentShop?.id} />
+                )}
                 <div>
                   <Label>Product (select from shop stock) *</Label>
                   <p className="text-xs text-gray-500">Showing products available in <strong>{currentShop?.name || 'current shop'}</strong></p>
@@ -490,6 +574,7 @@ export default function NewSalePage() {
                             productId: stock?.productId ?? prev.productId,
                             unitPrice: price,
                           }));
+                          setScannedVariant(null);
                         }}>
                           <option value="">Select a product from stock</option>
                           {stocks.map(s => {
