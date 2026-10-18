@@ -52,6 +52,27 @@ async function buildQrCodeDataUrl(payload: string): Promise<string> {
   }
 }
 
+type TaxInvoiceRow = TaxInvoice & { saleGroupId?: string | null; salesEntryIds?: string[] | null };
+
+/** The QR payload for an invoice: PIN, invoice number, date, total, tax (major units). */
+function qrPayloadFor(row: { kraPin: string; invoiceNumber: string; createdAt: string; totalAmount: number; totalTaxAmount: number }): string {
+  // Representative KRA-documented QR content shape. Not a live verification URL —
+  // there is no KRA submission to point to.
+  return JSON.stringify({
+    pin: row.kraPin,
+    invoiceNumber: row.invoiceNumber,
+    date: row.createdAt,
+    totalAmount: row.totalAmount / 100,
+    taxAmount: row.totalTaxAmount / 100,
+  });
+}
+
+/**
+ * Generates the invoice for one SalesEntry. A line that belongs to a multi-item
+ * checkout (saleGroupId) shares one invoice with the rest of that checkout: the
+ * first line to arrive creates it and later lines are appended. Single-line
+ * sales are unchanged.
+ */
 export async function generateTaxInvoiceForSale(saleId: string): Promise<void> {
   try {
     const { data: sale } = await supabaseAdmin.from('SalesEntry').select('*').eq('id', saleId).maybeSingle();
@@ -84,21 +105,19 @@ export async function generateTaxInvoiceForSale(saleId: string): Promise<void> {
       totalAmount,
     };
 
+    const saleGroupId = typeof sale.saleGroupId === 'string' && sale.saleGroupId ? sale.saleGroupId : null;
+
+    // Part of a checkout whose invoice already exists: append this line to it.
+    if (saleGroupId) {
+      const appended = await appendToGroupInvoice(organizationId, saleGroupId, saleId, lineItem, taxableAmount, taxAmount, totalAmount);
+      if (appended !== 'no-invoice') return;
+    }
+
     const invoiceNumber = await nextInvoiceNumber(organizationId);
     const now = new Date().toISOString();
+    const qrCodeData = await buildQrCodeDataUrl(qrPayloadFor({ kraPin, invoiceNumber, createdAt: now, totalAmount, totalTaxAmount: taxAmount }));
 
-    // Representative KRA-documented QR content shape: PIN, invoice number, date, total, tax.
-    // Not a live verification URL — there is no KRA submission to point to.
-    const qrPayload = JSON.stringify({
-      pin: kraPin,
-      invoiceNumber,
-      date: now,
-      totalAmount: totalAmount / 100,
-      taxAmount: taxAmount / 100,
-    });
-    const qrCodeData = await buildQrCodeDataUrl(qrPayload);
-
-    const { error } = await supabaseAdmin.from('TaxInvoice').insert([{
+    const baseRow = {
       organizationId,
       salesEntryId: saleId,
       invoiceNumber,
@@ -110,8 +129,25 @@ export async function generateTaxInvoiceForSale(saleId: string): Promise<void> {
       qrCodeData,
       status: 'generated',
       createdAt: now,
-    }]);
+    };
 
+    if (saleGroupId) {
+      const { error } = await supabaseAdmin
+        .from('TaxInvoice')
+        .insert([{ ...baseRow, saleGroupId, salesEntryIds: [saleId] }]);
+      if (!error) return;
+
+      // 23505: another line of this checkout created the invoice a moment ago — join it.
+      if ((error as { code?: string }).code === '23505') {
+        const appended = await appendToGroupInvoice(organizationId, saleGroupId, saleId, lineItem, taxableAmount, taxAmount, totalAmount);
+        if (appended !== 'no-invoice') return;
+      }
+      // Anything else (e.g. the per-checkout migration hasn't been run yet): fall back to
+      // a standalone invoice for this line, exactly as before, rather than none at all.
+      logger.warn('[etims] grouped invoice insert failed; falling back to a per-line invoice', { error: error.message, saleId });
+    }
+
+    const { error } = await supabaseAdmin.from('TaxInvoice').insert([baseRow]);
     if (error) {
       logger.warn('[etims] failed to persist tax invoice', { error: error.message, saleId });
     }
@@ -120,7 +156,68 @@ export async function generateTaxInvoiceForSale(saleId: string): Promise<void> {
   }
 }
 
+/**
+ * Appends a line to its checkout's invoice. 'no-invoice' means the checkout has no
+ * invoice yet (or the per-checkout columns don't exist), so the caller creates one.
+ */
+async function appendToGroupInvoice(
+  organizationId: string,
+  saleGroupId: string,
+  saleId: string,
+  lineItem: TaxInvoiceLineItem,
+  taxableAmount: number,
+  taxAmount: number,
+  totalAmount: number,
+): Promise<'appended' | 'already-on-invoice' | 'no-invoice'> {
+  const { data: invoice, error: findError } = await supabaseAdmin
+    .from('TaxInvoice')
+    .select('id')
+    .eq('organizationId', organizationId)
+    .eq('saleGroupId', saleGroupId)
+    .maybeSingle();
+  if (findError || !invoice) return 'no-invoice';
+
+  const { data: appended, error } = await supabaseAdmin.rpc('append_tax_invoice_line', {
+    p_invoice_id: (invoice as { id: string }).id,
+    p_sales_entry_id: saleId,
+    p_item: lineItem,
+    p_taxable: taxableAmount,
+    p_tax: taxAmount,
+    p_total: totalAmount,
+  });
+  if (error) {
+    logger.warn('[etims] failed to append line to checkout invoice', { error: error.message, saleId, saleGroupId });
+    return 'already-on-invoice'; // don't create a duplicate invoice for a line we couldn't append
+  }
+  return appended ? 'appended' : 'already-on-invoice';
+}
+
+/**
+ * The invoice a sale appears on. For a line of a multi-item checkout that is the
+ * checkout's shared invoice; its QR code is rebuilt from the current totals so it
+ * always matches every line on it.
+ */
 export async function getTaxInvoiceForSale(saleId: string): Promise<TaxInvoice | null> {
-  const { data } = await supabaseAdmin.from('TaxInvoice').select('*').eq('salesEntryId', saleId).maybeSingle();
-  return (data as TaxInvoice | null) ?? null;
+  const { data: direct } = await supabaseAdmin.from('TaxInvoice').select('*').eq('salesEntryId', saleId).maybeSingle();
+  let row = (direct as TaxInvoiceRow | null) ?? null;
+
+  if (!row) {
+    const { data: sale } = await supabaseAdmin.from('SalesEntry').select('organizationId, saleGroupId').eq('id', saleId).maybeSingle();
+    const saleGroupId = (sale as { saleGroupId?: string | null } | null)?.saleGroupId;
+    if (sale && saleGroupId) {
+      const { data: grouped, error } = await supabaseAdmin
+        .from('TaxInvoice')
+        .select('*')
+        .eq('organizationId', (sale as { organizationId: string }).organizationId)
+        .eq('saleGroupId', saleGroupId)
+        .maybeSingle();
+      if (!error) row = (grouped as TaxInvoiceRow | null) ?? null;
+    }
+  }
+  if (!row) return null;
+
+  if (row.saleGroupId && (row.itemsJson?.length ?? 0) > 1) {
+    row = { ...row, qrCodeData: await buildQrCodeDataUrl(qrPayloadFor(row)) };
+  }
+  return row;
 }

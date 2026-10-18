@@ -25,7 +25,10 @@ function isSameIdentity(a: Record<string, unknown>, b: Record<string, unknown>):
  * (.maybeSingle()/.single()) and direct-await (.then()) resolution styles,
  * matching how this app's *.server.ts modules actually call supabase-js.
  */
-export function createSupabaseMock(tables: MockTables) {
+/** Optional stored-procedure stand-ins for .rpc(name, args), keyed by function name. */
+export type MockRpcHandlers = Record<string, (args: Record<string, unknown>, tables: MockTables) => unknown>;
+
+export function createSupabaseMock(tables: MockTables, rpcHandlers: MockRpcHandlers = {}) {
   function makeBuilder(table: string) {
     let rows = [...(tables[table] ?? [])]; // same object references as tables[table]
     let mode: 'select' | 'insert' | 'update' | 'upsert' | 'delete' = 'select';
@@ -141,5 +144,12 @@ export function createSupabaseMock(tables: MockTables) {
     return builder;
   }
 
-  return { from: vi.fn((table: string) => makeBuilder(table)) };
+  return {
+    from: vi.fn((table: string) => makeBuilder(table)),
+    rpc: vi.fn(async (name: string, args: Record<string, unknown>) => {
+      const handler = rpcHandlers[name];
+      if (!handler) return { data: null, error: { message: `no mock for rpc ${name}` } };
+      return { data: handler(args, tables), error: null };
+    }),
+  };
 }
