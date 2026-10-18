@@ -19,6 +19,7 @@ import { canViewCostData } from '@/lib/cost-visibility.server';
 import { editableSaleIds } from '@/lib/sale-edit.server';
 import { getOrgCurrency } from '@/lib/currency.server';
 import { getRate } from '@/lib/exchange-rates.server';
+import { isValidClientId } from '@/lib/sync/syncable-entities';
 
 export async function POST(request: NextRequest) {
   const startTime = Date.now();
@@ -42,6 +43,7 @@ export async function POST(request: NextRequest) {
       color,
       currency,
       discountAmount: rawDiscountAmount,
+      saleGroupId,
     } = await request.json();
 
     logger.info('Sales entry attempt', { shopStockId: shopStockId || null, shopId: payloadShopId, productId: payloadProductId, quantity, userId: payload.userId, endpoint: '/api/portal/sales' });
@@ -304,6 +306,9 @@ export async function POST(request: NextRequest) {
         notes: notes || null,
         size: salesUsesVariant ? (typeof size === 'string' ? size.trim() || null : null) : null,
         color: salesUsesVariant ? (typeof color === 'string' ? color.trim() || null : null) : null,
+        // Lines of one multi-item checkout share a group id (as on Android). Only sent
+        // when valid so single-item sales behave exactly as before.
+        ...(isValidClientId(saleGroupId) ? { saleGroupId } : {}),
         createdAt: now,
         updatedAt: now,
       }])
