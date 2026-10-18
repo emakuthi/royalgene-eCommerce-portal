@@ -6,6 +6,8 @@ import { jsonResponse, optionsResponse } from '@/lib/apiResponse';
 import { hasCapability } from '@/lib/permissions.server';
 import { validateBarcodeInputs } from '@/lib/barcode.server';
 import logger from '@/lib/logger';
+import { assertFeatureEnabled } from '@/lib/entitlements/enforce.server';
+import { FeatureCode } from '@/lib/entitlements/feature-codes';
 
 async function productInOrg(productId: string, organizationId: string): Promise<boolean> {
   const { data } = await supabaseAdmin
@@ -51,6 +53,8 @@ export async function PUT(request: NextRequest, context: { params: Promise<{ id:
   }
   const { id } = await context.params;
   const organizationId = auth.organizationId;
+  const gated = await assertFeatureEnabled(organizationId, FeatureCode.BARCODE);
+  if (gated) return gated;
 
   if (!(await productInOrg(id, organizationId))) {
     return jsonResponse({ success: false, error: 'Product not found' }, 404);

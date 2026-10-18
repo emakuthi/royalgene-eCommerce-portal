@@ -9,6 +9,9 @@ import ProductHistoryModal from './product-history-modal';
 import { useBranding } from '@/lib/branding-context';
 import { useBusinessSettings } from '@/lib/use-business-settings';
 import RecipeEditor, { type IngredientOption } from '@/components/stock/RecipeEditor';
+import BarcodeEditor from '@/components/stock/BarcodeEditor';
+import { FeatureGate } from '@/components/entitlements/FeatureGate';
+import { FeatureCode } from '@/lib/entitlements/feature-codes';
 import type { Product, ShopStock } from '@/lib/types';
 type ApiShopStock = ShopStock & { Product?: Product; product?: Product; shopName?: string };
 type ViewFormType = {
@@ -199,6 +202,22 @@ export default ({
                   <Input placeholder={`Add ${option2Label.toLowerCase()} and press Enter`} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); const v = (e.target as HTMLInputElement).value.trim(); if (v) { setViewForm({ ...viewForm, colors: Array.from(new Set([...viewForm.colors, v])) }); (e.target as HTMLInputElement).value = ''; } } }} />
                 </div>
               </div>}
+
+              {prod?.id && (
+                <div className="mt-4 rounded-lg border border-gray-200 dark:border-gray-700 p-3">
+                  <p className="text-sm font-medium mb-2">Barcodes</p>
+                  <FeatureGate feature={FeatureCode.BARCODE} requiredPlanLabel="Business">
+                    <BarcodeEditor
+                      productId={prod.id}
+                      token={token}
+                      sizes={viewForm.sizes || []}
+                      colors={viewForm.colors || []}
+                      sizeLabel={option1Label || undefined}
+                      colorLabel={option2Label || undefined}
+                    />
+                  </FeatureGate>
+                </div>
+              )}
             </div>
 
             <div>

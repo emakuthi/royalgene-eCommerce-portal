@@ -22,7 +22,7 @@ export const FeatureCode = {
   STOCK_TRANSFER: 'STOCK_TRANSFER', // wired
   SALES: 'SALES', // wired
   PURCHASING: 'PURCHASING', // defined only
-  BARCODE: 'BARCODE', // defined only
+  BARCODE: 'BARCODE', // wired
   STOCK_VALUATION: 'STOCK_VALUATION', // defined only
   ADVANCED_REPORTS: 'ADVANCED_REPORTS', // defined only
   AUDIT_TRAIL: 'AUDIT_TRAIL', // wired
@@ -57,6 +57,7 @@ export const WIRED_FEATURE_CODES: readonly FeatureCodeValue[] = [
   FeatureCode.AUDIT_TRAIL,
   FeatureCode.ADVANCED_ANALYTICS,
   FeatureCode.MPESA_INTEGRATION,
+  FeatureCode.BARCODE,
 ];
 
 export const LimitCode = {

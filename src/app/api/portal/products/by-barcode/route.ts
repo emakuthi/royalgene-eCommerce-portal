@@ -4,6 +4,8 @@ import { supabaseAdmin } from '@/lib/supabase-client';
 import { jsonResponse, optionsResponse } from '@/lib/apiResponse';
 import { normalizeBarcode, resolveBarcode } from '@/lib/barcode.server';
 import logger from '@/lib/logger';
+import { assertFeatureEnabled } from '@/lib/entitlements/enforce.server';
+import { FeatureCode } from '@/lib/entitlements/feature-codes';
 
 // GET /api/portal/products/by-barcode?code=…&shopId=…
 // Resolves a scanned code to the product, this shop's stock row and (when the code
@@ -16,6 +18,8 @@ export async function GET(request: NextRequest) {
     if (!auth.organizationId) {
       return jsonResponse({ success: false, error: 'An organization context is required' }, 400);
     }
+    const gated = await assertFeatureEnabled(auth.organizationId, FeatureCode.BARCODE);
+    if (gated) return gated;
 
     const { searchParams } = new URL(request.url);
     const code = normalizeBarcode(searchParams.get('code'));
