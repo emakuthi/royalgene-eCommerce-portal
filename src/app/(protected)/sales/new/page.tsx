@@ -1,7 +1,7 @@
 'use client';
 
 import { roundQuantity } from '@/lib/business-types';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { paymentKind } from '@/lib/payment-breakdown';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
@@ -19,6 +19,8 @@ import { computePrefillForm } from '@/lib/sales-prefill';
 import type { Product } from '@/lib/types';
 import { useTheme } from '@/lib/theme-context';
 import BarcodeScanInput, { scanBeep } from '@/components/barcode-scan-input';
+import { v4 as uuidv4 } from 'uuid';
+import { Minus, Plus, X } from 'lucide-react';
 
 // ApiStock represents the shop stock row returned by /api/portal/stock
 type ApiStock = {
@@ -38,6 +40,25 @@ type RecentSale = {
   totalAmountCents?: number;
   createdAt?: string | null;
 };
+
+// One product line in a multi-item sale. Lines are recorded together under one saleGroupId.
+type CartLine = {
+  key: string;
+  shopStockId: string;
+  productId: string;
+  name: string;
+  quantity: number;
+  unitPrice: number;
+  discount: number;
+  size: string;
+  color: string;
+  /** Units available when the line was added; caps the quantity. */
+  maxQty: number;
+};
+
+function lineTotal(l: CartLine) {
+  return Math.max(0, l.unitPrice * l.quantity - l.discount);
+}
 
 function formatCurrency(amount: number, currency: string = 'KES') {
   return formatMoney(Number(amount), currency);
@@ -346,11 +367,40 @@ export default function NewSalePage() {
   // Validation errors
   const [errors, setErrors] = useState<{ unitPrice?: string; customerPhone?: string }>({});
 
-  // Size/colour cell pinned by the last scanned barcode (null for a manual or whole-product pick).
-  const [scannedVariant, setScannedVariant] = useState<{ size: string; color: string } | null>(null);
+  function isValidPhone(phone?: string) {
+    if (!phone) return true; // optional
+    // allow digits, spaces, +, -, parentheses; require at least 7 digits
+    const digits = (phone.match(/\d/g) || []).length;
+    if (digits < 7) return false;
+    const rx = /^[0-9+()\-\s]+$/;
+    return rx.test(phone);
+  }
 
-  // A scan fills the form from the shop's own stock. Scanning the same item again adds one
-  // more unit instead of re-selecting it, so a cashier can scan a basket of identical items.
+  // ── Multi-item cart ─────────────────────────────────────────────────────────
+  const [cart, setCart] = useState<CartLine[]>([]);
+  // Shared by every line of this checkout; renewed once the sale is fully recorded.
+  const saleGroupIdRef = useRef<string>(uuidv4());
+  const cartTotal = cart.reduce((sum, l) => sum + lineTotal(l), 0);
+
+  // Add a unit (or qty) of an item; the same product/variant merges into one line.
+  const addLineToCart = (line: Omit<CartLine, 'key' | 'quantity' | 'discount'>, qty: number): 'added' | 'maxed' => {
+    const existing = cart.find(l => l.shopStockId === line.shopStockId && l.size === line.size && l.color === line.color);
+    if (existing) {
+      const next = roundQuantity(existing.quantity + qty);
+      if (next > existing.maxQty) return 'maxed';
+      setCart(prev => prev.map(l => (l.key === existing.key ? { ...l, quantity: next } : l)));
+      return 'added';
+    }
+    if (qty > line.maxQty) return 'maxed';
+    setCart(prev => [...prev, { ...line, key: uuidv4(), quantity: qty, discount: 0 }]);
+    return 'added';
+  };
+
+  const updateLine = (key: string, patch: Partial<CartLine>) =>
+    setCart(prev => prev.map(l => (l.key === key ? { ...l, ...patch } : l)));
+
+  // A scan adds the item to the sale. Scanning it again adds one more unit, so a cashier can
+  // scan a basket item by item. Unknown codes offer to create the product.
   const handleScan = async (code: string) => {
     if (!currentShop?.id || !token) return;
     try {
@@ -389,35 +439,28 @@ export default function NewSalePage() {
         return;
       }
 
-      const sameItem =
-        formData.shopStockId === hit.shopStock.id &&
-        (scannedVariant?.size ?? '') === (hit.variant?.size ?? '') &&
-        (scannedVariant?.color ?? '') === (hit.variant?.color ?? '');
-
-      if (sameItem) {
-        const next = roundQuantity((parseFloat(quantityInput || '0') || 0) + 1);
-        if (next > available) {
-          scanBeep(false);
-          toast.error(`Only ${available} of ${hit.product.name} in stock`);
-          return;
-        }
-        setFormData(prev => ({ ...prev, quantity: next }));
-      } else {
-        const price = typeof hit.product.price === 'number' ? hit.product.price : 0;
-        setFormData(prev => ({
-          ...prev,
-          shopStockId: hit.shopStock!.id,
-          productId: stocks.find(st => st.id === hit.shopStock!.id)?.productId ?? prev.productId,
-          unitPrice: price,
-          quantity: 1,
-        }));
-        setScannedVariant(hit.variant ? { size: hit.variant.size, color: hit.variant.color } : null);
+      const outcome = addLineToCart(
+        {
+          shopStockId: hit.shopStock.id,
+          productId: stocks.find(st => st.id === hit.shopStock!.id)?.productId ?? '',
+          name: hit.product.name,
+          unitPrice: typeof hit.product.price === 'number' ? hit.product.price : 0,
+          size: hit.variant?.size ?? '',
+          color: hit.variant?.color ?? '',
+          maxQty: available,
+        },
+        1,
+      );
+      if (outcome === 'maxed') {
+        scanBeep(false);
+        toast.error(`Only ${available} of ${hit.product.name} in stock`);
+        return;
       }
       scanBeep(true);
       const variantLabel = hit.variant && (hit.variant.size || hit.variant.color)
         ? ` (${[hit.variant.size, hit.variant.color].filter(Boolean).join(' / ')})`
         : '';
-      toast.success(`${hit.product.name}${variantLabel}`);
+      toast.success(`${hit.product.name}${variantLabel} added`);
     } catch (err) {
       console.error('Barcode scan failed', err);
       scanBeep(false);
@@ -425,17 +468,105 @@ export default function NewSalePage() {
     }
   };
 
-  function isValidPhone(phone?: string) {
-    if (!phone) return true; // optional
-    // allow digits, spaces, +, -, parentheses; require at least 7 digits
-    const digits = (phone.match(/\d/g) || []).length;
-    if (digits < 7) return false;
-    const rx = /^[0-9+()\-\s]+$/;
-    return rx.test(phone);
-  }
+  // The line currently shown in the form (picked from the dropdown), added to the cart on demand.
+  const addFormLineToCart = () => {
+    const quantity = Math.max(0, roundQuantity(parseFloat(quantityInput || '0') || 0));
+    const unitPrice = parseFloat(unitPriceInput || '0') || 0;
+    const discount = parseFloat(discountInput || '0') || 0;
+    const stock = stocks.find(st => st.id === formData.shopStockId);
+    const product = stock?.product ?? stock?.Product;
+    if (!stock || !product) { toast.error('Please select a product from stock'); return; }
+    if (quantity <= 0) { toast.error('Quantity must be > 0'); return; }
+    if (unitPrice <= 0) { toast.error('Unit price must be greater than 0'); return; }
+    const outcome = addLineToCart(
+      { shopStockId: stock.id, productId: stock.productId, name: product.name, unitPrice, size: '', color: '', maxQty: stock.quantity },
+      quantity,
+    );
+    if (outcome === 'maxed') { toast.error(`Only ${stock.quantity} of ${product.name} in stock`); return; }
+    if (discount > 0) {
+      setCart(prev => prev.map(l => (l.shopStockId === stock.id && !l.size && !l.color ? { ...l, discount: l.discount + Math.min(discount, unitPrice * quantity) } : l)));
+    }
+    setFormData(prev => ({ ...prev, quantity: 1, discount: 0 }));
+  };
+
+  // Records every cart line one after another under the shared saleGroupId. If a line fails the
+  // lines already recorded are removed from the cart (so a retry can't double-record them) and
+  // the rest stay for another attempt.
+  const submitCart = async () => {
+    if (formData.customerPhone && !isValidPhone(formData.customerPhone)) {
+      setErrors({ customerPhone: 'Invalid phone number format' });
+      return;
+    }
+    setErrors({});
+    // Lines of the same non-variant product must fit the stock together.
+    const perStock = new Map<string, { qty: number; max: number; name: string }>();
+    for (const l of cart) {
+      if (l.size || l.color) continue;
+      const cur0 = perStock.get(l.shopStockId) ?? { qty: 0, max: l.maxQty, name: l.name };
+      perStock.set(l.shopStockId, { ...cur0, qty: cur0.qty + l.quantity });
+    }
+    for (const v of perStock.values()) {
+      if (v.qty > v.max) { toast.error(`Only ${v.max} of ${v.name} in stock`); return; }
+    }
+    if (cart.some(l => l.quantity <= 0 || l.unitPrice <= 0)) {
+      toast.error('Every item needs a quantity and a price above 0');
+      return;
+    }
+
+    setSubmitting(true);
+    const paymentMethod = formData.paymentMethod === 'mpesa' ? 'mobile_money' : formData.paymentMethod;
+    const total = cart.length;
+    const remaining = [...cart];
+    try {
+      for (const line of cart) {
+        const res = await fetch('/api/portal/sales', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({
+            shopId: currentShop?.id,
+            shopStockId: line.shopStockId,
+            productId: line.productId,
+            quantity: line.quantity,
+            ...(line.size ? { size: line.size } : {}),
+            ...(line.color ? { color: line.color } : {}),
+            unitPrice: line.unitPrice,
+            discountAmount: Math.min(line.discount, line.unitPrice * line.quantity),
+            currency: saleCurrency,
+            paymentMethod,
+            customerName: formData.customerName || null,
+            customerPhone: formData.customerPhone || null,
+            notes: formData.notes || null,
+            saleGroupId: saleGroupIdRef.current,
+          }),
+        });
+        const j = await res.json();
+        if (!j.success) {
+          setCart(remaining);
+          toast.error(`${line.name}: ${j.error || 'could not be recorded'}. ${total - remaining.length} of ${total} items were recorded; the rest are still in the cart.`);
+          return;
+        }
+        remaining.shift();
+      }
+      toast.success(total === 1 ? 'Sale recorded' : `Sale recorded (${total} items)`);
+      saleGroupIdRef.current = uuidv4();
+      setCart([]);
+      router.push('/sales');
+    } catch (err) {
+      console.error('Error recording sale', err);
+      setCart(remaining);
+      toast.error(`Error recording sale. ${total - remaining.length} of ${total} items were recorded; the rest are still in the cart.`);
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   const handleSubmit = async (e?: React.FormEvent) => {
     e?.preventDefault();
+    // A multi-item sale is recorded from the cart; the single-line form below is only used when it's empty.
+    if (!editingSaleId && cart.length > 0) {
+      await submitCart();
+      return;
+    }
     // parse latest typed values into numbers for validation/submission
     const quantity = Math.max(0, roundQuantity(parseFloat(quantityInput || '0') || 0));
     const unitPrice = parseFloat(unitPriceInput || '0') || 0;
@@ -497,7 +628,6 @@ export default function NewSalePage() {
             shopStockId: formData.shopStockId,
             productId: formData.productId,
             quantity,
-            ...(scannedVariant ? { size: scannedVariant.size || undefined, color: scannedVariant.color || undefined } : {}),
             unitPrice,
             discountAmount: Math.min(discount, unitPrice * quantity),
             currency: saleCurrency,
@@ -550,6 +680,48 @@ export default function NewSalePage() {
                 {!editingSaleId && (
                   <BarcodeScanInput onScan={handleScan} disabled={loadingStocks || submitting || !currentShop?.id} />
                 )}
+
+                {!editingSaleId && cart.length > 0 && (
+                  <div className="rounded-md border border-gray-200 dark:border-gray-700">
+                    <div className="flex items-center justify-between border-b border-gray-200 px-3 py-2 dark:border-gray-700">
+                      <p className="text-sm font-medium">Items in this sale ({cart.length})</p>
+                      <button type="button" disabled={submitting} onClick={() => setCart([])} className="text-xs text-red-600 hover:underline disabled:opacity-50">Clear all</button>
+                    </div>
+                    <ul className="divide-y divide-gray-200 dark:divide-gray-700">
+                      {cart.map((l) => (
+                        <li key={l.key} className="flex flex-wrap items-center gap-2 px-3 py-2">
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate text-sm font-medium">
+                              {l.name}{(l.size || l.color) ? ` (${[l.size, l.color].filter(Boolean).join(' / ')})` : ''}
+                            </p>
+                            <p className="text-xs text-gray-500">{l.maxQty} in stock</p>
+                          </div>
+                          <div className="flex items-center gap-1">
+                            <button type="button" aria-label="Decrease quantity" disabled={submitting || l.quantity <= 1}
+                              onClick={() => updateLine(l.key, { quantity: roundQuantity(l.quantity - 1) })}
+                              className="rounded border border-gray-300 p-1 hover:bg-gray-50 disabled:opacity-40 dark:border-gray-600 dark:hover:bg-gray-800"><Minus className="h-3.5 w-3.5" /></button>
+                            <span className="w-8 text-center text-sm tabular-nums">{l.quantity}</span>
+                            <button type="button" aria-label="Increase quantity" disabled={submitting || l.quantity + 1 > l.maxQty}
+                              onClick={() => updateLine(l.key, { quantity: roundQuantity(l.quantity + 1) })}
+                              className="rounded border border-gray-300 p-1 hover:bg-gray-50 disabled:opacity-40 dark:border-gray-600 dark:hover:bg-gray-800"><Plus className="h-3.5 w-3.5" /></button>
+                          </div>
+                          <input type="number" step="0.01" min={0} aria-label={`Unit price for ${l.name}`} disabled={submitting}
+                            value={l.unitPrice}
+                            onChange={(e) => updateLine(l.key, { unitPrice: parseFloat(e.target.value) || 0 })}
+                            className="w-24 rounded-md border border-gray-300 bg-white px-2 py-1 text-sm dark:border-gray-700 dark:bg-gray-900" />
+                          <span className="w-24 text-right text-sm font-medium tabular-nums">{formatCurrency(lineTotal(l), saleCurrency)}</span>
+                          <button type="button" aria-label={`Remove ${l.name}`} disabled={submitting}
+                            onClick={() => setCart(prev => prev.filter(x => x.key !== l.key))}
+                            className="rounded p-1 text-gray-500 hover:bg-gray-100 disabled:opacity-40 dark:hover:bg-gray-800"><X className="h-4 w-4" /></button>
+                        </li>
+                      ))}
+                    </ul>
+                    <div className="flex items-center justify-between border-t border-gray-200 px-3 py-2 dark:border-gray-700">
+                      <span className="text-sm text-gray-600 dark:text-gray-300">Sale total</span>
+                      <strong className="text-sm">{formatCurrency(cartTotal, saleCurrency)}</strong>
+                    </div>
+                  </div>
+                )}
                 <div>
                   <Label>Product (select from shop stock) *</Label>
                   <p className="text-xs text-gray-500">Showing products available in <strong>{currentShop?.name || 'current shop'}</strong></p>
@@ -574,7 +746,6 @@ export default function NewSalePage() {
                             productId: stock?.productId ?? prev.productId,
                             unitPrice: price,
                           }));
-                          setScannedVariant(null);
                         }}>
                           <option value="">Select a product from stock</option>
                           {stocks.map(s => {
@@ -660,6 +831,8 @@ export default function NewSalePage() {
                       <select
                         value={saleCurrency}
                         onChange={(e) => changeCurrency(e.target.value)}
+                        disabled={cart.length > 0}
+                        title={cart.length > 0 ? 'Clear the cart to change currency' : undefined}
                         className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 py-2 text-sm"
                       >
                         {activeCurrencies.map((c) => <option key={c} value={c}>{c}{c === cur ? ' (base)' : ''}</option>)}
@@ -722,8 +895,21 @@ export default function NewSalePage() {
                   <Input value={formData.notes} onChange={(e) => setFormData({...formData, notes: e.target.value})} />
                 </div>
 
+                {!editingSaleId && (
+                  <div>
+                    <Button type="button" variant="outline" onClick={addFormLineToCart} disabled={submitting || !formData.shopStockId}>
+                      Add item to sale
+                    </Button>
+                    {cart.length > 0 && (
+                      <p className="mt-1 text-xs text-gray-500">
+                        Only the items in the list above are recorded. The product selected here is added when you press &ldquo;Add item to sale&rdquo;.
+                      </p>
+                    )}
+                  </div>
+                )}
+
                 <div>
-                  <p className="text-sm">Total: <strong>{formatCurrency(totalAmount, saleCurrency)}</strong>
+                  <p className="text-sm">{!editingSaleId && cart.length > 0 ? 'Item above' : 'Total'}: <strong>{formatCurrency(totalAmount, saleCurrency)}</strong>
                     {saleCurrency !== cur && baseRate > 0 && (
                       <span className="text-muted-foreground"> · ≈ {formatCurrency(totalAmount * baseRate, cur)}</span>
                     )}
@@ -731,7 +917,7 @@ export default function NewSalePage() {
                 </div>
 
                 <div className="flex gap-3 pt-4">
-                  <Button type="submit" disabled={submitting || (!!editingSaleId && !canEditSale)} className="flex-1 bg-[hsl(var(--primary))] text-white hover:opacity-90">{submitting ? (editingSaleId ? 'Saving...' : 'Recording sale...') : (editingSaleId ? 'Save changes' : 'Record Sale')}</Button>
+                  <Button type="submit" disabled={submitting || (!!editingSaleId && !canEditSale)} className="flex-1 bg-[hsl(var(--primary))] text-white hover:opacity-90">{submitting ? (editingSaleId ? 'Saving...' : 'Recording sale...') : (editingSaleId ? 'Save changes' : (cart.length > 1 ? `Record Sale (${cart.length} items)` : 'Record Sale'))}</Button>
                   <Button variant="outline" type="button" onClick={() => router.push('/sales')}>{editingSaleId ? 'Cancel' : 'Back'}</Button>
                 </div>
               </form>
