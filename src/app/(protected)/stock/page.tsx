@@ -29,6 +29,8 @@ import * as stockApi from '@/lib/stockApi';
 import PortalHeader from '@/components/portal/PortalHeader';
 import { useTheme } from '@/lib/theme-context';
 import BarcodeScanInput, { scanBeep } from '@/components/barcode-scan-input';
+import { FeatureGate } from '@/components/entitlements/FeatureGate';
+import { FeatureCode } from '@/lib/entitlements/feature-codes';
 import Dialog from '@mui/material/Dialog';
 import DialogTitle from '@mui/material/DialogTitle';
 import DialogContent from '@mui/material/DialogContent';
@@ -679,9 +681,11 @@ function StockManagementContent() {
 
             <div className="flex flex-wrap items-end gap-3">
               {currentShop?.id && (
-                <div className="w-full sm:w-72">
-                  <BarcodeScanInput label="Scan to receive" placeholder="Scan a barcode / SKU" onScan={handleScan} autoFocus={false} />
-                </div>
+                <FeatureGate feature={FeatureCode.BARCODE} mode="hide">
+                  <div className="w-full sm:w-72">
+                    <BarcodeScanInput label="Scan to receive" placeholder="Scan a barcode / SKU" onScan={handleScan} autoFocus={false} />
+                  </div>
+                </FeatureGate>
               )}
               <div className="relative">
                 <Search className={`absolute left-3 top-3 h-4 w-4 ${muted}`} />

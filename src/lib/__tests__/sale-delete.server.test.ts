@@ -15,6 +15,8 @@ vi.mock('../variant-stock.server', () => ({
 let salesEntry: Record<string, Record<string, unknown>> = {};
 let shopStock: Record<string, Record<string, unknown>> = {};
 let taxInvoiceSalesEntryIds: Set<string> = new Set();
+// Lines (beyond the first) covered by a multi-item checkout's shared invoice.
+let taxInvoiceGroupLineIds: Set<string> = new Set();
 const stockTransactions: Array<Record<string, unknown>> = [];
 
 function chainable(table: string) {
@@ -25,6 +27,7 @@ function chainable(table: string) {
   q.select = () => q;
   q.eq = (col: string, val: unknown) => { filters[col] = val; return q; };
   q.in = (col: string, vals: unknown[]) => { inFilters[col] = vals; return q; };
+  q.overlaps = (col: string, vals: unknown[]) => { inFilters[`overlaps:${col}`] = vals; return q; };
   q.update = (patch: Record<string, unknown>) => {
     const applyObj = { ...q };
     applyObj.eq = (col: string, val: unknown) => {
@@ -78,6 +81,11 @@ function chainable(table: string) {
       if (filters.organizationId !== undefined) rows = rows.filter((r) => r.organizationId === filters.organizationId);
       return Promise.resolve({ data: rows, error: null }).then(resolve);
     }
+    if (table === 'TaxInvoice' && inFilters['overlaps:salesEntryIds']) {
+      const ids = inFilters['overlaps:salesEntryIds'] as string[];
+      const hits = ids.filter((id) => taxInvoiceGroupLineIds.has(id));
+      return Promise.resolve({ data: hits.length ? [{ salesEntryIds: hits }] : [], error: null }).then(resolve);
+    }
     if (table === 'TaxInvoice') {
       const ids = (inFilters.salesEntryId ?? []) as string[];
       return Promise.resolve({ data: ids.filter((id) => taxInvoiceSalesEntryIds.has(id)).map((id) => ({ salesEntryId: id })), error: null }).then(resolve);
@@ -108,6 +116,7 @@ describe('deleteSalesInOrg', () => {
     salesEntry = {};
     shopStock = { 's1': { id: 's1', shopId: 'shop-1', productId: 'p1', quantity: 5 } };
     taxInvoiceSalesEntryIds = new Set();
+    taxInvoiceGroupLineIds = new Set();
     stockTransactions.length = 0;
     hasVariantStockMock.mockReset().mockResolvedValue(false);
     incrementCellMock.mockClear();
@@ -152,6 +161,16 @@ describe('deleteSalesInOrg', () => {
     expect(outcome.failed).toHaveLength(1);
     expect(outcome.failed[0].error).toMatch(/tax invoice/i);
     expect(salesEntry['sale-5'].deletedAt).toBeNull(); // untouched
+  });
+
+  it('blocks deleting a later line of a checkout whose shared invoice is on file', async () => {
+    salesEntry['line-2'] = makeSale('line-2');
+    taxInvoiceGroupLineIds.add('line-2');
+    const outcome = await deleteSalesInOrg('org-1', ['line-2'], 'pu-1');
+
+    expect(outcome.deleted).toEqual([]);
+    expect(outcome.failed[0].error).toMatch(/tax invoice/i);
+    expect(salesEntry['line-2'].deletedAt).toBeNull();
   });
 });
 

@@ -203,6 +203,32 @@ Get detailed product information.
 }
 ```
 
+#### GET /shops/{shopId}/products/by-barcode?code={code}
+Resolve a scanned barcode for this shop. Registered barcodes (`ProductBarcode`) are matched first, then the product SKU, both case-insensitively. Requires the `BARCODE` plan feature.
+
+**Response (200), match:**
+```json
+{
+  "success": true,
+  "data": {
+    "found": true,
+    "source": "barcode",
+    "code": "6001234567890",
+    "product": { "id": "prod-id", "name": "Red Dress", "sku": "DRS-001", "price": 2500, "category": "dresses", "images": [] },
+    "shopStock": { "id": "stock-id", "quantity": 12 },
+    "variant": { "size": "M", "color": "Red", "quantity": 3 }
+  }
+}
+```
+- `shopStock` is `null` when this shop doesn't stock the product.
+- `variant` is `null` for a code that covers the whole product.
+
+**Response (200), no match:** `{ "success": true, "data": { "found": false, "code": "..." } }`
+
+**Errors:**
+- `400`: `code` missing
+- `403` `FEATURE_NOT_AVAILABLE`: the plan doesn't include barcode scanning
+
 ### 4. Sales Recording
 
 #### POST /shops/{shopId}/sales

@@ -19,6 +19,8 @@ import { computePrefillForm } from '@/lib/sales-prefill';
 import type { Product } from '@/lib/types';
 import { useTheme } from '@/lib/theme-context';
 import BarcodeScanInput, { scanBeep } from '@/components/barcode-scan-input';
+import { FeatureGate } from '@/components/entitlements/FeatureGate';
+import { FeatureCode } from '@/lib/entitlements/feature-codes';
 import { v4 as uuidv4 } from 'uuid';
 import { Minus, Plus, X } from 'lucide-react';
 
@@ -678,7 +680,9 @@ export default function NewSalePage() {
               )}
               <form onSubmit={handleSubmit} className="space-y-4">
                 {!editingSaleId && (
-                  <BarcodeScanInput onScan={handleScan} disabled={loadingStocks || submitting || !currentShop?.id} />
+                  <FeatureGate feature={FeatureCode.BARCODE} requiredPlanLabel="Business">
+                    <BarcodeScanInput onScan={handleScan} disabled={loadingStocks || submitting || !currentShop?.id} />
+                  </FeatureGate>
                 )}
 
                 {!editingSaleId && cart.length > 0 && (

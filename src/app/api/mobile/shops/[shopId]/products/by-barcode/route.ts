@@ -3,6 +3,8 @@ import { jsonResponse } from '@/lib/apiResponse';
 import { verifyMobileShopAccess } from '@/lib/mobile-shop-auth';
 import { normalizeBarcode, resolveBarcode } from '@/lib/barcode.server';
 import logger from '@/lib/logger';
+import { assertFeatureEnabled } from '@/lib/entitlements/enforce.server';
+import { FeatureCode } from '@/lib/entitlements/feature-codes';
 
 /**
  * GET /api/mobile/shops/[shopId]/products/by-barcode?code=…
@@ -22,6 +24,8 @@ export async function GET(
     if (!organizationId) {
       return jsonResponse({ success: false, error: 'An organization context is required', code: 'NO_ORGANIZATION' }, 400);
     }
+    const gated = await assertFeatureEnabled(organizationId, FeatureCode.BARCODE);
+    if (gated) return gated;
 
     const code = normalizeBarcode(new URL(request.url).searchParams.get('code'));
     if (!code) {

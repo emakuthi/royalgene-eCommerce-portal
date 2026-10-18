@@ -66,6 +66,19 @@ export async function deleteSalesInOrg(
   // a compliance record; the caller sees it as a normal failed id.
   const { data: invoiced } = await supabaseAdmin.from('TaxInvoice').select('salesEntryId').in('salesEntryId', ids);
   const invoicedIds = new Set(((invoiced ?? []) as Array<{ salesEntryId: string }>).map((r) => r.salesEntryId));
+  // A multi-item checkout shares one invoice, and only its first line is in
+  // salesEntryId — the rest are in salesEntryIds. Checked separately, and on top
+  // of the query above, so a database without the per-checkout columns yet can
+  // only make this lookup come back empty, never unblock an invoiced first line.
+  const { data: groupInvoiced, error: groupInvoicedError } = await supabaseAdmin
+    .from('TaxInvoice')
+    .select('salesEntryIds')
+    .overlaps('salesEntryIds', ids);
+  if (!groupInvoicedError) {
+    for (const row of (groupInvoiced ?? []) as Array<{ salesEntryIds?: string[] | null }>) {
+      for (const lineId of row.salesEntryIds ?? []) invoicedIds.add(lineId);
+    }
+  }
 
   for (const id of ids) {
     const sale = byId.get(id);

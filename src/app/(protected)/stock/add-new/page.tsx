@@ -28,6 +28,8 @@ import {
   Info,
 } from 'lucide-react';
 import PortalHeader from '@/components/portal/PortalHeader';
+import { FeatureGate } from '@/components/entitlements/FeatureGate';
+import { FeatureCode } from '@/lib/entitlements/feature-codes';
 import { ImageUpload } from '@/components/image-upload';
 import type { Shop } from '@/lib/types';
 import { useBusinessSettings } from '@/lib/use-business-settings';
@@ -459,6 +461,7 @@ export default function AddNewProductPage() {
                 </div>
 
                 {/* Barcode */}
+                <FeatureGate feature={FeatureCode.BARCODE} mode="hide">
                 <div className="space-y-1.5">
                   <Label htmlFor="barcode">Barcode</Label>
                   <Input
@@ -469,6 +472,7 @@ export default function AddNewProductPage() {
                     helperText="Optional. Lets you scan this product when selling or receiving stock. Scanning also works with the SKU above."
                   />
                 </div>
+                </FeatureGate>
 
                 {/* Description */}
                 <div className="space-y-1.5">

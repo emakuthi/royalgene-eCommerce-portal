@@ -146,6 +146,19 @@ export interface CreateSalesReceiptInput {
   totalAmountMajor: number;
 }
 
+function salesItemLine(input: CreateSalesReceiptInput) {
+  return {
+    Amount: input.totalAmountMajor,
+    Description: input.description,
+    DetailType: 'SalesItemLineDetail',
+    SalesItemLineDetail: {
+      ItemRef: { value: input.itemId },
+      Qty: input.quantity,
+      UnitPrice: input.unitPriceMajor,
+    },
+  };
+}
+
 export async function createSalesReceipt(
   realmId: string,
   accessToken: string,
@@ -153,19 +166,52 @@ export async function createSalesReceipt(
 ): Promise<{ ok: true; salesReceiptId: string } | { ok: false; error: string }> {
   const result = await apiFetch<{ SalesReceipt: { Id: string } }>(realmId, accessToken, '/salesreceipt', {
     method: 'POST',
-    body: JSON.stringify({
-      Line: [{
-        Amount: input.totalAmountMajor,
-        Description: input.description,
-        DetailType: 'SalesItemLineDetail',
-        SalesItemLineDetail: {
-          ItemRef: { value: input.itemId },
-          Qty: input.quantity,
-          UnitPrice: input.unitPriceMajor,
-        },
-      }],
-    }),
+    body: JSON.stringify({ Line: [salesItemLine(input)] }),
   });
   if (!result.ok) return result;
   return { ok: true, salesReceiptId: result.data.SalesReceipt.Id };
+}
+
+interface QuickBooksSalesReceipt {
+  Id: string;
+  SyncToken: string;
+  Line?: Array<{ DetailType?: string } & Record<string, unknown>>;
+}
+
+/**
+ * Adds one line to an existing SalesReceipt (the receipt for a multi-item checkout).
+ * QuickBooks replaces the whole Line list on update and rejects a stale SyncToken,
+ * so this reads the receipt first and retries once if another line got there first.
+ */
+export async function addLineToSalesReceipt(
+  realmId: string,
+  accessToken: string,
+  salesReceiptId: string,
+  input: CreateSalesReceiptInput,
+): Promise<{ ok: true; salesReceiptId: string } | { ok: false; error: string }> {
+  let lastError = 'QuickBooks update failed';
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const current = await apiFetch<{ SalesReceipt: QuickBooksSalesReceipt }>(
+      realmId,
+      accessToken,
+      `/salesreceipt/${encodeURIComponent(salesReceiptId)}`,
+    );
+    if (!current.ok) return current;
+    const receipt = current.data.SalesReceipt;
+    // The subtotal line is computed by QuickBooks; sending it back is rejected.
+    const itemLines = (receipt.Line ?? []).filter((l) => l.DetailType !== 'SubTotalLineDetail');
+
+    const update = await apiFetch<{ SalesReceipt: { Id: string } }>(realmId, accessToken, '/salesreceipt', {
+      method: 'POST',
+      body: JSON.stringify({
+        Id: receipt.Id,
+        SyncToken: receipt.SyncToken,
+        sparse: true,
+        Line: [...itemLines, salesItemLine(input)],
+      }),
+    });
+    if (update.ok) return { ok: true, salesReceiptId: update.data.SalesReceipt.Id };
+    lastError = update.error;
+  }
+  return { ok: false, error: lastError };
 }

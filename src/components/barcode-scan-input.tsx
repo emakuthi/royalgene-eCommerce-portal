@@ -5,9 +5,10 @@
 //  - Handheld USB / Bluetooth scanners act as a keyboard: they "type" the code and press
 //    Enter. This input keeps focus, takes that Enter as a scan, clears itself and refocuses
 //    so the next scan lands straight away.
-//  - Phones/tablets: when the browser supports the BarcodeDetector API (Chrome/Edge/Android)
-//    a "Camera" button appears and feeds the same onScan callback. Where it isn't supported
-//    (e.g. iOS Safari) the button is simply hidden and the typed/wedge path still works.
+//  - Phones/tablets/laptops with a camera: a "Camera" button feeds the same onScan callback.
+//    It uses the browser's built-in BarcodeDetector where there is one (Chrome on Android,
+//    macOS) and otherwise loads ZXing on demand (iOS Safari, Firefox, Chrome on Windows), so
+//    browsers that never need it don't download it.
 
 import { useCallback, useEffect, useImperativeHandle, useRef, useState, forwardRef } from 'react';
 import { Camera, ScanLine, X } from 'lucide-react';
@@ -68,7 +69,7 @@ const BarcodeScanInput = forwardRef<BarcodeScanInputHandle, Props>(function Barc
   useImperativeHandle(ref, () => ({ focus: () => inputRef.current?.focus() }), []);
 
   useEffect(() => {
-    setCameraSupported(Boolean(getDetectorCtor() && navigator.mediaDevices?.getUserMedia));
+    setCameraSupported(Boolean(navigator.mediaDevices?.getUserMedia));
   }, []);
 
   useEffect(() => {
@@ -168,11 +169,44 @@ function CameraScanner({ onCode, onClose }: { onCode: (code: string) => void; on
     let stopped = false;
     let stream: MediaStream | null = null;
     let timer: ReturnType<typeof setInterval> | null = null;
+    let zxingControls: { stop: () => void } | null = null;
+
+    const found = (code: string) => {
+      if (!code || stopped) return;
+      stopped = true;
+      onCodeRef.current(code);
+    };
 
     (async () => {
       const Ctor = getDetectorCtor();
       if (!Ctor) {
-        setError('This browser cannot scan with the camera. Use a handheld scanner or type the code.');
+        // No native detector (iOS Safari, Firefox, Chrome on Windows): decode with ZXing.
+        try {
+          const [{ BrowserMultiFormatReader }, { BarcodeFormat, DecodeHintType }] = await Promise.all([
+            import('@zxing/browser'),
+            import('@zxing/library'),
+          ]);
+          if (stopped) return;
+          const video = videoRef.current;
+          if (!video) return;
+          const hints = new Map();
+          hints.set(DecodeHintType.POSSIBLE_FORMATS, [
+            BarcodeFormat.EAN_13, BarcodeFormat.EAN_8, BarcodeFormat.UPC_A, BarcodeFormat.UPC_E,
+            BarcodeFormat.CODE_128, BarcodeFormat.CODE_39, BarcodeFormat.ITF, BarcodeFormat.QR_CODE,
+          ]);
+          const reader = new BrowserMultiFormatReader(hints);
+          const controls = await reader.decodeFromConstraints(
+            { video: { facingMode: { ideal: 'environment' } }, audio: false },
+            video,
+            (result) => {
+              if (result) found(result.getText());
+            },
+          );
+          if (stopped) controls.stop();
+          else zxingControls = controls;
+        } catch {
+          setError('Could not open the camera. Check that camera access is allowed for this site.');
+        }
         return;
       }
       try {
@@ -192,12 +226,9 @@ function CameraScanner({ onCode, onClose }: { onCode: (code: string) => void; on
           if (detecting || stopped || video.readyState < 2) return;
           detecting = true;
           try {
-            const found = await detector.detect(video);
-            const code = found[0]?.rawValue;
-            if (code && !stopped) {
-              stopped = true;
-              onCodeRef.current(code);
-            }
+            const codes = await detector.detect(video);
+            const code = codes[0]?.rawValue;
+            if (code) found(code);
           } catch {
             /* a failed frame is fine; try the next one */
           } finally {
@@ -213,6 +244,7 @@ function CameraScanner({ onCode, onClose }: { onCode: (code: string) => void; on
       stopped = true;
       if (timer) clearInterval(timer);
       stream?.getTracks().forEach((t) => t.stop());
+      zxingControls?.stop();
     };
   }, []);
 
