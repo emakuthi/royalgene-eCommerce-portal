@@ -49,6 +49,8 @@
     "@radix-ui/react-tabs": "^1.1.13",
     "@supabase/supabase-js": "^2.89.0",
     "@testing-library/react": "^16.3.2",
+    "@zxing/browser": "^0.1.5",
+    "@zxing/library": "^0.21.3",
     "bcryptjs": "^3.0.3",
     "class-variance-authority": "^0.7.1",
     "client-only": "^0.0.1",
