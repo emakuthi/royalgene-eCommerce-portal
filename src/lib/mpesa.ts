@@ -326,11 +326,15 @@ function sanitizeMpesaDescription(input?: string): string {
  * (a future checkout flow) decide how to handle that (e.g. hide M-Pesa as a
  * payment option).
  */
-export async function getMpesaClientForOrganization(organizationId: string): Promise<MpesaClient | null> {
+export async function getMpesaClientForOrganization(organizationId: string, callbackUrl?: string): Promise<MpesaClient | null> {
   const config = await getMpesaConfig(organizationId);
   if (!config) return null;
-  return new MpesaClient(config);
+  // Shop-sale prompts report back to our own per-payment callback URL rather
+  // than the one saved with the keys.
+  return new MpesaClient(callbackUrl ? { ...config, callbackUrl } : config);
 }
+
+export type { MpesaClient };
 
 export type { MpesaConfig, StkPushRequest, StkPushResponse, MpesaAuthResponse };
 

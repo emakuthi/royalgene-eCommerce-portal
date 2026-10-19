@@ -4,6 +4,7 @@ import { jsonResponse, optionsResponse } from '@/lib/apiResponse';
 import { assertFeatureEnabled } from '@/lib/entitlements/enforce.server';
 import { FeatureCode } from '@/lib/entitlements/feature-codes';
 import { getMpesaConfigSummary, removeMpesaConfig, setMpesaConfig } from '@/lib/integrations/tenant-integration-config.server';
+import { ROOT_DOMAIN } from '@/lib/tenant';
 
 // GET /api/portal/integrations/mpesa — masked config summary, any authenticated org member.
 export async function GET(request: NextRequest) {
@@ -31,10 +32,12 @@ export async function POST(request: NextRequest) {
   if (featureResponse) return featureResponse;
 
   const body = await request.json();
-  const { consumerKey, consumerSecret, businessShortCode, passkey, environment, callbackUrl } = body || {};
+  const { consumerKey, consumerSecret, businessShortCode, passkey, environment } = body || {};
+  // Shop-sale prompts always report to our own per-payment URL (mpesa-payments.server.ts); this is only a default.
+  const callbackUrl = body?.callbackUrl || `https://${ROOT_DOMAIN}/api/webhooks/mpesa`;
 
-  if (!consumerKey || !consumerSecret || !businessShortCode || !passkey || !callbackUrl) {
-    return jsonResponse({ success: false, error: 'consumerKey, consumerSecret, businessShortCode, passkey, and callbackUrl are required' }, 400);
+  if (!consumerKey || !consumerSecret || !businessShortCode || !passkey) {
+    return jsonResponse({ success: false, error: 'consumerKey, consumerSecret, businessShortCode and passkey are required' }, 400);
   }
   if (environment !== 'sandbox' && environment !== 'production') {
     return jsonResponse({ success: false, error: "environment must be 'sandbox' or 'production'" }, 400);

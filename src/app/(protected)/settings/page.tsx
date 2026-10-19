@@ -1505,7 +1505,7 @@ export default function PortalSettingsPage() {
                         <Input type="password" value={mpesaForm.passkey} onChange={(e) => setMpesaForm((f) => ({ ...f, passkey: e.target.value }))} required />
                       </div>
                     </div>
-                    <div className="grid grid-cols-2 gap-3">
+                    <div>
                       <div>
                         <Label>Environment *</Label>
                         <select
@@ -1517,10 +1517,7 @@ export default function PortalSettingsPage() {
                           <option value="production">Production</option>
                         </select>
                       </div>
-                      <div>
-                        <Label>Callback URL *</Label>
-                        <Input value={mpesaForm.callbackUrl} onChange={(e) => setMpesaForm((f) => ({ ...f, callbackUrl: e.target.value }))} placeholder="https://yourshop.example.com/api/mpesa/callback" required />
-                      </div>
+                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Use Production with your live Daraja keys. Payment prompts sent from the till report back to RoyalTrack automatically.</p>
                     </div>
                     <Button type="submit" disabled={mpesaBusy}>{mpesaBusy ? 'Saving…' : 'Save M-Pesa Credentials'}</Button>
                   </form>
