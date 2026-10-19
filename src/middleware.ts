@@ -39,6 +39,8 @@ const TENANT_OPTIONAL_PATHS = [
   '/tenant-suspended',
   '/api/health',
   '/api/webhooks/paystack',
+  // Safaricom's STK push results; the per-payment token in the path finds the workspace.
+  '/api/webhooks/mpesa',
   '/api/plans',
   '/pricing',
   // App-update feed and its CI publish endpoint are global — one APK build
