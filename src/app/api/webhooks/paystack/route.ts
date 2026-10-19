@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server';
 import { jsonResponse } from '@/lib/apiResponse';
-import { verifyWebhookSignature } from '@/lib/paystack.server';
+import { planCodeOf, verifyWebhookSignature } from '@/lib/paystack.server';
 import { forwardWebhook, relayTargetFor } from '@/lib/paystack-relay.server';
 import { getPlanById, getPlanByPaystackCode } from '@/lib/billing-plans.server';
 import { supabaseAdmin } from '@/lib/supabase-client';
@@ -72,6 +72,7 @@ export async function POST(request: NextRequest) {
           reference,
           paystackCustomerCode: customer?.customer_code ?? null,
           paystackSubscriptionCode: typeof data.subscription_code === 'string' ? data.subscription_code : null,
+          paystackPlanCode: planCodeOf(data.plan),
         });
       } catch (err) {
         logger.error('[paystack webhook] failed to apply subscription', { error: err instanceof Error ? err.message : String(err), reference });
@@ -81,6 +82,12 @@ export async function POST(request: NextRequest) {
     } else {
       logger.warn('[paystack webhook] charge.success with unknown planId', { planId, reference });
     }
+  }
+
+  // The subscription code (needed to stop auto-renew on cancel) only arrives
+  // on subscription.create, not on the charge itself.
+  if (eventType === 'subscription.create' && organizationId && typeof data.subscription_code === 'string') {
+    await supabaseAdmin.from('Organization').update({ paystackSubscriptionCode: data.subscription_code }).eq('id', organizationId);
   }
 
   return jsonResponse({ success: true });

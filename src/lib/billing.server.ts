@@ -47,6 +47,8 @@ export interface ApplySuccessfulSubscriptionInput {
   reference: string;
   paystackCustomerCode?: string | null;
   paystackSubscriptionCode?: string | null;
+  /** The Paystack plan the charge was made under; null for a one-off M-Pesa payment, which doesn't renew on its own. */
+  paystackPlanCode?: string | null;
 }
 
 /**
@@ -56,8 +58,6 @@ export interface ApplySuccessfulSubscriptionInput {
  */
 export async function applySuccessfulSubscription(input: ApplySuccessfulSubscriptionInput): Promise<void> {
   if (await wasReferenceProcessed(input.reference)) return;
-
-  const planCode = input.interval === 'annually' ? input.plan.paystackAnnualPlanCode : input.plan.paystackMonthlyPlanCode;
 
   // Each payment (first or renewal) covers one more period, counted from the
   // end of the current one so paying early never loses days.
@@ -70,7 +70,8 @@ export async function applySuccessfulSubscription(input: ApplySuccessfulSubscrip
     // Paths that don't know a code (verify, the renewal check) keep the saved one.
     ...(input.paystackCustomerCode ? { paystackCustomerCode: input.paystackCustomerCode } : {}),
     ...(input.paystackSubscriptionCode ? { paystackSubscriptionCode: input.paystackSubscriptionCode } : {}),
-    paystackPlanCode: planCode ?? null,
+    // Set only while a card subscription renews by itself; M-Pesa payers pay each period.
+    paystackPlanCode: input.paystackPlanCode ?? null,
     updatedAt: new Date().toISOString(),
   };
   let { error } = await supabaseAdmin.from('Organization').update({ ...orgPatch, paidThrough }).eq('id', input.organizationId);

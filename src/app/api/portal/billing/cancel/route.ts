@@ -4,6 +4,8 @@ import { jsonResponse, optionsResponse } from '@/lib/apiResponse';
 import { getOrganizationById } from '@/lib/organizations.server';
 import { cancelSubscription } from '@/lib/entitlements/subscription-status.server';
 import { getBillingProvider } from '@/lib/billing/get-billing-provider';
+import { fetchCustomerId, listCustomerSubscriptions } from '@/lib/paystack.server';
+import { supabaseAdmin } from '@/lib/supabase-client';
 import logger from '@/lib/logger';
 
 // POST /api/portal/billing/cancel — org admin cancels their own subscription.
@@ -20,16 +22,35 @@ export async function POST(request: NextRequest) {
   const organization = await getOrganizationById(auth.organizationId);
   if (!organization) return jsonResponse({ success: false, error: 'Organization not found' }, 404);
 
-  if (organization.paystackSubscriptionCode) {
-    const provider = getBillingProvider();
-    const result = await provider.cancelSubscription({ subscriptionCode: organization.paystackSubscriptionCode });
+  const provider = getBillingProvider();
+  // The subscription code arrives only on Paystack's subscription.create
+  // webhook; if that was missed, find the customer's live subscriptions so
+  // cancelling really stops the card being charged.
+  const codes = organization.paystackSubscriptionCode
+    ? [organization.paystackSubscriptionCode]
+    : await renewingSubscriptionCodes(organization.paystackCustomerCode);
+  for (const subscriptionCode of codes) {
+    const result = await provider.cancelSubscription({ subscriptionCode });
     if (!result.ok) {
       logger.warn('[billing] provider cancellation failed, proceeding with local cancel anyway', { error: result.error, organizationId: auth.organizationId });
     }
   }
+  await supabaseAdmin
+    .from('Organization')
+    .update({ paystackSubscriptionCode: null, paystackPlanCode: null })
+    .eq('id', auth.organizationId);
 
   const subscription = await cancelSubscription(auth.organizationId, auth.userId);
   return jsonResponse({ success: true, data: subscription });
+}
+
+async function renewingSubscriptionCodes(customerCode: string | null | undefined): Promise<string[]> {
+  if (!customerCode) return [];
+  const customerId = await fetchCustomerId(customerCode);
+  if (customerId === null) return [];
+  const result = await listCustomerSubscriptions(customerId);
+  if (!result.ok) return [];
+  return result.data.filter((s) => s.status === 'active' || s.status === 'attention').map((s) => s.subscription_code);
 }
 
 export function OPTIONS() {

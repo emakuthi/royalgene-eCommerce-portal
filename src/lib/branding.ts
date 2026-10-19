@@ -23,6 +23,8 @@ export interface TenantBranding {
   option2Label: string;
   /** Set while the workspace is read-only (trial ended / plan lapsed); null = full use. */
   readOnly: { reason: string; message: string } | null;
+  /** When an M-Pesa-paid plan runs out within a few days (it doesn't renew by itself); null otherwise. */
+  renewalDueAt: string | null;
 }
 
 export const BRANDING_DEFAULTS: TenantBranding = {
@@ -36,6 +38,7 @@ export const BRANDING_DEFAULTS: TenantBranding = {
   option1Label: 'Size',
   option2Label: 'Colour',
   readOnly: null,
+  renewalDueAt: null,
 };
 
 /** <link rel="icon"> hrefs shipped by default, restored when a tenant clears its custom favicon. */

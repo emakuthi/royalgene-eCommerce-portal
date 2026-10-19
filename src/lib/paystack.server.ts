@@ -66,6 +66,8 @@ export interface InitializeTransactionInput {
   planCode?: string | null;
   callbackUrl: string;
   metadata?: Record<string, unknown>;
+  /** Limit the checkout page to these Paystack channels, e.g. ['mobile_money'] for M-Pesa only. */
+  channels?: string[];
 }
 
 export interface InitializeTransactionResult {
@@ -86,6 +88,7 @@ export async function initializeTransaction(
       plan: input.planCode || undefined,
       callback_url: input.callbackUrl,
       metadata: input.metadata || {},
+      channels: input.channels,
     }),
   });
   if (!result.ok) return result;
@@ -105,9 +108,21 @@ export interface PaystackTransactionData {
   amount: number;
   currency: string;
   customer: { email: string; customer_code?: string };
-  plan?: { plan_code?: string } | null;
+  /** A plan code string on /transaction/verify, an object ({} when none) on webhooks and lists. */
+  plan?: string | { plan_code?: string } | null;
   metadata?: Record<string, unknown>;
   subscription_code?: string;
+}
+
+/**
+ * The Paystack plan a charge was made under, or null for a one-off payment
+ * (M-Pesa, which Paystack can't charge again on its own). Paystack sends it as
+ * a code string on some endpoints and as an object on others.
+ */
+export function planCodeOf(plan: unknown): string | null {
+  if (typeof plan === 'string') return plan.startsWith('PLN_') ? plan : null;
+  const code = (plan as { plan_code?: unknown } | null | undefined)?.plan_code;
+  return typeof code === 'string' && code ? code : null;
 }
 
 export async function verifyTransaction(reference: string): Promise<{ ok: true; data: PaystackTransactionData } | { ok: false; error: string }> {
@@ -176,6 +191,21 @@ export async function listSuccessfulTransactions(
 ): Promise<{ ok: true; data: PaystackListedTransaction[] } | { ok: false; error: string }> {
   const query = new URLSearchParams({ customer: String(customerId), status: 'success', from: fromIso, perPage: '50' });
   const result = await paystackFetch<PaystackListedTransaction[]>(`/transaction?${query}`, { method: 'GET' });
+  if (!result.ok) return result;
+  return { ok: true, data: Array.isArray(result.data) ? result.data : [] };
+}
+
+export interface PaystackListedSubscription {
+  subscription_code: string;
+  email_token: string;
+  status: string; // 'active' | 'non-renewing' | 'attention' | 'completed' | 'cancelled'
+}
+
+/** A customer's subscriptions — used to stop auto-renew when we never got the subscription code. */
+export async function listCustomerSubscriptions(
+  customerId: number,
+): Promise<{ ok: true; data: PaystackListedSubscription[] } | { ok: false; error: string }> {
+  const result = await paystackFetch<PaystackListedSubscription[]>(`/subscription?customer=${customerId}&perPage=50`, { method: 'GET' });
   if (!result.ok) return result;
   return { ok: true, data: Array.isArray(result.data) ? result.data : [] };
 }

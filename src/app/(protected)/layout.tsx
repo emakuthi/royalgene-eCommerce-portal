@@ -405,6 +405,18 @@ function ReadOnlyBanner() {
   );
 }
 
+function RenewalDueBanner() {
+  const { branding } = useBranding();
+  if (branding.readOnly || !branding.renewalDueAt) return null;
+  const date = new Date(branding.renewalDueAt).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
+  return (
+    <div role="status" className="flex flex-wrap items-center justify-between gap-2 border-b border-sky-300 bg-sky-50 px-4 py-2 text-sm text-sky-900 dark:border-sky-700 dark:bg-sky-950 dark:text-sky-200">
+      <span>Your plan is paid until {date}. Pay again with M-Pesa to keep full access.</span>
+      <Link href="/settings?tab=billing" className="font-semibold underline">Pay now</Link>
+    </div>
+  );
+}
+
 export default function ProtectedLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const { token, user } = useHydratedAuth();
@@ -636,6 +648,7 @@ export default function ProtectedLayout({ children }: { children: React.ReactNod
           <main className="flex-1 w-full pl-0 md:ml-72 min-h-0">
             <div className="min-h-0 h-full overflow-y-auto">
               <ReadOnlyBanner />
+              <RenewalDueBanner />
               {children}
             </div>
           </main>

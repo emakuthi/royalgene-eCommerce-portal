@@ -1,6 +1,6 @@
 import 'server-only';
 import { supabaseAdmin } from '@/lib/supabase-client';
-import { fetchCustomerId, listSuccessfulTransactions, type PaystackListedTransaction } from '@/lib/paystack.server';
+import { fetchCustomerId, listSuccessfulTransactions, planCodeOf, type PaystackListedTransaction } from '@/lib/paystack.server';
 import { relayTargetFor } from '@/lib/paystack-relay.server';
 import { getPlanById, getPlanByPaystackCode } from '@/lib/billing-plans.server';
 import { applySuccessfulSubscription, recordBillingEvent, wasReferenceProcessed } from '@/lib/billing.server';
@@ -89,6 +89,7 @@ async function reconcileOrganization(org: DueOrganization): Promise<number> {
       interval: match.interval,
       reference: tx.reference,
       paystackCustomerCode: org.paystackCustomerCode,
+      paystackPlanCode: planCodeOf(tx.plan) ?? planCodeOf(tx.plan_object),
     });
     logger.warn('[paystack renewals] applied a charge the webhook missed', { organizationId: org.id, reference: tx.reference });
     applied += 1;
@@ -104,13 +105,8 @@ async function planFor(
     const plan = await getPlanById(metadata.planId);
     if (plan) return { plan, interval: metadata.interval === 'annually' ? 'annually' : 'monthly' };
   }
-  const planCode = codeOf(tx.plan) ?? codeOf(tx.plan_object);
+  const planCode = planCodeOf(tx.plan) ?? planCodeOf(tx.plan_object);
   return planCode ? getPlanByPaystackCode(planCode) : null;
-}
-
-function codeOf(plan: PaystackListedTransaction['plan']): string | null {
-  const code = (plan as { plan_code?: unknown } | null | undefined)?.plan_code;
-  return typeof code === 'string' && code ? code : null;
 }
 
 function paidAt(tx: PaystackListedTransaction): number {

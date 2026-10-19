@@ -26,7 +26,11 @@ vi.mock('@/lib/supabase-client', () => {
   return { supabaseAdmin: { from: () => chain } };
 });
 
-vi.mock('@/lib/paystack.server', () => ({ fetchCustomerId, listSuccessfulTransactions }));
+vi.mock('@/lib/paystack.server', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/paystack.server')>()),
+  fetchCustomerId,
+  listSuccessfulTransactions,
+}));
 
 vi.mock('@/lib/billing-plans.server', () => ({ getPlanById, getPlanByPaystackCode }));
 
@@ -60,6 +64,7 @@ describe('reconcilePaystackRenewals', () => {
     expect(result).toEqual({ checked: 1, applied: 1, failed: 0 });
     expect(applySuccessfulSubscription).toHaveBeenCalledWith(expect.objectContaining({
       organizationId: 'org-1', plan: BUSINESS, interval: 'monthly', reference: 'renew-1', paystackCustomerCode: 'CUS_1',
+      paystackPlanCode: 'PLN_biz',
     }));
   });
 
@@ -99,6 +104,8 @@ describe('reconcilePaystackRenewals', () => {
     await reconcilePaystackRenewals();
 
     expect(applySuccessfulSubscription.mock.calls.map((c) => c[0].reference)).toEqual(['older', 'newer']);
+    // Paid by M-Pesa (no Paystack plan): the workspace doesn't renew by itself.
+    expect(applySuccessfulSubscription.mock.calls[0][0].paystackPlanCode).toBeNull();
   });
 
   it('counts a Paystack failure for one workspace without stopping the rest', async () => {
