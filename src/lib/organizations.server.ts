@@ -108,22 +108,25 @@ async function registerTenantSubdomain(slug: string): Promise<void> {
   }
 }
 
+/** The plan every new workspace's free trial runs on — email and Google sign-ups alike. */
+export const TRIAL_PLAN_TIER = 'starter';
+
 /**
- * New tenants get Professional-level entitlements during their trial (per
- * the subscription spec), not Starter — TenantSubscription.planId points at
- * Professional while Organization.planTier stays 'free' so the existing
+ * New tenants get Starter-level entitlements during their trial (changed from
+ * Professional on 2026-10-19, once the app went public) — TenantSubscription.planId
+ * points at Starter while Organization.planTier stays 'free' so the existing
  * middleware trial-lockout logic (which only ever reads Organization) is
- * unaffected. Fails soft: a missing Professional plan (e.g. seed migration
- * not run yet) must never block signup — it just means entitlements resolve
- * to "no plan" (blocked creation, not blocked signup) until an admin seeds plans.
+ * unaffected. Fails soft: a missing Starter plan (e.g. seed migration not run
+ * yet) must never block signup — it just means entitlements resolve to "no
+ * plan" (blocked creation, not blocked signup) until an admin seeds plans.
  */
 async function createTrialSubscription(organizationId: string, trialEndsAt: string): Promise<void> {
-  const { data: professionalPlan } = await supabaseAdmin.from('PlatformPlan').select('id').eq('tier', 'pro').maybeSingle();
+  const { data: trialPlan } = await supabaseAdmin.from('PlatformPlan').select('id').eq('tier', TRIAL_PLAN_TIER).maybeSingle();
   const now = new Date().toISOString();
 
   const { error } = await supabaseAdmin.from('TenantSubscription').insert([{
     organizationId,
-    planId: professionalPlan?.id ?? null,
+    planId: trialPlan?.id ?? null,
     status: 'trialing',
     trialStart: now,
     trialEnd: trialEndsAt,
