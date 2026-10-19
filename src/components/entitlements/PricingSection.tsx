@@ -46,7 +46,7 @@ export function PricingSection({ plans }: { plans: PlanWithEntitlements[] }) {
       />
 
       <p className="text-center text-sm text-gray-500 dark:text-gray-400 mt-8">
-        Every plan starts with a 14-day free trial with full Professional-level access — no card required.
+        Every workspace starts with a 14-day free trial of Starter — no card required.
       </p>
     </div>
   );
