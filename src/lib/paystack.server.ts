@@ -152,3 +152,30 @@ export async function disableSubscription(code: string, emailToken: string): Pro
   if (!result.ok) return result;
   return { ok: true };
 }
+
+/** Paystack's numeric customer id — the transaction list filters by it, not by the CUS_ code. */
+export async function fetchCustomerId(customerCode: string): Promise<number | null> {
+  const result = await paystackFetch<{ id: number }>(`/customer/${encodeURIComponent(customerCode)}`, { method: 'GET' });
+  return result.ok && typeof result.data?.id === 'number' ? result.data.id : null;
+}
+
+export interface PaystackListedTransaction {
+  reference: string;
+  status: string;
+  paid_at?: string | null;
+  created_at?: string | null;
+  metadata?: Record<string, unknown> | string | null;
+  plan?: { plan_code?: string } | Record<string, never> | null;
+  plan_object?: { plan_code?: string } | Record<string, never> | null;
+}
+
+/** A customer's successful transactions since `fromIso`, newest first as Paystack returns them. */
+export async function listSuccessfulTransactions(
+  customerId: number,
+  fromIso: string,
+): Promise<{ ok: true; data: PaystackListedTransaction[] } | { ok: false; error: string }> {
+  const query = new URLSearchParams({ customer: String(customerId), status: 'success', from: fromIso, perPage: '50' });
+  const result = await paystackFetch<PaystackListedTransaction[]>(`/transaction?${query}`, { method: 'GET' });
+  if (!result.ok) return result;
+  return { ok: true, data: Array.isArray(result.data) ? result.data : [] };
+}

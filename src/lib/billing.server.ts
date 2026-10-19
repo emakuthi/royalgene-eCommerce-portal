@@ -67,8 +67,9 @@ export async function applySuccessfulSubscription(input: ApplySuccessfulSubscrip
   const orgPatch = {
     planTier: input.plan.tier,
     billingStatus: 'active',
-    paystackCustomerCode: input.paystackCustomerCode ?? null,
-    paystackSubscriptionCode: input.paystackSubscriptionCode ?? null,
+    // Paths that don't know a code (verify, the renewal check) keep the saved one.
+    ...(input.paystackCustomerCode ? { paystackCustomerCode: input.paystackCustomerCode } : {}),
+    ...(input.paystackSubscriptionCode ? { paystackSubscriptionCode: input.paystackSubscriptionCode } : {}),
     paystackPlanCode: planCode ?? null,
     updatedAt: new Date().toISOString(),
   };
