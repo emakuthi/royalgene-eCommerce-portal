@@ -6,7 +6,10 @@ import { getOrganizationById } from '@/lib/organizations.server';
 import { initializeTransaction, isPaystackConfigured } from '@/lib/paystack.server';
 import { getOrgUrlFor } from '@/lib/urls';
 
-// POST /api/portal/billing/checkout — { planId, interval } -> Paystack checkout URL. Org admin only.
+// POST /api/portal/billing/checkout — { planId, interval, method? } -> Paystack checkout URL. Org admin only.
+// method 'card' (default) starts a Paystack subscription that renews by itself.
+// method 'mpesa' is a one-off payment for one period: Paystack can't charge
+// M-Pesa again on its own, so the workspace pays again before it runs out.
 export async function POST(request: NextRequest) {
   const auth = requireRole(request, ['admin']);
   if (auth instanceof NextResponse) return auth;
@@ -15,9 +18,12 @@ export async function POST(request: NextRequest) {
     return jsonResponse({ success: false, error: 'Billing is not configured yet. Contact your platform administrator.' }, 503);
   }
 
-  const { planId, interval } = await request.json();
+  const { planId, interval, method = 'card' } = await request.json();
   if (!planId || (interval !== 'monthly' && interval !== 'annually')) {
     return jsonResponse({ success: false, error: 'planId and interval ("monthly" | "annually") are required' }, 400);
+  }
+  if (method !== 'card' && method !== 'mpesa') {
+    return jsonResponse({ success: false, error: 'method must be "card" or "mpesa"' }, 400);
   }
 
   if (!auth.organizationId) {
@@ -30,6 +36,10 @@ export async function POST(request: NextRequest) {
   ]);
   if (!plan || !plan.isActive) return jsonResponse({ success: false, error: 'Plan not found' }, 404);
   if (!organization) return jsonResponse({ success: false, error: 'Organization not found' }, 404);
+  if (method === 'mpesa' && organization.paystackPlanCode && organization.billingStatus === 'active') {
+    // Paying by M-Pesa as well would charge twice for the same period.
+    return jsonResponse({ success: false, error: 'Your card already renews this plan automatically. Cancel the card subscription first to pay by M-Pesa instead.' }, 409);
+  }
 
   const planCode = interval === 'annually' ? plan.paystackAnnualPlanCode : plan.paystackMonthlyPlanCode;
   if (!planCode) {
@@ -44,9 +54,10 @@ export async function POST(request: NextRequest) {
     email,
     amountKobo,
     currency: plan.currency,
-    planCode,
+    planCode: method === 'card' ? planCode : null,
+    channels: method === 'mpesa' ? ['mobile_money'] : undefined,
     callbackUrl: getOrgUrlFor(organization, '/settings?tab=billing'),
-    metadata: { organizationId: organization.id, planId: plan.id, interval },
+    metadata: { organizationId: organization.id, planId: plan.id, interval, method },
   });
 
   if (!result.ok) return jsonResponse({ success: false, error: result.error }, 502);

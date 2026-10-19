@@ -30,3 +30,36 @@ export async function getReadOnlyState(organizationId: string | null | undefined
   const reason = readOnlyReason(data as Parameters<typeof readOnlyReason>[0]);
   return reason ? { reason, message: READ_ONLY_MESSAGES[reason] } : null;
 }
+
+/** Days before an M-Pesa-paid plan runs out that the workspace is reminded to pay again. */
+export const RENEWAL_REMINDER_DAYS = 5;
+
+export interface RenewalFields {
+  planTier?: string | null;
+  billingStatus?: string | null;
+  paidThrough?: string | null;
+  paystackPlanCode?: string | null;
+}
+
+/**
+ * When a paid plan that doesn't renew by itself (paid by M-Pesa, so no
+ * Paystack card subscription) runs out within RENEWAL_REMINDER_DAYS; null if
+ * it renews automatically, is exempt, already lapsed or isn't due yet.
+ */
+export function manualRenewalDueAt(org: RenewalFields, now: Date = new Date()): string | null {
+  if (org.planTier === 'legacy' || org.billingStatus !== 'active' || org.paystackPlanCode || !org.paidThrough) return null;
+  const end = Date.parse(org.paidThrough);
+  if (Number.isNaN(end) || end <= now.getTime()) return null;
+  return end - now.getTime() <= RENEWAL_REMINDER_DAYS * 24 * 60 * 60 * 1000 ? org.paidThrough : null;
+}
+
+export async function getManualRenewalDue(organizationId: string | null | undefined): Promise<string | null> {
+  if (!organizationId) return null;
+  const { data, error } = await supabaseAdmin
+    .from('Organization')
+    .select('planTier, billingStatus, paidThrough, paystackPlanCode')
+    .eq('id', organizationId)
+    .maybeSingle();
+  if (error || !data) return null;
+  return manualRenewalDueAt(data as RenewalFields);
+}

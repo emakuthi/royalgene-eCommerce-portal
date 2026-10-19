@@ -46,6 +46,7 @@ import {
   cancelBillingSubscription,
   listPublicPlans,
   type SubscriptionSnapshot,
+  type PaymentMethod,
   type PublicPlan,
 } from '@/lib/billing';
 import { getDomainState, removeDomain, setDomain, type DomainState } from '@/lib/domains';
@@ -235,6 +236,7 @@ export default function PortalSettingsPage() {
   const [billingPlans, setBillingPlans] = useState<PublicPlan[]>([]);
   const [billingLoading, setBillingLoading] = useState(false);
   const [billingInterval, setBillingInterval] = useState<'monthly' | 'annually'>('monthly');
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('card');
   const [checkoutBusyId, setCheckoutBusyId] = useState<string | null>(null);
   const [subscriptionSnapshot, setSubscriptionSnapshot] = useState<SubscriptionSnapshot | null>(null);
   const [cancelBusy, setCancelBusy] = useState(false);
@@ -274,7 +276,7 @@ export default function PortalSettingsPage() {
 
   const handleUpgrade = async (plan: PublicPlan) => {
     setCheckoutBusyId(plan.id);
-    const res = await startBillingCheckout(token, plan.id, billingInterval);
+    const res = await startBillingCheckout(token, plan.id, billingInterval, paymentMethod);
     if (res.success && res.data?.checkoutUrl) {
       window.location.href = res.data.checkoutUrl;
     } else {
@@ -1354,10 +1356,24 @@ export default function PortalSettingsPage() {
             )}
 
             <Section title="Available Plans" description={isBillingAdmin ? 'Upgrade your workspace at any time' : 'Contact your workspace admin to change plans'}>
-              <div className="flex items-center gap-2 mb-4">
+              <div className="flex flex-wrap items-center gap-2 mb-2">
                 <Button variant={billingInterval === 'monthly' ? 'default' : 'outline'} size="sm" onClick={() => setBillingInterval('monthly')}>Monthly</Button>
                 <Button variant={billingInterval === 'annually' ? 'default' : 'outline'} size="sm" onClick={() => setBillingInterval('annually')}>Annual</Button>
+                {isBillingAdmin && (
+                  <>
+                    <span className="mx-1 h-5 w-px bg-gray-200 dark:bg-gray-700" aria-hidden />
+                    <Button variant={paymentMethod === 'card' ? 'default' : 'outline'} size="sm" onClick={() => setPaymentMethod('card')}>Card</Button>
+                    <Button variant={paymentMethod === 'mpesa' ? 'default' : 'outline'} size="sm" onClick={() => setPaymentMethod('mpesa')}>M-Pesa</Button>
+                  </>
+                )}
               </div>
+              {isBillingAdmin && (
+                <p className="text-xs text-gray-500 dark:text-gray-400 mb-4">
+                  {paymentMethod === 'card'
+                    ? 'Card payments renew automatically each period until you cancel.'
+                    : `M-Pesa pays for one ${billingInterval === 'annually' ? 'year' : 'month'} at a time. We'll remind you before it runs out; paying early never loses days.`}
+                </p>
+              )}
               {billingPlans.length > 0 ? (
                 <PlanComparison
                   plans={billingPlans}

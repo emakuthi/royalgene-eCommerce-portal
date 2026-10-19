@@ -32,10 +32,12 @@ export function listBillingPlans(token?: string | null) {
   return request<PlatformPlan[]>('/api/portal/billing/plans', token);
 }
 
-export function startBillingCheckout(token: string | null | undefined, planId: string, interval: 'monthly' | 'annually') {
+export type PaymentMethod = 'card' | 'mpesa';
+
+export function startBillingCheckout(token: string | null | undefined, planId: string, interval: 'monthly' | 'annually', method: PaymentMethod = 'card') {
   return request<{ checkoutUrl: string; reference: string }>('/api/portal/billing/checkout', token, {
     method: 'POST',
-    body: JSON.stringify({ planId, interval }),
+    body: JSON.stringify({ planId, interval, method }),
   });
 }
 

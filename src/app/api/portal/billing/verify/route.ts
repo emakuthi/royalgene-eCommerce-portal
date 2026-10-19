@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireAuth } from '@/lib/authorize';
 import { jsonResponse, optionsResponse } from '@/lib/apiResponse';
-import { verifyTransaction } from '@/lib/paystack.server';
+import { planCodeOf, verifyTransaction } from '@/lib/paystack.server';
 import { getPlanById } from '@/lib/billing-plans.server';
 import { applySuccessfulSubscription } from '@/lib/billing.server';
 import { getOrganizationById } from '@/lib/organizations.server';
@@ -46,6 +46,7 @@ export async function GET(request: NextRequest) {
     reference,
     paystackCustomerCode: txn.customer?.customer_code ?? null,
     paystackSubscriptionCode: txn.subscription_code ?? null,
+    paystackPlanCode: planCodeOf(txn.plan),
   });
 
   const organization = await getOrganizationById(organizationId);
