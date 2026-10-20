@@ -25,6 +25,8 @@ export interface TenantBranding {
   readOnly: { reason: string; message: string } | null;
   /** When an M-Pesa-paid plan runs out within a few days (it doesn't renew by itself); null otherwise. */
   renewalDueAt: string | null;
+  /** When the free trial ends, while it is still running; null otherwise. */
+  trialEndsAt: string | null;
 }
 
 export const BRANDING_DEFAULTS: TenantBranding = {
@@ -39,6 +41,7 @@ export const BRANDING_DEFAULTS: TenantBranding = {
   option2Label: 'Colour',
   readOnly: null,
   renewalDueAt: null,
+  trialEndsAt: null,
 };
 
 /** <link rel="icon"> hrefs shipped by default, restored when a tenant clears its custom favicon. */

@@ -1,5 +1,5 @@
 import 'server-only';
-import { getReadOnlyState } from './read-only.server';
+import { getActiveTrialEnd, getReadOnlyState } from './read-only.server';
 import { jsonResponse } from './apiResponse';
 import logger from './logger';
 import {
@@ -31,8 +31,12 @@ function failure(err: unknown, what: string) {
 }
 
 export async function businessSettingsGet(organizationId: string) {
-  const [settings, readOnly] = await Promise.all([getBusinessSettings(organizationId), getReadOnlyState(organizationId)]);
-  return jsonResponse({ success: true, data: { ...settings, readOnly } });
+  const [settings, readOnly, trialEndsAt] = await Promise.all([
+    getBusinessSettings(organizationId),
+    getReadOnlyState(organizationId),
+    getActiveTrialEnd(organizationId),
+  ]);
+  return jsonResponse({ success: true, data: { ...settings, readOnly, trialEndsAt } });
 }
 
 /** Body: { businessType?, option1Label?, option2Label? } */
