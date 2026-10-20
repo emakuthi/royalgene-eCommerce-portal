@@ -43,6 +43,7 @@ describe('getTenantBranding', () => {
       option2Label: 'Colour',
       readOnly: null,
       renewalDueAt: null,
+      trialEndsAt: null,
     });
   });
 

@@ -31,6 +31,35 @@ export async function getReadOnlyState(organizationId: string | null | undefined
   return reason ? { reason, message: READ_ONLY_MESSAGES[reason] } : null;
 }
 
+export interface TrialFields {
+  planTier?: string | null;
+  billingStatus?: string | null;
+  trialEndsAt?: string | null;
+}
+
+/**
+ * When a workspace's free trial ends, while it is still running; null once it
+ * has ended, or for a subscribed, exempt or suspended workspace. Mirrors the
+ * trial part of readOnlyReason, so the trial prompt hands over to the
+ * read-only banner the moment the trial runs out.
+ */
+export function activeTrialEndsAt(org: TrialFields, now: Date = new Date()): string | null {
+  if (org.planTier !== 'free' || org.billingStatus === 'active' || org.billingStatus === 'suspended' || !org.trialEndsAt) return null;
+  const end = Date.parse(org.trialEndsAt);
+  return !Number.isNaN(end) && end > now.getTime() ? org.trialEndsAt : null;
+}
+
+export async function getActiveTrialEnd(organizationId: string | null | undefined): Promise<string | null> {
+  if (!organizationId) return null;
+  const { data, error } = await supabaseAdmin
+    .from('Organization')
+    .select('planTier, billingStatus, trialEndsAt')
+    .eq('id', organizationId)
+    .maybeSingle();
+  if (error || !data) return null;
+  return activeTrialEndsAt(data as TrialFields);
+}
+
 /** Days before an M-Pesa-paid plan runs out that the workspace is reminded to pay again. */
 export const RENEWAL_REMINDER_DAYS = 5;
 

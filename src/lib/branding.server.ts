@@ -2,7 +2,7 @@ import 'server-only';
 import { supabaseAdmin } from './supabase-client';
 import { BRANDING_DEFAULTS, MAX_BRANDING_DATA_URI_BYTES, type TenantBranding } from './branding';
 import logger from './logger';
-import { getManualRenewalDue, getReadOnlyState } from './read-only.server';
+import { getActiveTrialEnd, getManualRenewalDue, getReadOnlyState } from './read-only.server';
 
 const BASE_SELECT = 'name, tagline, logoUrl, faviconUrl, currency, usdRate';
 const SELECT = `${BASE_SELECT}, businessType, option1Label, option2Label`;
@@ -29,6 +29,7 @@ function rowToBranding(row: OrgBrandingRow | null): TenantBranding {
     option2Label: row.option2Label ?? BRANDING_DEFAULTS.option2Label,
     readOnly: null,
     renewalDueAt: null,
+    trialEndsAt: null,
   };
 }
 
@@ -45,11 +46,15 @@ export async function getTenantBranding(organizationId: string | null | undefine
       .select(SELECT)
       .eq('id', organizationId)
       .maybeSingle();
-    const [readOnly, renewalDueAt] = await Promise.all([getReadOnlyState(organizationId), getManualRenewalDue(organizationId)]);
-    if (!error) return { ...rowToBranding(data), readOnly, renewalDueAt };
+    const [readOnly, renewalDueAt, trialEndsAt] = await Promise.all([
+      getReadOnlyState(organizationId),
+      getManualRenewalDue(organizationId),
+      getActiveTrialEnd(organizationId),
+    ]);
+    if (!error) return { ...rowToBranding(data), readOnly, renewalDueAt, trialEndsAt };
     // Business-type columns not migrated yet (20261014_01) — keep the rest of the branding.
     const fallback = await supabaseAdmin.from('Organization').select(BASE_SELECT).eq('id', organizationId).maybeSingle();
-    return { ...rowToBranding(fallback.data as OrgBrandingRow | null), readOnly, renewalDueAt };
+    return { ...rowToBranding(fallback.data as OrgBrandingRow | null), readOnly, renewalDueAt, trialEndsAt };
   } catch (err) {
     logger.warn('[branding] getTenantBranding failed', { organizationId, error: err instanceof Error ? err.message : String(err) });
     return BRANDING_DEFAULTS;

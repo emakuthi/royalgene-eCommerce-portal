@@ -417,6 +417,34 @@ function RenewalDueBanner() {
   );
 }
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+/** From this many days left, the trial banner turns amber. */
+const TRIAL_URGENT_DAYS = 3;
+
+/** Shown on every page while the free trial is running, with the days left. */
+function TrialBanner() {
+  const { branding } = useBranding();
+  const { user } = useHydratedAuth();
+  if (branding.readOnly || !branding.trialEndsAt) return null;
+  const daysLeft = Math.max(1, Math.ceil((Date.parse(branding.trialEndsAt) - Date.now()) / DAY_MS));
+  const isAdmin = user?.role === 'admin' || user?.role === 'super_admin';
+  const urgent = daysLeft <= TRIAL_URGENT_DAYS;
+  const tone = urgent
+    ? 'border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-200'
+    : 'border-sky-300 bg-sky-50 text-sky-900 dark:border-sky-700 dark:bg-sky-950 dark:text-sky-200';
+  const left = daysLeft === 1 ? 'Last day of your free trial.' : `Free trial: ${daysLeft} days left.`;
+  return (
+    <div role="status" className={`flex flex-wrap items-center justify-between gap-2 border-b px-4 py-2 text-sm ${tone}`}>
+      <span>
+        {left} {isAdmin
+          ? 'Subscribe to keep recording when it ends.'
+          : 'Ask your workspace admin to subscribe before it ends.'}
+      </span>
+      {isAdmin && <Link href="/settings?tab=billing" className="font-semibold underline">Subscribe</Link>}
+    </div>
+  );
+}
+
 export default function ProtectedLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const { token, user } = useHydratedAuth();
@@ -648,6 +676,7 @@ export default function ProtectedLayout({ children }: { children: React.ReactNod
           <main className="flex-1 w-full pl-0 md:ml-72 min-h-0">
             <div className="min-h-0 h-full overflow-y-auto">
               <ReadOnlyBanner />
+              <TrialBanner />
               <RenewalDueBanner />
               {children}
             </div>
