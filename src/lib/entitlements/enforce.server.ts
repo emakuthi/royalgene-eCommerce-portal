@@ -13,6 +13,21 @@ import { checkUsageThresholds } from './usage-notifications.server';
  * expects. Never trusts anything from the request body — organizationId
  * must already have been resolved from the authenticated session.
  */
+const RESOURCE_NOUNS: Record<ResourceTypeValue, [string, string]> = {
+  BRANCH: ['shop', 'shops'],
+  USER: ['team member', 'team members'],
+  PRODUCT: ['product', 'products'],
+  TRANSACTION: ['sale a month', 'sales a month'],
+};
+
+/** e.g. "Your Starter plan includes 2 shops. Upgrade your plan to add more." */
+export function limitReachedMessage(resource: ResourceTypeValue, limit: number | null, planName: string | null): string {
+  const [one, many] = RESOURCE_NOUNS[resource] ?? ['item', 'items'];
+  if (!limit) return `Your workspace doesn't have an active plan. Subscribe to add ${many}.`;
+  const plan = planName ? `Your ${planName} plan` : 'Your plan';
+  return `${plan} includes ${limit} ${limit === 1 ? one : many}. Upgrade your plan to add more.`;
+}
+
 export async function assertCanCreate(organizationId: string, resource: ResourceTypeValue): Promise<NextResponse | null> {
   const result = await canCreate(organizationId, resource);
   if (result.allowed) {
@@ -31,12 +46,13 @@ export async function assertCanCreate(organizationId: string, resource: Resource
     return null;
   }
 
+  const message = limitReachedMessage(resource, result.limit, ctx?.plan?.name ?? null);
   return jsonResponse(
     {
       success: false,
-      error: `You've reached your plan's limit for this resource.`,
+      error: message,
       code: 'PLAN_LIMIT_REACHED',
-      message: `You've reached your plan's limit for this resource.`,
+      message,
       feature: result.feature,
       limit: result.limit,
       currentUsage: result.currentUsage,

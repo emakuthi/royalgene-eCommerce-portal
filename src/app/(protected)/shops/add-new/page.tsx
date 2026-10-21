@@ -32,7 +32,7 @@ export default function AddShopPage() {
     setCreating(true);
     try {
       let res = await createShopApi(token, { name: form.name, location: form.location, phone: form.phone, email: form.email, manager: null });
-      if (!res.ok && (res.status === 401 || res.status === 403)) {
+      if (!res.ok && (res.status === 401 || res.status === 403) && res.code !== 'PLAN_LIMIT_REACHED') {
         res = await createShopPortal(token, { name: form.name, location: form.location, phone: form.phone, email: form.email });
       }
 
@@ -45,6 +45,11 @@ export default function AddShopPage() {
         // show field-level validation if provided
         if (res.validation) {
           setValidationErrors(res.validation);
+        } else if (res.code === 'PLAN_LIMIT_REACHED') {
+          toast.error(res.error || 'Your plan’s shop limit has been reached.', {
+            action: { label: 'Upgrade', onClick: () => router.push('/settings?tab=billing') },
+            duration: 10000,
+          });
         } else {
           toast.error(res.error || 'Failed to create shop');
         }
