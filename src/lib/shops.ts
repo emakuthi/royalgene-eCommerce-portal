@@ -5,6 +5,8 @@ export interface ApiResult<T = unknown> {
   success?: boolean;
   data?: T;
   error?: string;
+  /** Machine-readable error code, e.g. PLAN_LIMIT_REACHED. */
+  code?: string;
   // Optional validation errors map from backend: { fieldName: message }
   validation?: Record<string, string> | null;
 }
@@ -22,6 +24,7 @@ export async function getShops<T = unknown>(token?: string | null, page = 1, lim
       success: json?.success,
       data: json?.data as T,
       error: json?.error,
+      code: json?.code,
       validation: json?.validationErrors ?? json?.errors ?? null,
     } as ApiResult<T>;
   } catch (err: unknown) {
@@ -51,6 +54,7 @@ export async function createShop<T = unknown>(token?: string | null, payload?: {
       success: json?.success,
       data: json?.data as T,
       error: json?.error,
+      code: json?.code,
       validation: json?.validationErrors ?? json?.errors ?? null,
     } as ApiResult<T>;
   } catch (err: unknown) {
@@ -80,6 +84,7 @@ export async function createShopPortal<T = unknown>(token?: string | null, paylo
       success: json?.success,
       data: json?.data as T,
       error: json?.error,
+      code: json?.code,
       validation: json?.validationErrors ?? json?.errors ?? null,
     } as ApiResult<T>;
   } catch (err: unknown) {
@@ -100,6 +105,7 @@ export async function getShopById<T = unknown>(token?: string | null, id?: strin
       success: json?.success,
       data: json?.data as T,
       error: json?.error,
+      code: json?.code,
       validation: json?.validationErrors ?? json?.errors ?? null,
     } as ApiResult<T>;
   } catch (err: unknown) {
@@ -130,6 +136,7 @@ export async function updateShop<T = unknown>(token?: string | null, id?: string
       success: json?.success,
       data: json?.data as T,
       error: json?.error,
+      code: json?.code,
       validation: json?.validationErrors ?? json?.errors ?? null,
     } as ApiResult<T>;
   } catch (err: unknown) {

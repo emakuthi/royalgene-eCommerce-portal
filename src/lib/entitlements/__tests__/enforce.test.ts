@@ -42,6 +42,14 @@ describe('enforce.server', () => {
       currentUsage: 1,
       upgradeRequired: true,
     });
+    expect(json.error).toBe('Your plan includes 1 product. Upgrade your plan to add more.');
+  });
+
+  it('limitReachedMessage names the plan and the resource', async () => {
+    const { limitReachedMessage } = await import('../enforce.server');
+    expect(limitReachedMessage('BRANCH', 2, 'Starter')).toBe('Your Starter plan includes 2 shops. Upgrade your plan to add more.');
+    expect(limitReachedMessage('USER', 1, null)).toBe('Your plan includes 1 team member. Upgrade your plan to add more.');
+    expect(limitReachedMessage('BRANCH', 0, 'Starter')).toBe("Your workspace doesn't have an active plan. Subscribe to add shops.");
   });
 
   it('assertCanCreate returns null when under the limit', async () => {
