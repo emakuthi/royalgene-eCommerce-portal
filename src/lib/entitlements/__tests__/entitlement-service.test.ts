@@ -98,6 +98,17 @@ describe('entitlement-service', () => {
     expect(result.remaining).toBe(0);
   });
 
+  it('deleted shops do not count toward the shop limit', async () => {
+    mockTables.PlanEntitlement.push({ planId: PLAN_STARTER, code: 'BRANCHES', enabled: true, limitValue: 2 });
+    mockTables.Shop = [
+      { id: 's1', organizationId: ORG_STARTER, isActive: true, deletedAt: null },
+      { id: 's2', organizationId: ORG_STARTER, isActive: false, deletedAt: '2026-10-01T00:00:00.000Z' },
+    ];
+    const { canCreate } = await import('../entitlement-service.server');
+    const result = await canCreate(ORG_STARTER, 'BRANCH');
+    expect(result).toMatchObject({ allowed: true, limit: 2, currentUsage: 1 });
+  });
+
   it('canCreate allows creation under the limit', async () => {
     const { canCreate } = await import('../entitlement-service.server');
     const result = await canCreate(ORG_STARTER, 'USER');
