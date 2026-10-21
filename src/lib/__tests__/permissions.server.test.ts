@@ -38,7 +38,7 @@ vi.mock('@/lib/supabase-client', () => ({
   },
 }));
 
-import { hasCapability, getEffectivePermissions, DEFAULT_PERMISSIONS } from '../permissions.server';
+import { hasCapability, getEffectivePermissions, getCallerPermissions, DEFAULT_PERMISSIONS } from '../permissions.server';
 
 beforeEach(() => {
   portalUserRows = [];
@@ -111,5 +111,31 @@ describe('getEffectivePermissions', () => {
     expect(matrix.shopkeeper.add_inventory).toBe(true);
     expect(matrix.shopkeeper.view_cost_price).toBe(DEFAULT_PERMISSIONS.shopkeeper.view_cost_price);
     expect(matrix.cashier).toEqual(DEFAULT_PERMISSIONS.cashier);
+  });
+});
+
+describe('getCallerPermissions', () => {
+  it('gives a shop_manager edit_inventory by default', async () => {
+    const perms = await getCallerPermissions({ userId: 'u1', role: 'portal_user', organizationId: 'org1' }, 'shop_manager');
+    expect(perms).toEqual(DEFAULT_PERMISSIONS.shop_manager);
+    expect(perms.edit_inventory).toBe(true);
+  });
+
+  it('applies an admin override for the caller\'s role', async () => {
+    rolePermissionRows = [{ organizationId: 'org1', role: 'shop_manager', permission: 'edit_inventory', enabled: false }];
+    const perms = await getCallerPermissions({ userId: 'u1', role: 'portal_user', organizationId: 'org1' }, 'manager');
+    expect(perms.edit_inventory).toBe(false);
+  });
+
+  it('gives admin and shop_owner everything', async () => {
+    const admin = await getCallerPermissions({ userId: 'u1', role: 'admin', organizationId: 'org1' }, null);
+    const owner = await getCallerPermissions({ userId: 'u1', role: 'portal_user', organizationId: 'org1' }, 'shop_owner');
+    expect(Object.values(admin).every(Boolean)).toBe(true);
+    expect(Object.values(owner).every(Boolean)).toBe(true);
+  });
+
+  it('gives nothing to an unknown position', async () => {
+    const perms = await getCallerPermissions({ userId: 'u1', role: 'portal_user', organizationId: 'org1' }, null);
+    expect(Object.values(perms).some(Boolean)).toBe(false);
   });
 });

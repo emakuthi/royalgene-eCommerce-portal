@@ -156,6 +156,23 @@ export async function getEffectivePermissions(
   return matrix;
 }
 
+/**
+ * Every capability for one caller, resolved the same way as [hasCapability]
+ * — sent to the app on GET /api/mobile/profile so it can show or hide
+ * actions (e.g. Edit Product) to match what the server will allow.
+ */
+export async function getCallerPermissions(
+  payload: VerifiedPayload,
+  position: unknown,
+): Promise<Record<Capability, boolean>> {
+  const all = (enabled: boolean) =>
+    Object.fromEntries(PERMISSION_CATALOG.map((p) => [p.key, enabled])) as Record<Capability, boolean>;
+  if (isOwnerLevel(payload.role ?? null, position)) return all(true);
+  const role = normalizeRole(position);
+  if (!role || !payload.organizationId) return all(false);
+  return (await getEffectivePermissions(payload.organizationId))[role];
+}
+
 /** Upserts one override. `enabled === DEFAULT_PERMISSIONS[role][permission]` still stores a row — harmless, just not minimal; keeps the write path simple. */
 export async function setPermissionOverride(
   organizationId: string,
