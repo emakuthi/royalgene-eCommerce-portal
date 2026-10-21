@@ -151,10 +151,13 @@ export async function getUsage(organizationId: string, resource: ResourceTypeVal
       return count ?? 0;
     }
     case 'BRANCH': {
+      // Deleted shops don't use up the plan's allowance.
       const { count } = await supabaseAdmin
         .from('Shop')
         .select('*', { count: 'exact', head: true })
-        .eq('organizationId', organizationId);
+        .eq('organizationId', organizationId)
+        .eq('isActive', true)
+        .is('deletedAt', null);
       return count ?? 0;
     }
     case 'PRODUCT': {

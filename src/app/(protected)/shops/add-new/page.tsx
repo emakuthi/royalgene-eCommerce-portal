@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import PortalHeader from '@/components/portal/PortalHeader';
 import { useHydratedAuth } from '@/lib/hooks';
@@ -17,6 +17,23 @@ export default function AddShopPage() {
   const [creating, setCreating] = useState(false);
   const [form, setForm] = useState({ name: '', location: '', phone: '', email: '' });
   const [validationErrors, setValidationErrors] = useState<Record<string,string> | null>(null);
+  const [shopLimit, setShopLimit] = useState<{ limit: number; usage: number; planName: string | null } | null>(null);
+
+  // Check the plan's shop allowance up front, so a full plan shows an upgrade
+  // prompt instead of a form that would only fail on submit.
+  useEffect(() => {
+    if (!token) return;
+    fetch('/api/portal/billing/usage', { headers: { Authorization: `Bearer ${token}` }, cache: 'no-store' })
+      .then((r) => r.json())
+      .then((d) => {
+        const b = d?.data?.limits?.BRANCHES;
+        if (d?.success && b && typeof b.limit === 'number') {
+          setShopLimit({ limit: b.limit, usage: b.usage ?? 0, planName: d.data.plan?.name ?? null });
+        }
+      })
+      .catch(() => {});
+  }, [token]);
+  const atShopLimit = shopLimit !== null && shopLimit.usage >= shopLimit.limit;
 
   const handleSubmit = async (e?: React.FormEvent) => {
     e?.preventDefault();
@@ -68,6 +85,23 @@ export default function AddShopPage() {
 
       <div className="w-full px-4 sm:px-6 py-6 pb-12">
         <div className="max-w-3xl mx-auto">
+          {atShopLimit && shopLimit ? (
+            <Card>
+              <CardHeader>
+                <CardTitle>You've reached your shop limit</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <p className="text-sm text-gray-600 dark:text-gray-300">
+                  {shopLimit.planName ? `Your ${shopLimit.planName} plan` : 'Your plan'} includes {shopLimit.limit} {shopLimit.limit === 1 ? 'shop' : 'shops'}, and you're using {shopLimit.usage}.
+                  Upgrade your plan to add another shop.
+                </p>
+                <div className="flex justify-end gap-2">
+                  <Button variant="outline" onClick={() => router.push('/shops')}>Not now</Button>
+                  <Button className="bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))]" onClick={() => router.push('/settings?tab=billing')}>Upgrade plan</Button>
+                </div>
+              </CardContent>
+            </Card>
+          ) : (
           <Card>
             <CardHeader>
               <CardTitle>Create Shop</CardTitle>
@@ -106,6 +140,7 @@ export default function AddShopPage() {
               </form>
             </CardContent>
           </Card>
+          )}
         </div>
       </div>
     </div>
