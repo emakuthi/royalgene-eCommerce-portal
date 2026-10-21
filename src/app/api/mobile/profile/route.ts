@@ -3,6 +3,7 @@ import { verifyToken } from '@/lib/auth.server';
 import { supabaseAdmin } from '@/lib/supabase-client';
 import logger from '@/lib/logger';
 import { jsonResponse } from '@/lib/apiResponse';
+import { getCallerPermissions } from '@/lib/permissions.server';
 
 /**
  * GET /api/mobile/profile
@@ -82,6 +83,8 @@ export async function GET(request: NextRequest) {
       return shop ? { id: shop.id, name: shop.name, location: shop.location } : null;
     }).filter(Boolean);
 
+    const permissions = await getCallerPermissions(payload, portalUser?.position ?? null);
+
     logger.info('Mobile profile retrieved', {
       userId: payload.userId,
       shopCount: allShops.length,
@@ -109,6 +112,9 @@ export async function GET(request: NextRequest) {
           // portalUserId is one of these when they recorded it. The app
           // offers Edit only on its own sales unless the user is owner-level.
           portalUserIds: (portalUsers ?? []).map((pu: Record<string, unknown>) => pu.id as string),
+          // What this user may do (admin-set per role) — the app shows or
+          // hides actions such as Edit Product to match.
+          permissions,
           shop: portalUser?.Shop ? {
             id: portalUser.Shop.id,
             name: portalUser.Shop.name,
