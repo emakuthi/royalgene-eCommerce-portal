@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requireTenantUser } from '@/lib/authorize';
 import { jsonResponse, optionsResponse } from '@/lib/apiResponse';
 import { buildProductHistory } from '@/lib/product-history.server';
+import { canViewCostData } from '@/lib/cost-visibility.server';
 import logger from '@/lib/logger';
 
 /**
@@ -18,7 +19,9 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
     }
 
     const { id } = await context.params;
-    const events = await buildProductHistory(auth.organizationId, id);
+    const events = await buildProductHistory(auth.organizationId, id, {
+      includeCost: await canViewCostData(auth),
+    });
     if (events === null) {
       return jsonResponse({ success: false, error: 'Product not found' }, 404);
     }

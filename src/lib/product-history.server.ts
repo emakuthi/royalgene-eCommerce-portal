@@ -1,5 +1,6 @@
 import 'server-only';
 import { supabaseAdmin } from './supabase-client';
+import { COST_FIELDS } from './cost-visibility.server';
 
 /**
  * A single entry in a product's history timeline. Assembled from three
@@ -49,10 +50,15 @@ function variantSuffix(size?: unknown, color?: unknown): string {
 /**
  * Build the merged, newest-first history for a single product within an
  * organization. Returns null if the product doesn't exist in that org.
+ *
+ * `includeCost: false` (callers without view_cost_price) strips cost-price
+ * before→after values from edit events, and drops edits that only touched
+ * cost — otherwise the timeline leaks exactly what the product payload redacts.
  */
 export async function buildProductHistory(
   organizationId: string,
   productId: string,
+  { includeCost }: { includeCost: boolean },
 ): Promise<ProductHistoryEvent[] | null> {
   const { data: product } = await supabaseAdmin
     .from('Product')
@@ -213,11 +219,13 @@ export async function buildProductHistory(
     if (a.action !== 'product.update') continue;
     const details = (a.details ?? {}) as Record<string, unknown>;
     const rawChanges = Array.isArray(details.changes) ? (details.changes as Array<Record<string, unknown>>) : [];
-    const changes: ProductHistoryChange[] = rawChanges.map((c) => ({
-      field: String(c.field ?? ''),
-      from: c.from === undefined || c.from === null ? null : String(c.from),
-      to: c.to === undefined || c.to === null ? null : String(c.to),
-    }));
+    const changes: ProductHistoryChange[] = rawChanges
+      .map((c) => ({
+        field: String(c.field ?? ''),
+        from: c.from === undefined || c.from === null ? null : String(c.from),
+        to: c.to === undefined || c.to === null ? null : String(c.to),
+      }))
+      .filter((c) => includeCost || !COST_FIELDS.Product.includes(c.field));
     if (!changes.length) continue;
     events.push({
       id: a.id as string,
