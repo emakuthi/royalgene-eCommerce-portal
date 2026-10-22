@@ -3,6 +3,7 @@ import { supabaseAdmin } from '@/lib/supabase-client';
 import { jsonResponse, optionsResponse } from '@/lib/apiResponse';
 import { verifyMobileShopAccess } from '@/lib/mobile-shop-auth';
 import { buildProductHistory } from '@/lib/product-history.server';
+import { canViewCostData } from '@/lib/cost-visibility.server';
 import logger from '@/lib/logger';
 
 /**
@@ -50,7 +51,9 @@ export async function GET(
       return jsonResponse({ success: false, error: 'Product not found', code: 'NOT_FOUND' }, 404);
     }
 
-    const events = await buildProductHistory(organizationId, resolvedProductId);
+    const events = await buildProductHistory(organizationId, resolvedProductId, {
+      includeCost: await canViewCostData(auth.payload),
+    });
     if (events === null) {
       return jsonResponse({ success: false, error: 'Product not found', code: 'NOT_FOUND' }, 404);
     }
