@@ -95,7 +95,7 @@ export async function POST(request: NextRequest) {
     // SKU uniqueness check, scoped to the organization's own catalog
     const skuClash = await findSkuConflict(organizationId, sku);
     if (skuClash) {
-      return jsonResponse({ success: false, error: duplicateSkuMessage(sku, skuClash.name) }, 409);
+      return jsonResponse({ success: false, error: duplicateSkuMessage(sku, skuClash) }, 409);
     }
 
     // Category: any workspace category (createProductForShop resolves it, adding an unknown one).
@@ -384,7 +384,7 @@ export async function PUT(request: NextRequest) {
         ?? ((await supabaseAdmin.from('Product').select('organizationId').eq('id', productId).maybeSingle()).data?.organizationId as string | undefined);
       const clash = await findSkuConflict(skuOrgId, updates.sku, productId);
       if (clash) {
-        return jsonResponse({ success: false, error: duplicateSkuMessage(updates.sku, clash.name) }, 409);
+        return jsonResponse({ success: false, error: duplicateSkuMessage(updates.sku, clash) }, 409);
       }
     }
 
@@ -425,7 +425,8 @@ export async function PUT(request: NextRequest) {
       .maybeSingle();
 
     if (isSkuUniqueViolation(updateError)) {
-      return jsonResponse({ success: false, error: duplicateSkuMessage(updates.sku) }, 409);
+      const raceClash = await findSkuConflict(payload.organizationId, updates.sku, productId);
+      return jsonResponse({ success: false, error: duplicateSkuMessage(updates.sku, raceClash) }, 409);
     }
     if (updateError) {
       logger.error('Failed to update product', { productId, error: updateError.message });

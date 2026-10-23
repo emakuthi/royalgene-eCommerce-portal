@@ -268,7 +268,7 @@ export async function PUT(
       productUpdates.sku = normalizeSku(productUpdates.sku);
       const clash = await findSkuConflict(auth.payload.organizationId, productUpdates.sku, resolvedProductId);
       if (clash) {
-        return jsonResponse({ success: false, error: duplicateSkuMessage(productUpdates.sku, clash.name), code: 'DUPLICATE_SKU' }, 400);
+        return jsonResponse({ success: false, error: duplicateSkuMessage(productUpdates.sku, clash), code: 'DUPLICATE_SKU' }, 400);
       }
     }
 
@@ -331,7 +331,8 @@ export async function PUT(
       const { data: updatedRows, error: prodUpdateError } = await updateQuery.select('id, version');
 
       if (isSkuUniqueViolation(prodUpdateError)) {
-        return jsonResponse({ success: false, error: duplicateSkuMessage(productUpdates.sku), code: 'DUPLICATE_SKU' }, 400);
+        const raceClash = await findSkuConflict(auth.payload.organizationId, productUpdates.sku, resolvedProductId);
+        return jsonResponse({ success: false, error: duplicateSkuMessage(productUpdates.sku, raceClash), code: 'DUPLICATE_SKU' }, 400);
       }
       if (prodUpdateError) {
         logger.error('Mobile product update: Product table update failed', {

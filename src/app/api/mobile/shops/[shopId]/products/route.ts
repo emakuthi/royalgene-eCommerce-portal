@@ -222,7 +222,7 @@ export async function POST(
     const skuClash = await findSkuConflict(auth.payload.organizationId, body.sku);
     if (skuClash) {
       return jsonResponse(
-        { success: false, error: duplicateSkuMessage(body.sku, skuClash.name), code: 'DUPLICATE_SKU' },
+        { success: false, error: duplicateSkuMessage(body.sku, skuClash), code: 'DUPLICATE_SKU' },
         400,
       );
     }
@@ -324,7 +324,7 @@ export async function POST(
     // The pre-check above lost a race with another create of the same SKU.
     if (error instanceof Error && /duplicate key.*sku/i.test(error.message)) {
       return jsonResponse(
-        { success: false, error: 'That SKU is already used by another product. Use a different SKU.', code: 'DUPLICATE_SKU' },
+        { success: false, error: duplicateSkuMessage(''), code: 'DUPLICATE_SKU' },
         400,
       );
     }
