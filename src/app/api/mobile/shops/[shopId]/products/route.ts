@@ -8,6 +8,7 @@ import { isValidClientId } from '@/lib/sync/syncable-entities';
 import { canViewCostData, hasCostPrice } from '@/lib/cost-visibility.server';
 import { hasCapability } from '@/lib/permissions.server';
 import { trackActivity } from '@/lib/activity-tracker';
+import { duplicateSkuMessage, findSkuConflict, normalizeSku } from '@/lib/product-sku.server';
 /**
  * GET /api/mobile/shops/[shopId]/products
  * Get available products in a shop with current stock levels
@@ -217,27 +218,13 @@ export async function POST(
       );
     }
 
-    // SKU uniqueness check (if sku provided)
-    if (body.sku) {
-      try {
-        const { data: existing } = await supabaseAdmin
-          .from('Product')
-          .select('id')
-          .eq('sku', body.sku)
-          .maybeSingle();
-
-        if (existing) {
-          return jsonResponse(
-            { success: false, error: 'SKU already exists', code: 'DUPLICATE_SKU' },
-            400,
-          );
-        }
-      } catch (skuErr) {
-        logger.warn('Mobile create product: SKU uniqueness check failed, proceeding', {
-          sku: body.sku,
-          error: skuErr instanceof Error ? skuErr.message : String(skuErr),
-        });
-      }
+    // SKUs are unique per shop (other shops of the business may reuse one)
+    const skuClash = await findSkuConflict({ organizationId: auth.payload.organizationId, sku: body.sku, shopIds: [shopId] });
+    if (skuClash) {
+      return jsonResponse(
+        { success: false, error: duplicateSkuMessage(body.sku, skuClash), code: 'DUPLICATE_SKU' },
+        400,
+      );
     }
 
     // Build product data from the mobile request body
@@ -253,7 +240,7 @@ export async function POST(
       sizes: Array.isArray(body.sizes) ? body.sizes : [],
       colors: Array.isArray(body.colors) ? body.colors : [],
       stockQuantity: typeof body.quantity === 'number' ? body.quantity : 0,
-      sku: body.sku || '',
+      sku: normalizeSku(body.sku),
       brand: body.brand || '',
       featured: Boolean(body.featured),
       trending: Boolean(body.trending),
@@ -334,6 +321,13 @@ export async function POST(
       201,
     );
   } catch (error) {
+    // The pre-check above lost a race with another create of the same SKU.
+    if (error instanceof Error && /duplicate key.*sku/i.test(error.message)) {
+      return jsonResponse(
+        { success: false, error: duplicateSkuMessage(''), code: 'DUPLICATE_SKU' },
+        400,
+      );
+    }
     logger.error('Mobile create product error', {
       error: error instanceof Error ? error.message : String(error),
       stack: error instanceof Error ? error.stack : undefined,

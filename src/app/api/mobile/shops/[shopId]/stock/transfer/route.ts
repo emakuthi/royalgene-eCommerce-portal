@@ -28,6 +28,7 @@ import { verifyMobileShopAccess } from '@/lib/mobile-shop-auth';
 import { syncProductStockFromShopStocks } from '@/lib/supabase-db';
 import { hasVariantStock } from '@/lib/variant-stock.server';
 import { moveVariantCells, normalizeTransferCells, type TransferCell } from '@/lib/stock-transfer.server';
+import { resolveTransferDestination } from '@/lib/product-sku.server';
 import { v4 as uuidv4 } from 'uuid';
 import { assertFeatureEnabled } from '@/lib/entitlements/enforce.server';
 import { FeatureCode } from '@/lib/entitlements/feature-codes';
@@ -164,6 +165,17 @@ export async function POST(
 
     const clientTransferId = isValidClientId((body as { id?: unknown }).id) ? (body as { id: string }).id : null;
 
+    // If the receiving shop doesn't stock this product but has its own
+    // product with the same SKU, the stock is added to that one instead of
+    // creating a second listing with the same SKU there.
+    const resolved = await resolveTransferDestination({
+      organizationId, productId: resolvedProductId, toShopId, toShopName: destShop.name, srcShopStockId: srcStock.id as string,
+    });
+    if (!resolved.ok) {
+      return jsonResponse({ success: false, error: resolved.error, code: 'SKU_MERGE_MISMATCH' }, 400);
+    }
+    const destProductId = resolved.dest.productId;
+
     // ── Size/colour product: gate on the StockTransfer row, move cell by cell ──
     if (variantCells) {
       const transferId = clientTransferId ?? uuidv4();
@@ -196,13 +208,7 @@ export async function POST(
         }, 200);
       }
 
-      const { data: existingDest } = await supabaseAdmin
-        .from('ShopStock')
-        .select('id')
-        .eq('shopId', toShopId)
-        .eq('productId', resolvedProductId)
-        .maybeSingle();
-      let destStockId = existingDest?.id as string | undefined;
+      let destStockId = resolved.dest.stock?.id;
       let createdDestStock = false;
       if (!destStockId) {
         destStockId = uuidv4();
@@ -211,7 +217,7 @@ export async function POST(
           id: destStockId,
           organizationId,
           shopId: toShopId,
-          productId: resolvedProductId,
+          productId: destProductId,
           quantity: 0,
           lowStockThreshold: srcStock.lowStockThreshold ?? 5,
           createdAt: now,
@@ -270,6 +276,7 @@ export async function POST(
 
       try {
         await syncProductStockFromShopStocks(resolvedProductId);
+        if (destProductId !== resolvedProductId) await syncProductStockFromShopStocks(destProductId);
       } catch (syncErr) {
         logger.warn('Mobile variant stock transfer: failed to sync product stockQuantity', {
           error: syncErr instanceof Error ? syncErr.message : String(syncErr),
@@ -284,7 +291,7 @@ export async function POST(
       return jsonResponse({
         success: true,
         message: `${transferQty} unit(s) transferred to ${destShop.name}`,
-        data: { fromShopId: shopId, toShopId, toShopName: destShop.name, productId: resolvedProductId, quantity: transferQty, transferId },
+        data: { fromShopId: shopId, toShopId, toShopName: destShop.name, productId: resolvedProductId, toProductId: destProductId, mergedBySku: resolved.dest.mergedBySku, quantity: transferQty, transferId },
       }, 200);
     }
 
@@ -335,13 +342,9 @@ export async function POST(
       return jsonResponse({ success: false, error: 'Failed to update source stock', code: 'INTERNAL_ERROR' }, 500);
     }
 
-    // Increment or create destination ShopStock
-    const { data: destStock } = await supabaseAdmin
-      .from('ShopStock')
-      .select('id, quantity')
-      .eq('shopId', toShopId)
-      .eq('productId', resolvedProductId)
-      .maybeSingle();
+    // Increment or create destination ShopStock (resolved above — may be the
+    // receiving shop's same-SKU product)
+    const destStock = resolved.dest.stock;
 
     let destStockId: string;
     if (destStock) {
@@ -356,7 +359,7 @@ export async function POST(
         id: destStockId,
         organizationId,
         shopId: toShopId,
-        productId: resolvedProductId,
+        productId: destProductId,
         quantity: transferQty,
         lowStockThreshold: srcStock.lowStockThreshold ?? 5,
         createdAt: now,
@@ -418,6 +421,7 @@ export async function POST(
     // Sync aggregated product stock
     try {
       await syncProductStockFromShopStocks(resolvedProductId);
+      if (destProductId !== resolvedProductId) await syncProductStockFromShopStocks(destProductId);
     } catch (syncErr) {
       logger.warn('Mobile stock transfer: failed to sync product stockQuantity', {
         error: syncErr instanceof Error ? syncErr.message : String(syncErr),
@@ -441,6 +445,8 @@ export async function POST(
         toShopId,
         toShopName: destShop.name,
         productId: resolvedProductId,
+        toProductId: destProductId,
+        mergedBySku: resolved.dest.mergedBySku,
         quantity: transferQty,
         newSourceQuantity: newSrcQty,
       },
