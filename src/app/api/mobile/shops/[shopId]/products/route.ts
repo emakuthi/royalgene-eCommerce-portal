@@ -218,8 +218,8 @@ export async function POST(
       );
     }
 
-    // SKU uniqueness check, scoped to this business (SKUs are per-business)
-    const skuClash = await findSkuConflict(auth.payload.organizationId, body.sku);
+    // SKUs are unique per shop (other shops of the business may reuse one)
+    const skuClash = await findSkuConflict({ organizationId: auth.payload.organizationId, sku: body.sku, shopIds: [shopId] });
     if (skuClash) {
       return jsonResponse(
         { success: false, error: duplicateSkuMessage(body.sku, skuClash), code: 'DUPLICATE_SKU' },

@@ -92,8 +92,8 @@ export async function POST(request: NextRequest) {
     // --------- New validations ---------
     const sku = String(productData.sku);
 
-    // SKU uniqueness check, scoped to the organization's own catalog
-    const skuClash = await findSkuConflict(organizationId, sku);
+    // SKUs are unique per shop (other shops of the business may reuse one)
+    const skuClash = await findSkuConflict({ organizationId, sku, shopIds: [shopId] });
     if (skuClash) {
       return jsonResponse({ success: false, error: duplicateSkuMessage(sku, skuClash) }, 409);
     }
@@ -382,7 +382,7 @@ export async function PUT(request: NextRequest) {
       updates.sku = normalizeSku(updates.sku);
       const skuOrgId = payload.organizationId
         ?? ((await supabaseAdmin.from('Product').select('organizationId').eq('id', productId).maybeSingle()).data?.organizationId as string | undefined);
-      const clash = await findSkuConflict(skuOrgId, updates.sku, productId);
+      const clash = await findSkuConflict({ organizationId: skuOrgId, sku: updates.sku, productId });
       if (clash) {
         return jsonResponse({ success: false, error: duplicateSkuMessage(updates.sku, clash) }, 409);
       }
@@ -425,7 +425,7 @@ export async function PUT(request: NextRequest) {
       .maybeSingle();
 
     if (isSkuUniqueViolation(updateError)) {
-      const raceClash = await findSkuConflict(payload.organizationId, updates.sku, productId);
+      const raceClash = await findSkuConflict({ organizationId: payload.organizationId, sku: updates.sku, productId });
       return jsonResponse({ success: false, error: duplicateSkuMessage(updates.sku, raceClash) }, 409);
     }
     if (updateError) {

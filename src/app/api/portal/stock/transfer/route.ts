@@ -30,6 +30,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { jsonResponse, optionsResponse } from '@/lib/apiResponse';
 import { syncProductStockFromShopStocks } from '@/lib/supabase-db';
 import { hasVariantStock } from '@/lib/variant-stock.server';
+import { resolveTransferDestination } from '@/lib/product-sku.server';
 import { trackFromRequest } from '@/lib/activity-tracker';
 import type { ShopStock } from '@/lib/types';
 import { assertFeatureEnabled } from '@/lib/entitlements/enforce.server';
@@ -153,13 +154,14 @@ export async function POST(request: NextRequest) {
       return jsonResponse({ success: false, error: 'Destination shop must belong to the same organization' }, 403);
     }
 
-    // ── Check if destination already has stock for this product ─────────────
-    const { data: destStock } = await supabaseAdmin
-      .from('ShopStock')
-      .select('id, quantity')
-      .eq('shopId', toShopId)
-      .eq('productId', src.productId)
-      .maybeSingle();
+    // ── Destination stock: this product, or the receiving shop's own
+    // product with the same SKU (its count goes up — no second listing) ────
+    const resolved = await resolveTransferDestination({
+      organizationId: src.organizationId, productId: src.productId, toShopId, toShopName: destShop.name, srcShopStockId: src.id,
+    });
+    if (!resolved.ok) return jsonResponse({ success: false, error: resolved.error, code: 'SKU_MERGE_MISMATCH' }, 400);
+    const destStock = resolved.dest.stock;
+    const destProductId = resolved.dest.productId;
 
     const now = new Date().toISOString();
     const portalUserId = `${payload.role === 'admin' || payload.role === 'super_admin' ? 'admin' : 'user'}-${payload.userId}`;
@@ -195,7 +197,7 @@ export async function POST(request: NextRequest) {
         id: newStockId,
         organizationId: src.organizationId,
         shopId: toShopId,
-        productId: src.productId,
+        productId: destProductId,
         quantity: transferQty,
         lowStockThreshold: src.lowStockThreshold ?? 5,
         createdAt: now,
@@ -233,6 +235,7 @@ export async function POST(request: NextRequest) {
     // ── Sync aggregated product stockQuantity ────────────────────────────────
     try {
       await syncProductStockFromShopStocks(src.productId);
+      if (destProductId !== src.productId) await syncProductStockFromShopStocks(destProductId);
     } catch (syncErr) {
       logger.warn('Stock transfer: failed to sync product stockQuantity', {
         error: syncErr instanceof Error ? syncErr.message : String(syncErr),
@@ -273,6 +276,8 @@ export async function POST(request: NextRequest) {
         toShopId,
         toShopName: destShop.name,
         productId: src.productId,
+        toProductId: destProductId,
+        mergedBySku: resolved.dest.mergedBySku,
         quantity: transferQty,
         newSourceQuantity: newSrcQty,
       },

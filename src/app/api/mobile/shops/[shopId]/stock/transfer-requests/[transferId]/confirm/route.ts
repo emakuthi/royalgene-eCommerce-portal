@@ -12,6 +12,7 @@ import { jsonResponse, optionsResponse } from '@/lib/apiResponse';
 import { verifyMobileShopAccess } from '@/lib/mobile-shop-auth';
 import { syncProductStockFromShopStocks } from '@/lib/supabase-db';
 import { v4 as uuidv4 } from 'uuid';
+import { resolveTransferDestination } from '@/lib/product-sku.server';
 
 export async function POST(
   request: NextRequest,
@@ -42,6 +43,28 @@ export async function POST(
       return jsonResponse({ success: false, error: `This transfer was already ${transfer.status}`, code: 'ALREADY_RESOLVED' }, 409);
     }
 
+    // Where the stock lands — resolved BEFORE claiming, so a transfer that
+    // can't be added to the receiving shop's same-SKU product stays pending
+    // (the destination can still reject it) instead of being half-confirmed.
+    const { data: srcStock } = await supabaseAdmin
+      .from('ShopStock')
+      .select('id')
+      .eq('shopId', transfer.fromShopId)
+      .eq('productId', transfer.productId)
+      .maybeSingle();
+    const { data: destShop } = await supabaseAdmin.from('Shop').select('name').eq('id', shopId).maybeSingle();
+    const resolved = await resolveTransferDestination({
+      organizationId: transfer.organizationId as string,
+      productId: transfer.productId as string,
+      toShopId: shopId,
+      toShopName: (destShop?.name as string | undefined) ?? 'This shop',
+      srcShopStockId: (srcStock?.id as string | undefined) ?? null,
+    });
+    if (!resolved.ok) {
+      return jsonResponse({ success: false, error: resolved.error, code: 'SKU_MERGE_MISMATCH' }, 400);
+    }
+    const destProductId = resolved.dest.productId;
+
     // Claim it first — a conditional UPDATE gated on still-pending status is
     // the atomic compare-and-swap: two concurrent confirm calls can't both
     // apply the stock increment.
@@ -62,12 +85,7 @@ export async function POST(
     }
     const claimed = claimedRows[0];
 
-    const { data: destStock } = await supabaseAdmin
-      .from('ShopStock')
-      .select('id, quantity, lowStockThreshold')
-      .eq('shopId', shopId)
-      .eq('productId', transfer.productId)
-      .maybeSingle();
+    const destStock = resolved.dest.stock;
 
     let destStockId: string;
     if (destStock) {
@@ -79,20 +97,13 @@ export async function POST(
         id: destStockId,
         organizationId: transfer.organizationId,
         shopId,
-        productId: transfer.productId,
+        productId: destProductId,
         quantity: transfer.quantity,
         lowStockThreshold: 5,
         createdAt: now,
         updatedAt: now,
       }]);
     }
-
-    const { data: srcStock } = await supabaseAdmin
-      .from('ShopStock')
-      .select('id')
-      .eq('shopId', transfer.fromShopId)
-      .eq('productId', transfer.productId)
-      .maybeSingle();
 
     await supabaseAdmin.from('StockTransaction').insert([
       {
@@ -121,6 +132,7 @@ export async function POST(
 
     try {
       await syncProductStockFromShopStocks(transfer.productId as string);
+      if (destProductId !== transfer.productId) await syncProductStockFromShopStocks(destProductId);
     } catch (syncErr) {
       logger.warn('Stock transfer confirm: failed to sync product stockQuantity', {
         error: syncErr instanceof Error ? syncErr.message : String(syncErr), productId: transfer.productId,

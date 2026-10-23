@@ -11,6 +11,7 @@
  * Lists transfers where [shopId] is either the source or the destination,
  * each row tagged with `direction: 'outgoing' | 'incoming'` so one call
  * covers both "what did I send" and "what's waiting for me to confirm".
+ * Pending incoming rows also carry `destinationPreview` (see buildTransferPreview).
  */
 import { productUnit } from '@/lib/business-settings.server';
 import { quantityError } from '@/lib/business-types';
@@ -25,6 +26,7 @@ import { FeatureCode } from '@/lib/entitlements/feature-codes';
 import { isValidClientId } from '@/lib/sync/syncable-entities';
 import { idempotentInsert } from '@/lib/sync/idempotent-insert.server';
 import { v4 as uuidv4 } from 'uuid';
+import { buildTransferPreview } from '@/lib/product-sku.server';
 
 export async function POST(
   request: NextRequest,
@@ -185,9 +187,26 @@ export async function GET(
       return jsonResponse({ success: false, error: 'Failed to fetch transfer requests', code: 'INTERNAL_ERROR' }, 500);
     }
 
-    const transfers = (data ?? []).map((row: Record<string, unknown>) => ({
-      ...row,
-      direction: row.fromShopId === shopId ? 'outgoing' : 'incoming',
+    // Incoming requests still waiting on this shop carry a preview of where
+    // the stock will land here (e.g. added to this shop's own same-SKU
+    // product), so whoever confirms can see both names and spot a typo.
+    const transfers = await Promise.all((data ?? []).map(async (row: Record<string, unknown>) => {
+      const direction = row.fromShopId === shopId ? 'outgoing' : 'incoming';
+      if (direction !== 'incoming' || row.status !== 'pending') return { ...row, direction };
+      const { data: srcStock } = await supabaseAdmin
+        .from('ShopStock')
+        .select('id')
+        .eq('shopId', row.fromShopId as string)
+        .eq('productId', row.productId as string)
+        .maybeSingle();
+      const destinationPreview = await buildTransferPreview({
+        organizationId: row.organizationId as string,
+        productId: row.productId as string,
+        toShopId: shopId,
+        toShopName: ((row.toShop as { name?: string } | null)?.name) ?? 'This shop',
+        srcShopStockId: (srcStock?.id as string | undefined) ?? null,
+      }).catch(() => null);
+      return { ...row, direction, destinationPreview };
     }));
 
     return jsonResponse({ success: true, data: { transfers } }, 200);

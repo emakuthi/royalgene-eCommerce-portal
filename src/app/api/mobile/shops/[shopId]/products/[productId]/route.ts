@@ -260,13 +260,14 @@ export async function PUT(
     }
     await normalizeProductUpdate(auth.payload.organizationId, productUpdates);
 
-    // SKUs are unique per business. Refuse a clash with a clear 400 rather
+    // SKUs are unique per shop — checked across every shop that stocks this
+    // product. Refuse a clash with a clear 400 rather
     // than letting the unique index 500 — the app's sync treats 500 as
     // retryable (10 silent retries) and every Product-UPDATE 409 as a
     // version conflict, so 400 is the one code it reports as "rejected".
     if (Object.prototype.hasOwnProperty.call(productUpdates, 'sku')) {
       productUpdates.sku = normalizeSku(productUpdates.sku);
-      const clash = await findSkuConflict(auth.payload.organizationId, productUpdates.sku, resolvedProductId);
+      const clash = await findSkuConflict({ organizationId: auth.payload.organizationId, sku: productUpdates.sku, productId: resolvedProductId });
       if (clash) {
         return jsonResponse({ success: false, error: duplicateSkuMessage(productUpdates.sku, clash), code: 'DUPLICATE_SKU' }, 400);
       }
@@ -331,7 +332,7 @@ export async function PUT(
       const { data: updatedRows, error: prodUpdateError } = await updateQuery.select('id, version');
 
       if (isSkuUniqueViolation(prodUpdateError)) {
-        const raceClash = await findSkuConflict(auth.payload.organizationId, productUpdates.sku, resolvedProductId);
+        const raceClash = await findSkuConflict({ organizationId: auth.payload.organizationId, sku: productUpdates.sku, productId: resolvedProductId });
         return jsonResponse({ success: false, error: duplicateSkuMessage(productUpdates.sku, raceClash), code: 'DUPLICATE_SKU' }, 400);
       }
       if (prodUpdateError) {

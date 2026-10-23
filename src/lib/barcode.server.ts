@@ -89,15 +89,27 @@ export async function resolveBarcode(params: {
     }
   }
 
-  // 2. SKU fallback.
+  // 2. SKU fallback. Different shops may each have their own product with
+  // the same SKU, so prefer the one this shop actually stocks.
   if (!product) {
     const { data } = await supabaseAdmin
       .from('Product')
       .select(PRODUCT_COLUMNS)
       .eq('organizationId', params.organizationId)
       .ilike('sku', escapeLike(code))
-      .limit(1);
-    const row = data?.[0] as unknown as ProductRow | undefined;
+      .limit(50);
+    const rows = (data ?? []) as unknown as ProductRow[];
+    let row = rows[0];
+    if (rows.length > 1) {
+      const { data: here } = await supabaseAdmin
+        .from('ShopStock')
+        .select('productId')
+        .eq('shopId', params.shopId)
+        .in('productId', rows.map((r) => r.id))
+        .limit(1);
+      const stockedId = (here?.[0] as { productId: string } | undefined)?.productId;
+      row = rows.find((r) => r.id === stockedId) ?? row;
+    }
     if (row) {
       product = row;
       source = 'sku';
