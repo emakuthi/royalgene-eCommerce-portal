@@ -39,15 +39,17 @@ export async function businessSettingsGet(organizationId: string) {
   return jsonResponse({ success: true, data: { ...settings, readOnly, trialEndsAt } });
 }
 
-/** Body: { businessType?, option1Label?, option2Label? } */
+/** Body: { businessName?, businessType?, option1Label?, option2Label?, requireAppLock? } */
 export async function businessSettingsPut(organizationId: string, request: Request) {
   const body = await readJson(request);
   if (!body) return jsonResponse({ success: false, error: 'Invalid JSON body', code: 'VALIDATION_ERROR' }, 400);
   try {
     const data = await updateBusinessSettings(organizationId, {
+      businessName: body.businessName,
       businessType: body.businessType,
       option1Label: body.option1Label,
       option2Label: body.option2Label,
+      requireAppLock: body.requireAppLock,
     });
     return jsonResponse({ success: true, data });
   } catch (err) {

@@ -65,6 +65,9 @@ export async function GET(request: NextRequest) {
   });
 
   const params = new URLSearchParams({ token: result.data.token, name: result.data.user.name || '' });
+  // A brand-new workspace was named from the Google profile — the dashboard
+  // offers to rename it (and pick the business type) right away.
+  if (isNewUser) params.set('welcome', '1');
   const res = NextResponse.redirect(getOrgUrlFor(result.data.organization, `/session-bridge?${params.toString()}`));
   clearOAuthState(res);
   return res;

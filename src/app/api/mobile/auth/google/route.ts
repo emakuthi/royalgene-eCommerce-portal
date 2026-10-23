@@ -73,7 +73,9 @@ export async function POST(request: NextRequest) {
     });
 
     return jsonResponse(
-      { success: true, data: result.data, message: isNewUser ? 'Workspace created' : 'Login successful' },
+      // isNewUser: the app follows a fresh Google sign-up with a "name your
+      // business" step, since the workspace name was made up from the Google profile.
+      { success: true, data: { ...result.data, isNewUser }, message: isNewUser ? 'Workspace created' : 'Login successful' },
       isNewUser ? 201 : 200,
     );
   } catch (error) {

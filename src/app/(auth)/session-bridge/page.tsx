@@ -54,7 +54,7 @@ function SessionBridgeInner() {
       token,
     );
 
-    router.replace('/dashboard');
+    router.replace(searchParams.get('welcome') === '1' ? '/dashboard?welcome=1' : '/dashboard');
   }, [mounted, searchParams, setAuth, router]);
 
   return (

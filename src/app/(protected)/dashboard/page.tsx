@@ -1,12 +1,13 @@
 'use client';
 
-import { useEffect, useState, useMemo } from 'react';
+import { Suspense, useEffect, useState, useMemo } from 'react';
 import { useHydratedAuth } from '@/lib/hooks';
 import { usePortalStore } from '@/lib/store';
 import type { PortalDashboardStats, User } from '@/lib/types';
 import AdminDashboard from '@/components/portal/AdminDashboard';
 import ShopDashboard from '@/components/portal/ShopDashboard';
 import PortalHeader from '@/components/portal/PortalHeader';
+import WelcomeSetupDialog from '@/components/portal/WelcomeSetupDialog';
 
 function PortalDashboardContent() {
   const { user: authUser, token } = useHydratedAuth();
@@ -158,6 +159,11 @@ function PortalDashboardContent() {
       <div>
         <PortalHeader title="Dashboard" description="Admin summary and metrics" backHref="/portal" breadcrumbs={[{ label: 'Portal', href: '/portal' }, { label: 'Dashboard' }]} />
         <AdminDashboard stats={stats} loading={loading} currentShopId={currentShop?.id} />
+        {role === 'admin' && (
+          <Suspense fallback={null}>
+            <WelcomeSetupDialog token={token} />
+          </Suspense>
+        )}
       </div>
     );
   }
