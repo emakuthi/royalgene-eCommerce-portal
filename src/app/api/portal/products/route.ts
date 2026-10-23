@@ -14,6 +14,7 @@ import { assertCanCreate } from '@/lib/entitlements/enforce.server';
 import { deleteUploadedFiles } from '@/lib/storage-usage.server';
 import { hasCapability } from '@/lib/permissions.server';
 import { canViewCostData } from '@/lib/cost-visibility.server';
+import { duplicateSkuMessage, findSkuConflict, isSkuUniqueViolation, normalizeSku } from '@/lib/product-sku.server';
 
 type IncomingStock = { quantity?: number; lowStockThreshold?: number };
 
@@ -92,23 +93,9 @@ export async function POST(request: NextRequest) {
     const sku = String(productData.sku);
 
     // SKU uniqueness check, scoped to the organization's own catalog
-    try {
-      const { data: existing, error: skuErr } = await supabaseAdmin
-        .from('Product')
-        .select('*')
-        .eq('sku', sku)
-        .eq('organizationId', organizationId)
-        .maybeSingle();
-
-      if (skuErr) {
-        logger.warn('SKU check error', { error: skuErr });
-      }
-
-      if (existing) {
-        return jsonResponse({ success: false, error: 'Product SKU already exists' }, 409);
-      }
-    } catch (e) {
-      logger.warn('SKU lookup failed', { error: e instanceof Error ? e.message : String(e) });
+    const skuClash = await findSkuConflict(organizationId, sku);
+    if (skuClash) {
+      return jsonResponse({ success: false, error: duplicateSkuMessage(sku, skuClash.name) }, 409);
     }
 
     // Category: any workspace category (createProductForShop resolves it, adding an unknown one).
@@ -391,6 +378,16 @@ export async function PUT(request: NextRequest) {
       return jsonResponse({ success: false, error: 'No updatable fields provided' }, 400);
     }
 
+    if ('sku' in updates) {
+      updates.sku = normalizeSku(updates.sku);
+      const skuOrgId = payload.organizationId
+        ?? ((await supabaseAdmin.from('Product').select('organizationId').eq('id', productId).maybeSingle()).data?.organizationId as string | undefined);
+      const clash = await findSkuConflict(skuOrgId, updates.sku, productId);
+      if (clash) {
+        return jsonResponse({ success: false, error: duplicateSkuMessage(updates.sku, clash.name) }, 409);
+      }
+    }
+
     // If the images array is being replaced, capture what's disappearing so
     // the corresponding files can be cleaned up from Storage after the
     // update succeeds — otherwise a removed image just stays orphaned.
@@ -427,6 +424,9 @@ export async function PUT(request: NextRequest) {
       .select()
       .maybeSingle();
 
+    if (isSkuUniqueViolation(updateError)) {
+      return jsonResponse({ success: false, error: duplicateSkuMessage(updates.sku) }, 409);
+    }
     if (updateError) {
       logger.error('Failed to update product', { productId, error: updateError.message });
       return jsonResponse({ success: false, error: 'Failed to update product' }, 500);
