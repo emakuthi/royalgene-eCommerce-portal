@@ -64,3 +64,40 @@ describe('buildProductHistory cost redaction', () => {
     expect(JSON.stringify(events)).not.toMatch(/costPrice|1400|1500/);
   });
 });
+
+describe('buildProductHistory stock labels', () => {
+  const txn = (id: string, type: string, quantity: number, reason: string, reference: string | null, at: string) => ({
+    id, shopStockId: 'ss-1', portalUserId: null, type, quantity, reason, reference, notes: null, size: '', color: '', createdAt: at,
+  });
+
+  beforeEach(() => {
+    mockTables = {
+      Product: [{ id: PRODUCT, name: 'Dress', createdAt: '2026-09-29T08:59:00Z', organizationId: ORG }],
+      ShopStock: [{ id: 'ss-1', shopId: 'shop-1', productId: PRODUCT, organizationId: ORG, quantity: 10 }],
+      Shop: [{ id: 'shop-1', name: 'Main Shop' }],
+      StockTransaction: [
+        // The formats each transfer route actually writes.
+        txn('t-mobile-out', 'subtract', -2, 'Mobile transfer out to Town Shop — for a sale', 'mobile-transfer-abc', '2026-10-01T10:00:00Z'),
+        txn('t-request-out', 'subtract', -1, 'Transfer confirmed to shop shop-2', 'transfer-request-xyz', '2026-10-02T10:00:00Z'),
+        txn('t-portal-out', 'subtract', -1, 'Transfer out to shop Town Shop', 'transfer-2026-10-03', '2026-10-03T10:00:00Z'),
+        txn('t-in', 'add', 3, 'Mobile transfer in from shop shop-2', 'mobile-transfer-def', '2026-10-04T10:00:00Z'),
+        txn('t-sale', 'subtract', -1, 'Sale', 'sale-123', '2026-10-05T10:00:00Z'),
+      ],
+      PortalUser: [],
+      User: [],
+      activity_logs: [],
+    };
+  });
+
+  it('labels transfers out as transfers, not sales', async () => {
+    const { buildProductHistory } = await import('../product-history.server');
+    const events = (await buildProductHistory(ORG, PRODUCT, { includeCost: true }))!;
+    const byId = new Map(events.map((e) => [e.id, e]));
+    for (const id of ['t-mobile-out', 't-request-out', 't-portal-out']) {
+      expect(byId.get(id)).toMatchObject({ type: 'transfer_out' });
+      expect(byId.get(id)!.title).toMatch(/^Transferred out/);
+    }
+    expect(byId.get('t-in')).toMatchObject({ type: 'transfer_in', title: 'Transferred in 3' });
+    expect(byId.get('t-sale')).toMatchObject({ type: 'sale', title: 'Sold 1' });
+  });
+});

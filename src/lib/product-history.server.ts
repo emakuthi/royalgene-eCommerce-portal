@@ -183,12 +183,16 @@ export async function buildProductHistory(
     const vsuffix = variantSuffix(t.size, t.color);
     let evType: ProductHistoryType = 'stock_change';
     let title: string;
-    if (reason.includes('sale') || (type === 'subtract' && t.reference)) {
-      evType = 'sale';
-      title = `Sold ${Math.abs(delta)}${vsuffix}`;
-    } else if (reason.includes('transfer')) {
+    const reference = ((t.reference as string) || '').toLowerCase();
+    // Transfers first: their "out" leg is a referenced subtract too
+    // (mobile-transfer-…, transfer-request-…), which the sale rule below
+    // would otherwise label "Sold" — and a transfer note may mention "sale".
+    if (reason.includes('transfer') || reference.includes('transfer')) {
       evType = delta < 0 ? 'transfer_out' : 'transfer_in';
       title = `${delta < 0 ? 'Transferred out' : 'Transferred in'} ${Math.abs(delta)}${vsuffix}`;
+    } else if (reason.includes('sale') || (type === 'subtract' && t.reference)) {
+      evType = 'sale';
+      title = `Sold ${Math.abs(delta)}${vsuffix}`;
     } else if (type === 'add' || (delta > 0 && (reason.includes('restock') || reason.includes('add')))) {
       evType = 'restock';
       title = `Restocked +${Math.abs(delta)}${vsuffix}`;
