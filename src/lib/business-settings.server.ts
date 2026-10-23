@@ -25,6 +25,8 @@ export interface ProductCategory {
 }
 
 export interface BusinessSettings {
+  /** Organization.name — the workspace's display name. */
+  businessName: string;
   businessType: BusinessTypeId;
   /** Name of product option 1 (stored in the `size` columns); '' = off. */
   option1Label: string;
@@ -32,7 +34,12 @@ export interface BusinessSettings {
   option2Label: string;
   categories: ProductCategory[];
   units: readonly string[];
+  /** Owner policy: staff must set an app lock (PIN/pattern) on their phone. */
+  requireAppLock: boolean;
 }
+
+export const MIN_BUSINESS_NAME_LENGTH = 2;
+export const MAX_BUSINESS_NAME_LENGTH = 100;
 
 export class BusinessSettingsError extends Error {}
 
@@ -60,11 +67,11 @@ export async function listProductCategories(organizationId: string, opts: { acti
 export async function getBusinessSettings(organizationId: string): Promise<BusinessSettings> {
   const { data, error } = await supabaseAdmin
     .from('Organization')
-    .select('businessType, option1Label, option2Label')
+    .select('name, businessType, option1Label, option2Label')
     .eq('id', organizationId)
     .maybeSingle();
   if (error) logger.warn('[business] getBusinessSettings failed', { organizationId, error: error.message });
-  const row = (data ?? {}) as { businessType?: string; option1Label?: string | null; option2Label?: string | null };
+  const row = (data ?? {}) as { name?: string; businessType?: string; option1Label?: string | null; option2Label?: string | null };
   const type = getBusinessType(row.businessType);
   let categories = await listProductCategories(organizationId);
   if (categories.length === 0 && !error) {
@@ -73,12 +80,26 @@ export async function getBusinessSettings(organizationId: string): Promise<Busin
     categories = await listProductCategories(organizationId);
   }
   return {
+    businessName: row.name ?? '',
     businessType: type.id,
     option1Label: row.option1Label ?? type.option1Label,
     option2Label: row.option2Label ?? type.option2Label,
     categories,
     units: PRODUCT_UNITS,
+    requireAppLock: await getRequireAppLock(organizationId),
   };
+}
+
+// Read on its own so the rest of the settings keep working before migration
+// 20261023_01 adds the column (selecting a missing column fails the whole query).
+async function getRequireAppLock(organizationId: string): Promise<boolean> {
+  const { data, error } = await supabaseAdmin
+    .from('Organization')
+    .select('requireAppLock')
+    .eq('id', organizationId)
+    .maybeSingle();
+  if (error) return false;
+  return (data as { requireAppLock?: boolean } | null)?.requireAppLock === true;
 }
 
 /** Adds the type's starter categories the workspace doesn't already have. Never removes any. */
@@ -103,19 +124,45 @@ function cleanOptionLabel(raw: unknown, field: string): string {
 }
 
 export interface BusinessSettingsPatch {
+  businessName?: unknown;
   businessType?: unknown;
   option1Label?: unknown;
   option2Label?: unknown;
+  requireAppLock?: unknown;
+}
+
+function cleanBusinessName(raw: unknown): string {
+  if (typeof raw !== 'string') throw new BusinessSettingsError('Business name must be text');
+  const name = raw.trim().replace(/\s+/g, ' ');
+  if (name.length < MIN_BUSINESS_NAME_LENGTH || name.length > MAX_BUSINESS_NAME_LENGTH) {
+    throw new BusinessSettingsError(`Business name must be ${MIN_BUSINESS_NAME_LENGTH}–${MAX_BUSINESS_NAME_LENGTH} characters`);
+  }
+  return name;
 }
 
 /**
- * Owner: change the business type and/or option names. Switching type applies
- * that type's option names (unless given explicitly) and adds its starter
- * categories; existing categories and products are left alone.
+ * Owner: change the business name, type, option names and/or the app-lock
+ * policy. Switching type applies that type's option names (unless given
+ * explicitly) and adds its starter categories; existing categories and
+ * products are left alone — except in a workspace with no products yet,
+ * where the previous type's untouched starter list is swapped out (a Google
+ * sign-up starts as the default type before the owner has picked one).
+ * Renaming also renames the shop that was auto-named after the workspace.
  */
 export async function updateBusinessSettings(organizationId: string, patch: BusinessSettingsPatch): Promise<BusinessSettings> {
   const update: Record<string, unknown> = {};
   let newType: BusinessTypeId | null = null;
+  let newName: string | null = null;
+  let requireAppLock: boolean | null = null;
+
+  if (patch.businessName !== undefined) {
+    newName = cleanBusinessName(patch.businessName);
+    update.name = newName;
+  }
+  if (patch.requireAppLock !== undefined) {
+    if (typeof patch.requireAppLock !== 'boolean') throw new BusinessSettingsError('requireAppLock must be true or false');
+    requireAppLock = patch.requireAppLock;
+  }
 
   if (patch.businessType !== undefined) {
     if (!isBusinessTypeId(patch.businessType)) throw new BusinessSettingsError('Unknown business type');
@@ -127,13 +174,61 @@ export async function updateBusinessSettings(organizationId: string, patch: Busi
   }
   if (patch.option1Label !== undefined) update.option1Label = cleanOptionLabel(patch.option1Label, 'option1Label');
   if (patch.option2Label !== undefined) update.option2Label = cleanOptionLabel(patch.option2Label, 'option2Label');
-  if (Object.keys(update).length === 0) throw new BusinessSettingsError('Nothing to update');
+  if (Object.keys(update).length === 0 && requireAppLock === null) throw new BusinessSettingsError('Nothing to update');
 
-  update.updatedAt = new Date().toISOString();
-  const { error } = await supabaseAdmin.from('Organization').update(update).eq('id', organizationId);
-  if (error) throw new Error(error.message);
-  if (newType) await seedCategoriesForType(organizationId, newType);
+  let oldName: string | null = null;
+  if (newName !== null) {
+    const { data } = await supabaseAdmin.from('Organization').select('name').eq('id', organizationId).maybeSingle();
+    oldName = (data as { name?: string } | null)?.name ?? null;
+  }
+
+  const now = new Date().toISOString();
+  if (Object.keys(update).length > 0) {
+    update.updatedAt = now;
+    const { error } = await supabaseAdmin.from('Organization').update(update).eq('id', organizationId);
+    if (error) throw new Error(error.message);
+  }
+  if (requireAppLock !== null) {
+    const { error } = await supabaseAdmin
+      .from('Organization')
+      .update({ requireAppLock, updatedAt: now })
+      .eq('id', organizationId);
+    if (error) {
+      logger.error('[business] requireAppLock update failed (migration 20261023_01 run?)', { organizationId, error: error.message });
+      throw new BusinessSettingsError('The app lock setting is not available yet');
+    }
+  }
+
+  if (newName !== null && oldName && oldName !== newName) {
+    // The first shop is created with the workspace's name; keep them in step
+    // unless the owner has already renamed the shop themselves.
+    const { error } = await supabaseAdmin
+      .from('Shop')
+      .update({ name: newName, updatedAt: now })
+      .eq('organizationId', organizationId)
+      .eq('name', oldName);
+    if (error) logger.warn('[business] default shop rename failed', { organizationId, error: error.message });
+  }
+  if (newType) await replaceStarterCategoriesIfEmpty(organizationId, newType);
   return getBusinessSettings(organizationId);
+}
+
+/** Adds [type]'s starter categories; in a workspace with no products yet, also hides the other starter ones. */
+async function replaceStarterCategoriesIfEmpty(organizationId: string, type: BusinessTypeId): Promise<void> {
+  await seedCategoriesForType(organizationId, type);
+  const { count, error } = await supabaseAdmin
+    .from('Product')
+    .select('id', { count: 'exact', head: true })
+    .eq('organizationId', organizationId);
+  if (error || (count ?? 0) > 0) return;
+  const keep = new Set(getBusinessType(type).categories.map(categorySlug));
+  const others = (await listProductCategories(organizationId)).filter((c) => c.isActive && !keep.has(c.slug));
+  if (others.length === 0) return;
+  const { error: hideError } = await supabaseAdmin
+    .from('ProductCategory')
+    .update({ isActive: false })
+    .in('id', others.map((c) => c.id));
+  if (hideError) logger.warn('[business] hiding previous starter categories failed', { organizationId, error: hideError.message });
 }
 
 function cleanCategoryName(raw: unknown): string {

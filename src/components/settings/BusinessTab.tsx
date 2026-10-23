@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
-import { Briefcase, Eye, EyeOff, Loader2, Pencil, Plus, Tags } from 'lucide-react';
+import { Briefcase, Eye, EyeOff, Loader2, Pencil, Plus, Smartphone, Tags } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useBranding } from '@/lib/branding-context';
 import { BUSINESS_TYPES, MAX_CATEGORY_NAME_LENGTH, MAX_OPTION_LABEL_LENGTH, getBusinessType } from '@/lib/business-types';
@@ -40,6 +40,7 @@ export default function BusinessTab({ token, canEdit }: { token: string | null |
   const [newCategory, setNewCategory] = useState('');
   const [busyCategory, setBusyCategory] = useState<string | null>(null);
   const [renaming, setRenaming] = useState<{ id: string; name: string } | null>(null);
+  const [savingLock, setSavingLock] = useState(false);
 
   useEffect(() => {
     setType(business.businessType);
@@ -69,6 +70,18 @@ export default function BusinessTab({ token, canEdit }: { token: string | null |
     }
     toast.success(typeChanged ? `Set up as ${getBusinessType(type).label}` : 'Saved');
     await Promise.all([refreshBranding(), business.reload()]);
+  }
+
+  async function setRequireAppLock(on: boolean) {
+    setSavingLock(true);
+    const res = await call(token, '/api/portal/business', 'PUT', { requireAppLock: on });
+    setSavingLock(false);
+    if (!res.ok) {
+      toast.error(res.error || 'Could not save');
+      return;
+    }
+    toast.success(on ? 'Staff must now set an app lock' : 'App lock is now optional');
+    await business.reload();
   }
 
   async function addCategory() {
@@ -107,6 +120,29 @@ export default function BusinessTab({ token, canEdit }: { token: string | null |
 
   return (
     <div className="space-y-6">
+      <div className={card}>
+        <div className="px-6 py-5 flex items-start gap-3">
+          <Smartphone className="h-5 w-5 text-[hsl(var(--primary))] mt-0.5 shrink-0" />
+          <div className="flex-1">
+            <h2 className="text-base font-semibold text-gray-900 dark:text-white">Require app lock on phones</h2>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
+              Everyone in this workspace must set a PIN or pattern (fingerprint optional) for the RoyalTrack app, so nobody can open it on an unattended phone. Takes effect the next time they open the latest version of the app.
+            </p>
+          </div>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={business.requireAppLock}
+            aria-label="Require app lock on phones"
+            disabled={!canEdit || savingLock}
+            onClick={() => setRequireAppLock(!business.requireAppLock)}
+            className={`relative w-11 h-6 shrink-0 rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-[hsl(var(--ring))] focus:ring-offset-2 disabled:opacity-50
+              ${business.requireAppLock ? 'bg-[hsl(var(--primary))]' : 'bg-gray-200 dark:bg-gray-700'}`}
+          >
+            <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${business.requireAppLock ? 'translate-x-5' : 'translate-x-0'}`} />
+          </button>
+        </div>
+      </div>
       <div className={card}>
         <div className="px-6 py-5 border-b border-[hsl(var(--border))] flex items-start gap-3">
           <Briefcase className="h-5 w-5 text-[hsl(var(--primary))] mt-0.5 shrink-0" />
