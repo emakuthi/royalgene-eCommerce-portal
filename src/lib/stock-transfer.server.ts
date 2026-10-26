@@ -101,9 +101,23 @@ export async function moveVariantCells(opts: {
   destShopStockId: string;
   organizationId: string | null;
   cells: TransferCell[];
+  /**
+   * Runs once every source cell has been taken and before anything lands at
+   * the destination — e.g. switching a plain-count destination to size/colour
+   * ([convertToUnsorted]) only when the move is sure to go ahead. If it
+   * throws, the taken cells are put back.
+   */
+  beforeDestination?: () => Promise<void>;
 }): Promise<{ ok: true } | { ok: false; error: string }> {
   const { srcShopStockId, destShopStockId, organizationId, cells } = opts;
   const taken: Array<{ cell: TransferCell; price: number | null; costPrice: number | null }> = [];
+  const putBack = async () => {
+    for (const done of taken) {
+      await incrementCell(srcShopStockId, organizationId, done.cell.size, done.cell.color, done.cell.quantity, {
+        price: done.price, costPrice: done.costPrice,
+      });
+    }
+  };
 
   for (const cell of cells) {
     const { data: srcCell } = await supabaseAdmin
@@ -116,11 +130,7 @@ export async function moveVariantCells(opts: {
 
     const res = await decrementCell(srcShopStockId, cell.size, cell.color, cell.quantity);
     if (!res.ok) {
-      for (const done of taken) {
-        await incrementCell(srcShopStockId, organizationId, done.cell.size, done.cell.color, done.cell.quantity, {
-          price: done.price, costPrice: done.costPrice,
-        });
-      }
+      await putBack();
       return { ok: false, error: res.error };
     }
     taken.push({
@@ -128,6 +138,15 @@ export async function moveVariantCells(opts: {
       price: typeof srcCell?.price === 'number' ? srcCell.price : null,
       costPrice: typeof srcCell?.costPrice === 'number' ? srcCell.costPrice : null,
     });
+  }
+
+  if (opts.beforeDestination) {
+    try {
+      await opts.beforeDestination();
+    } catch (err) {
+      await putBack();
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
   }
 
   for (const { cell, price, costPrice } of taken) {

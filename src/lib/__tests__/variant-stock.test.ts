@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
  */
 type Row = { id: string; shopStockId: string; organizationId: string | null; size: string; color: string; quantity: number; updatedAt?: string };
 let table: Row[] = [];
+let shopStockQty: Record<string, number> = {};
 
 function makeQuery(op: 'select' | 'delete' | 'update', patch?: Record<string, unknown>, headCountInit = false) {
   const filters: Array<(r: Row) => boolean> = [];
@@ -45,6 +46,11 @@ function makeQuery(op: 'select' | 'delete' | 'update', patch?: Record<string, un
 vi.mock('@/lib/supabase-client', () => ({
   supabaseAdmin: {
     from(name: string) {
+      if (name === 'ShopStock') {
+        // Only what convertToUnsorted reads: one row's quantity by id.
+        const q = { select: () => q, eq: (_c: string, id: string) => ({ maybeSingle: async () => ({ data: id in shopStockQty ? { quantity: shopStockQty[id] } : null }) }) };
+        return q;
+      }
       if (name !== 'ShopStockVariant') throw new Error(`unexpected table ${name}`);
       return {
         select: (_cols?: string, opts?: { count?: string; head?: boolean }) => makeQuery('select', undefined, opts?.head ?? false),
@@ -64,10 +70,12 @@ vi.mock('@/lib/supabase-client', () => ({
   },
 }));
 
-import { getVariantMatrix, setVariantMatrix, decrementCell, validateVariantRemoval, hasVariantStock } from '@/lib/variant-stock.server';
+import {
+  getVariantMatrix, setVariantMatrix, decrementCell, validateVariantRemoval, hasVariantStock, convertToUnsorted, UNSORTED,
+} from '@/lib/variant-stock.server';
 
 const SS = 'ss-1';
-beforeEach(() => { table = []; });
+beforeEach(() => { table = []; shopStockQty = {}; });
 afterEach(() => { vi.clearAllMocks(); });
 
 async function seed(cells: Array<[string, string, number]>) {
@@ -143,5 +151,39 @@ describe('hasVariantStock', () => {
     expect(await hasVariantStock(SS)).toBe(false);
     await seed([['S', 'Red', 1]]);
     expect(await hasVariantStock(SS)).toBe(true);
+  });
+});
+
+describe('convertToUnsorted', () => {
+  it('keeps a plain count as one "Unsorted" line on the dimensions in use, so the total is unchanged', async () => {
+    shopStockQty[SS] = 30;
+    expect(await convertToUnsorted(SS, 'org-1', { size: true, color: true })).toBe(30);
+    expect(table).toEqual([expect.objectContaining({ shopStockId: SS, size: UNSORTED, color: UNSORTED, quantity: 30 })]);
+    expect((await getVariantMatrix(SS)).total).toBe(30);
+  });
+
+  it('labels only the colour for a colour-only product', async () => {
+    shopStockQty[SS] = 4;
+    await convertToUnsorted(SS, 'org-1', { size: false, color: true });
+    expect(table[0]).toMatchObject({ size: '', color: UNSORTED });
+  });
+
+  it('then sells from the Unsorted line like any other size/colour', async () => {
+    shopStockQty[SS] = 3;
+    await convertToUnsorted(SS, 'org-1', { size: true, color: false });
+    expect(await validateVariantRemoval(SS, UNSORTED, '', 2)).toEqual({ needsVariant: true, error: null });
+  });
+
+  it('leaves a product that is already tracked by size/colour alone', async () => {
+    await seed([['M', 'Blue', 2]]);
+    shopStockQty[SS] = 2;
+    expect(await convertToUnsorted(SS, 'org-1', { size: true, color: true })).toBe(0);
+    expect(table).toHaveLength(1);
+  });
+
+  it('adds no line when there is nothing in stock', async () => {
+    shopStockQty[SS] = 0;
+    expect(await convertToUnsorted(SS, 'org-1', { size: true, color: true })).toBe(0);
+    expect(table).toHaveLength(0);
   });
 });

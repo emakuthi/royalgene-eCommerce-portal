@@ -84,4 +84,45 @@ describe('moveVariantCells', () => {
     expect(incrementCell).toHaveBeenCalledTimes(1);
     expect(incrementCell).toHaveBeenCalledWith('src', 'org', 'M', 'Blue', 2, { price: null, costPrice: null });
   });
+
+  it('runs beforeDestination after the source is taken and before anything lands at the destination', async () => {
+    const order: string[] = [];
+    decrementCell.mockImplementation(async () => { order.push('take'); return { ok: true, remaining: 0 }; });
+    incrementCell.mockImplementationOnce(async () => { order.push('add'); });
+
+    const r = await moveVariantCells({
+      srcShopStockId: 'src', destShopStockId: 'dest', organizationId: 'org',
+      cells: [{ size: 'M', color: 'Blue', quantity: 2 }],
+      beforeDestination: async () => { order.push('prepare'); },
+    });
+
+    expect(r).toEqual({ ok: true });
+    expect(order).toEqual(['take', 'prepare', 'add']);
+  });
+
+  it('skips beforeDestination when the source is short', async () => {
+    decrementCell.mockResolvedValue({ ok: false, error: 'Only 1 of M / Blue in stock', available: 1 });
+    const prepare = vi.fn(async () => undefined);
+
+    await moveVariantCells({
+      srcShopStockId: 'src', destShopStockId: 'dest', organizationId: 'org',
+      cells: [{ size: 'M', color: 'Blue', quantity: 2 }], beforeDestination: prepare,
+    });
+
+    expect(prepare).not.toHaveBeenCalled();
+  });
+
+  it('puts the source back and adds nothing when beforeDestination fails', async () => {
+    decrementCell.mockResolvedValue({ ok: true, remaining: 0 });
+
+    const r = await moveVariantCells({
+      srcShopStockId: 'src', destShopStockId: 'dest', organizationId: 'org',
+      cells: [{ size: 'M', color: 'Blue', quantity: 2 }],
+      beforeDestination: async () => { throw new Error('Failed to switch stock to size/colour: boom'); },
+    });
+
+    expect(r).toEqual({ ok: false, error: 'Failed to switch stock to size/colour: boom' });
+    expect(incrementCell).toHaveBeenCalledTimes(1);
+    expect(incrementCell).toHaveBeenCalledWith('src', 'org', 'M', 'Blue', 2, { price: null, costPrice: null });
+  });
 });
