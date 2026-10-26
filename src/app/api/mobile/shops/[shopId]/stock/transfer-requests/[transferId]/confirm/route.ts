@@ -61,6 +61,9 @@ export async function POST(
       srcShopStockId: (srcStock?.id as string | undefined) ?? null,
     });
     if (!resolved.ok) {
+      logger.warn('Transfer request confirm refused: same-SKU product in destination can\'t be merged', {
+        transferId, shopId, productId: transfer.productId, userId: auth.payload.userId, reason: resolved.error,
+      });
       return jsonResponse({ success: false, error: resolved.error, code: 'SKU_MERGE_MISMATCH' }, 400);
     }
     const destProductId = resolved.dest.productId;

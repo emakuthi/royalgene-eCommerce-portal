@@ -159,7 +159,12 @@ export async function POST(request: NextRequest) {
     const resolved = await resolveTransferDestination({
       organizationId: src.organizationId, productId: src.productId, toShopId, toShopName: destShop.name, srcShopStockId: src.id,
     });
-    if (!resolved.ok) return jsonResponse({ success: false, error: resolved.error, code: 'SKU_MERGE_MISMATCH' }, 400);
+    if (!resolved.ok) {
+      logger.warn('Stock transfer refused: same-SKU product in destination can\'t be merged', {
+        fromShopStockId, toShopId, productId: src.productId, userId: payload.userId, reason: resolved.error,
+      });
+      return jsonResponse({ success: false, error: resolved.error, code: 'SKU_MERGE_MISMATCH' }, 400);
+    }
     const destStock = resolved.dest.stock;
     const destProductId = resolved.dest.productId;
 
