@@ -172,6 +172,9 @@ export async function POST(
       organizationId, productId: resolvedProductId, toShopId, toShopName: destShop.name, srcShopStockId: srcStock.id as string,
     });
     if (!resolved.ok) {
+      logger.warn('Mobile stock transfer refused: same-SKU product in destination can\'t be merged', {
+        shopId, toShopId, productId: resolvedProductId, userId: auth.payload.userId, reason: resolved.error,
+      });
       return jsonResponse({ success: false, error: resolved.error, code: 'SKU_MERGE_MISMATCH' }, 400);
     }
     const destProductId = resolved.dest.productId;
