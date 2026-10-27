@@ -106,21 +106,25 @@ describe('resolveTransferDestination', () => {
     if (!r.ok) expect(r.error).toContain('tracked by size/colour, but this one isn');
   });
 
-  it('converts a plain-count product when size/colour stock is going into it', async () => {
+  it('refuses size/colour stock into a plain count that has stock, asking for its breakdown first', async () => {
     variantStocks.add('ssA-main');
     const r = await resolveTransferDestination({ ...base, productId: 'pA', toShopId: 'town' });
-    expect(r).toEqual({
-      ok: true,
-      dest: { stock: expect.objectContaining({ id: 'ssB-town' }), productId: 'pB', mergedBySku: true, convertToSizeColour: true },
-    });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toBe('"Mira short (Town)" at Town Shop (SKU "T6160-1") has 2 in stock that isn\'t split by size/colour yet. Set its size/colour breakdown at Town Shop first, then transfer.');
   });
 
-  it('merges without converting when both sides are tracked by size/colour', async () => {
+  it('lets size/colour stock land on a plain count that is empty', async () => {
+    variantStocks.add('ssA-main');
+    db.ShopStock.find((s) => s.id === 'ssB-town')!.quantity = 0;
+    const r = await resolveTransferDestination({ ...base, productId: 'pA', toShopId: 'town' });
+    expect(r).toEqual({ ok: true, dest: { stock: expect.objectContaining({ id: 'ssB-town' }), productId: 'pB', mergedBySku: true } });
+  });
+
+  it('merges when both sides are tracked by size/colour', async () => {
     variantStocks.add('ssA-main');
     variantStocks.add('ssB-town');
     const r = await resolveTransferDestination({ ...base, productId: 'pA', toShopId: 'town' });
-    expect(r.ok && r.dest.convertToSizeColour).toBeFalsy();
-    expect(r.ok && r.dest.productId).toBe('pB');
+    expect(r).toEqual({ ok: true, dest: { stock: expect.objectContaining({ id: 'ssB-town' }), productId: 'pB', mergedBySku: true } });
   });
 
   it('refuses to merge across different units', async () => {
@@ -154,12 +158,6 @@ describe('buildTransferPreview', () => {
   it('says "new" when the receiving shop has nothing with that SKU', async () => {
     expect(await buildTransferPreview({ ...base, toShopId: 'mall', toShopName: 'Mall Shop', productId: 'pA' }))
       .toMatchObject({ outcome: 'new', target: null, namesDiffer: false });
-  });
-
-  it('says the receiving product will switch to size/colour', async () => {
-    variantStocks.add('ssA-main');
-    expect(await buildTransferPreview({ ...base, productId: 'pA' }))
-      .toMatchObject({ outcome: 'merge', convertsToSizeColour: true, target: { productId: 'pB', quantity: 2 } });
   });
 
   it('still shows the other product when the merge is blocked', async () => {

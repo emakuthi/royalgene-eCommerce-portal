@@ -92,32 +92,27 @@ export function normalizeTransferCells(
  * source cell is decremented with the guarded UPDATE (race-safe against a
  * concurrent sale); if any cell can't cover its share, the cells already
  * taken are put back and the whole move reports failure — a half-applied
- * transfer never sticks. The destination cell inherits the source cell's own
- * price/cost when it has to be created. The rollup trigger keeps both
- * ShopStock.quantity totals in step.
+ * transfer never sticks.
+ *
+ * At the destination each cell is added to the existing size/colour that
+ * matches ignoring case and spacing ("mint green" joins "Mint green"), kept
+ * in the destination's own spelling, so existing cells and their prices stay
+ * as they are. Only a new cell is created; it takes the source cell's
+ * price/cost when `carryPricing` (same product on both sides), otherwise none,
+ * so it sells at the destination product's own price. The rollup trigger
+ * keeps both ShopStock.quantity totals in step. `landed` is where each cell
+ * went, in the order given.
  */
 export async function moveVariantCells(opts: {
   srcShopStockId: string;
   destShopStockId: string;
   organizationId: string | null;
   cells: TransferCell[];
-  /**
-   * Runs once every source cell has been taken and before anything lands at
-   * the destination — e.g. switching a plain-count destination to size/colour
-   * ([convertToUnsorted]) only when the move is sure to go ahead. If it
-   * throws, the taken cells are put back.
-   */
-  beforeDestination?: () => Promise<void>;
-}): Promise<{ ok: true } | { ok: false; error: string }> {
-  const { srcShopStockId, destShopStockId, organizationId, cells } = opts;
+  /** False when the stock lands on a different (same-SKU) product — keep that product's prices. */
+  carryPricing?: boolean;
+}): Promise<{ ok: true; landed: TransferCell[] } | { ok: false; error: string }> {
+  const { srcShopStockId, destShopStockId, organizationId, cells, carryPricing = true } = opts;
   const taken: Array<{ cell: TransferCell; price: number | null; costPrice: number | null }> = [];
-  const putBack = async () => {
-    for (const done of taken) {
-      await incrementCell(srcShopStockId, organizationId, done.cell.size, done.cell.color, done.cell.quantity, {
-        price: done.price, costPrice: done.costPrice,
-      });
-    }
-  };
 
   for (const cell of cells) {
     const { data: srcCell } = await supabaseAdmin
@@ -130,7 +125,11 @@ export async function moveVariantCells(opts: {
 
     const res = await decrementCell(srcShopStockId, cell.size, cell.color, cell.quantity);
     if (!res.ok) {
-      await putBack();
+      for (const done of taken) {
+        await incrementCell(srcShopStockId, organizationId, done.cell.size, done.cell.color, done.cell.quantity, {
+          price: done.price, costPrice: done.costPrice,
+        });
+      }
       return { ok: false, error: res.error };
     }
     taken.push({
@@ -140,17 +139,27 @@ export async function moveVariantCells(opts: {
     });
   }
 
-  if (opts.beforeDestination) {
-    try {
-      await opts.beforeDestination();
-    } catch (err) {
-      await putBack();
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
-    }
-  }
+  const { data: destCells } = await supabaseAdmin
+    .from('ShopStockVariant')
+    .select('size, color')
+    .eq('shopStockId', destShopStockId);
+  const existing = new Map<string, { size: string; color: string }>();
+  for (const c of (destCells ?? []) as Array<{ size: string; color: string }>) existing.set(looseCellKey(c.size, c.color), c);
 
+  const landed: TransferCell[] = [];
   for (const { cell, price, costPrice } of taken) {
-    await incrementCell(destShopStockId, organizationId, cell.size, cell.color, cell.quantity, { price, costPrice });
+    const key = looseCellKey(cell.size, cell.color);
+    const target = existing.get(key) ?? { size: cell.size, color: cell.color };
+    existing.set(key, target); // two incoming spellings of one new cell land together
+    await incrementCell(destShopStockId, organizationId, target.size, target.color, cell.quantity,
+      carryPricing ? { price, costPrice } : undefined);
+    landed.push({ size: target.size, color: target.color, quantity: cell.quantity });
   }
-  return { ok: true };
+  return { ok: true, landed };
+}
+
+/** Size/colour identity ignoring case and spacing: " Mint  Green" matches "mint green". */
+export function looseCellKey(size: string, color: string): string {
+  const loose = (v: string) => (v ?? '').trim().replace(/\s+/g, ' ').toLowerCase();
+  return `${loose(size)}\u0000${loose(color)}`;
 }

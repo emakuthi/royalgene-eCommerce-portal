@@ -77,13 +77,6 @@ export interface TransferDestination {
   productId: string;
   /** True when the stock is being added to a different product that shares the SKU. */
   mergedBySku: boolean;
-  /**
-   * Set (only ever true) when size/colour stock is going into a same-SKU
-   * product the receiving shop counts as a plain number: that product is
-   * switched to size/colour first, its count kept in an "Unsorted" line
-   * (see [convertToUnsorted]).
-   */
-  convertToSizeColour?: true;
 }
 
 /**
@@ -92,10 +85,9 @@ export interface TransferDestination {
  * same SKU (its count goes up — no second listing with the same SKU);
  * otherwise a new ShopStock row for the source product.
  *
- * Size/colour stock going into a plain-count product is allowed: that
- * product is converted (convertToSizeColour). Merging is refused (ok: false)
- * the other way round — a plain count into a size/colour product, since
- * there are no sizes to put it in — and across different units.
+ * Merging is refused (ok: false) when the two products can't be added
+ * together safely: one is tracked by size/colour and the other isn't, or
+ * they're counted in different units.
  */
 export async function resolveTransferDestination(opts: {
   organizationId: string;
@@ -146,22 +138,30 @@ export async function resolveTransferDestination(opts: {
   if (!match) return none;
 
   const target = candidates.find((c) => c.id === match.productId)!;
-  if ((await productUnit(productId)) !== (await productUnit(target.id))) {
-    return {
-      ok: false,
-      error: `${toShopName} already has "${target.name}" with SKU "${sku}", but it's counted in a different unit, so the stock can't be added to it. Change one of the SKUs, then try again.`,
-    };
-  }
   const srcVariant = srcShopStockId ? await hasVariantStock(srcShopStockId) : false;
   const destVariant = await hasVariantStock(match.id);
+  // Size/colour stock into a plain count: only when that count is empty —
+  // the sizes then simply land there. With stock in it, nobody knows its
+  // sizes, so the receiving shop has to enter its breakdown first.
+  if (srcVariant && !destVariant && Number(match.quantity) > 0) {
+    return {
+      ok: false,
+      error: `"${target.name}" at ${toShopName} (SKU "${sku}") has ${Number(match.quantity)} in stock that isn't split by size/colour yet. Set its size/colour breakdown at ${toShopName} first, then transfer.`,
+    };
+  }
   if (!srcVariant && destVariant) {
     return {
       ok: false,
       error: `${toShopName} already has "${target.name}" with SKU "${sku}", tracked by size/colour, but this one isn't, so the stock can't be added to it. Track this one by size/colour too, or change one of the SKUs, then try again.`,
     };
   }
-  const convert = srcVariant && !destVariant ? { convertToSizeColour: true as const } : {};
-  return { ok: true, dest: { stock: match, productId: target.id, mergedBySku: true, ...convert } };
+  if ((await productUnit(productId)) !== (await productUnit(target.id))) {
+    return {
+      ok: false,
+      error: `${toShopName} already has "${target.name}" with SKU "${sku}", but it's counted in a different unit, so the stock can't be added to it. Change one of the SKUs, then try again.`,
+    };
+  }
+  return { ok: true, dest: { stock: match, productId: target.id, mergedBySku: true } };
 }
 
 export interface TransferPreview {
@@ -180,8 +180,6 @@ export interface TransferPreview {
   target: { productId: string; name: string; sku: string; quantity: number; price: number | null; unit: string; image: string | null } | null;
   /** Merge with names that don't match (ignoring case/extra spaces) — worth a second look. */
   namesDiffer: boolean;
-  /** Merge into a plain-count product: it becomes size/colour, its current count kept as an "Unsorted" line. */
-  convertsToSizeColour?: true;
 }
 
 const sameName = (a: string, b: string) => a.trim().replace(/\s+/g, ' ').toLowerCase() === b.trim().replace(/\s+/g, ' ').toLowerCase();
@@ -225,7 +223,6 @@ export async function buildTransferPreview(opts: {
     outcome: dest.mergedBySku ? 'merge' : 'existing',
     target,
     namesDiffer: dest.mergedBySku && !sameName(target.name, source.name),
-    ...(dest.convertToSizeColour ? { convertsToSizeColour: true as const } : {}),
   };
 }
 

@@ -26,7 +26,7 @@ import logger from '@/lib/logger';
 import { jsonResponse } from '@/lib/apiResponse';
 import { verifyMobileShopAccess } from '@/lib/mobile-shop-auth';
 import { syncProductStockFromShopStocks } from '@/lib/supabase-db';
-import { convertToUnsorted, hasVariantStock, UNSORTED } from '@/lib/variant-stock.server';
+import { hasVariantStock } from '@/lib/variant-stock.server';
 import { moveVariantCells, normalizeTransferCells, type TransferCell } from '@/lib/stock-transfer.server';
 import { resolveTransferDestination } from '@/lib/product-sku.server';
 import { v4 as uuidv4 } from 'uuid';
@@ -234,23 +234,13 @@ export async function POST(
         createdDestStock = true;
       }
 
-      // The receiving shop's same-SKU product is a plain count: switch it to
-      // size/colour first, keeping its count as one "Unsorted" line.
-      let unsortedQty = 0;
-      const cells = variantCells;
       const moved = await moveVariantCells({
         srcShopStockId: srcStock.id as string,
         destShopStockId: destStockId,
         organizationId,
-        cells,
-        beforeDestination: resolved.dest.convertToSizeColour
-          ? async () => {
-              unsortedQty = await convertToUnsorted(destStockId!, organizationId, {
-                size: cells.some((c) => c.size !== ''),
-                color: cells.some((c) => c.color !== ''),
-              });
-            }
-          : undefined,
+        cells: variantCells,
+        // Landing on the receiving shop's own same-SKU product: keep its prices.
+        carryPricing: !resolved.dest.mergedBySku,
       });
       if (!moved.ok) {
         // Nothing moved — drop the history row (and the empty destination row we just made) so a retry starts clean.
@@ -281,8 +271,9 @@ export async function POST(
           portalUserId,
           type: 'add',
           quantity: cell.quantity,
-          size: cell.size,
-          color: cell.color,
+          // The receiving shop's spelling of this size/colour.
+          size: moved.landed[i].size,
+          color: moved.landed[i].color,
           reason: `Mobile transfer in from shop ${shopId}${noteSuffix}`,
           reference: `mobile-transfer-${transferId}`,
           createdAt: now,
@@ -301,20 +292,12 @@ export async function POST(
 
       logger.info('Mobile variant stock transfer completed', {
         userId: auth.payload.userId, fromShopId: shopId, toShopId, productId: resolvedProductId, quantity: transferQty, cells: variantCells.length,
-        ...(resolved.dest.convertToSizeColour ? { convertedToSizeColour: destProductId, unsortedQty } : {}),
       });
 
-      const convertedNote = resolved.dest.convertToSizeColour
-        ? ` It's now tracked by size/colour there${unsortedQty > 0 ? `; the ${unsortedQty} it already had are under "${UNSORTED}" until you split them into sizes` : ''}.`
-        : '';
       return jsonResponse({
         success: true,
-        message: `${transferQty} unit(s) transferred to ${destShop.name}.${convertedNote}`,
-        data: {
-          fromShopId: shopId, toShopId, toShopName: destShop.name, productId: resolvedProductId, toProductId: destProductId,
-          mergedBySku: resolved.dest.mergedBySku, quantity: transferQty, transferId,
-          ...(resolved.dest.convertToSizeColour ? { convertedToSizeColour: true, unsortedQuantity: unsortedQty } : {}),
-        },
+        message: `${transferQty} unit(s) transferred to ${destShop.name}`,
+        data: { fromShopId: shopId, toShopId, toShopName: destShop.name, productId: resolvedProductId, toProductId: destProductId, mergedBySku: resolved.dest.mergedBySku, quantity: transferQty, transferId },
       }, 200);
     }
 
