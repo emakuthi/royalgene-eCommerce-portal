@@ -3,6 +3,7 @@ import { parseSaleDiscount } from '@/lib/sale-discount';
 import { productUnit } from '@/lib/business-settings.server';
 import { quantityError } from '@/lib/business-types';
 import { NextRequest, NextResponse } from 'next/server';
+import { denyUnlessShopAllowed } from '@/lib/shop-access.server';
 import { requireTenantUser } from '@/lib/authorize';
 import { supabaseAdmin } from '@/lib/supabase-client';
 import logger from '@/lib/logger';
@@ -481,6 +482,11 @@ export async function GET(request: NextRequest) {
         .eq('organizationId', payload.organizationId)
         .maybeSingle();
       if (!shopCheck) return jsonResponse({ success: false, error: 'Forbidden' }, 403);
+    }
+    // Shopkeepers see only the shops they're assigned to; admins and managers see every shop.
+    if (shopId && !isAdmin) {
+      const denied = await denyUnlessShopAllowed(payload, shopId);
+      if (denied) return denied;
     }
 
     // Build query — admins without a shopId get all sales across every shop

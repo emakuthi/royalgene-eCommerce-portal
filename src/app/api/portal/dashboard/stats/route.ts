@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireTenantUser } from '@/lib/authorize';
+import { denyUnlessShopAllowed } from '@/lib/shop-access.server';
 import { supabaseAdmin } from '@/lib/supabase-client';
 import logger from '@/lib/logger';
 import { jsonResponse, optionsResponse } from '@/lib/apiResponse';
@@ -63,6 +64,9 @@ export async function GET(request: NextRequest) {
         .maybeSingle();
       if (!shopCheck) return jsonResponse({ success: false, error: 'Forbidden' }, 403);
     }
+    // Shopkeepers see only their own shops' figures; admins and managers every shop.
+    const denied = await denyUnlessShopAllowed(payload, shopId);
+    if (denied) return denied;
 
     // Get current date and calculate date ranges
     const now = new Date();

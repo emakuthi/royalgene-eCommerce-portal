@@ -3,6 +3,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { verifyToken, type VerifiedPayload } from '@/lib/auth.server';
 import { supabaseAdmin } from '@/lib/supabase-client';
 import { jsonResponse } from '@/lib/apiResponse';
+import { assignedShops, shopAccessDeniedResponse } from '@/lib/shop-access.server';
 import { assertTenantMatch } from '@/lib/tenant-guard';
 import { isDeviceRevoked } from '@/lib/device-registry.server';
 import logger from '@/lib/logger';
@@ -203,18 +204,26 @@ export async function verifyMobileShopAccess(
   }
 
   // Regular portal users must have a PortalUser row for this shop
-  const { data: portalUser, error: portalError } = await supabaseAdmin
+  const { data: portalUser } = await supabaseAdmin
     .from('PortalUser')
     .select('id, shopId')
     .eq('userId', payload.userId)
     .eq('shopId', shopId)
-    .single();
+    .limit(1)
+    .maybeSingle();
 
-  if (portalError || !portalUser) {
-    return jsonResponse(
-      { success: false, error: 'Forbidden', code: 'FORBIDDEN' },
-      403,
-    );
+  if (!portalUser) {
+    // Managers/owners may READ any shop in their business (sales history,
+    // dashboards); recording sales or moving stock there still needs a row.
+    const allowed = await assignedShops(payload);
+    if (allowed === null && request.method === 'GET') {
+      const { data: shopRow } = await supabaseAdmin.from('Shop').select('organizationId').eq('id', shopId).maybeSingle();
+      const { data: ownRow } = await supabaseAdmin.from('PortalUser').select('id').eq('userId', payload.userId).limit(1).maybeSingle();
+      if (shopRow && shopRow.organizationId === payload.organizationId && ownRow) {
+        return { payload, isAdmin: false, portalUserId: ownRow.id };
+      }
+    }
+    return shopAccessDeniedResponse(shopId, allowed ?? []);
   }
 
   return {
