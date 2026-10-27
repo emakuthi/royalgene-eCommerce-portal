@@ -176,7 +176,8 @@ function StockManagementContent() {
         if (!shopIdToUse) {
           console.debug('[StockPage] currentShop is null, fetching available shops');
           try {
-            const shopsRes = await fetch('/api/portal/shops', { headers: { Authorization: `Bearer ${token}` } });
+            // Only shops this user may see (their own, for a shopkeeper).
+            const shopsRes = await fetch('/api/portal/shops?scope=mine', { headers: { Authorization: `Bearer ${token}` } });
             if (shopsRes.ok) {
               const shopsJson = await shopsRes.json();
               if (shopsJson.success && Array.isArray(shopsJson.data) && shopsJson.data.length > 0) {
@@ -203,7 +204,10 @@ function StockManagementContent() {
         if (!response.ok) {
           const txt = await response.text();
           console.warn('[StockPage] stocks fetch failed with status', response.status, txt);
-          toast.error('Failed to load stock data');
+          // A 403 names the shops they can use — show it rather than a generic failure.
+          let message = 'Failed to load stock data';
+          try { message = JSON.parse(txt).error || message; } catch { /* not JSON */ }
+          toast.error(message);
           setStocks([]);
           setLoading(false);
           return;

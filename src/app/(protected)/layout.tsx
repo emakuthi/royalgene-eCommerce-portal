@@ -171,29 +171,45 @@ function GlobalSearchModal({
   );
 }
 
-// ── Shop Switcher (admin / super_admin only) ──────────────────────────────────
+// ── Shop Switcher ─────────────────────────────────────────────────────────────
+// Admins and managers/owners pick any shop (admins also "All Shops"); a
+// shopkeeper is fixed to the shop they're assigned to, preselected — or
+// picks among theirs if they have more than one.
 function ShopSwitcher({ token }: { token: string | null }) {
   const { user } = useHydratedAuth();
   const { currentShop, setCurrentShop } = usePortalStore();
   const [shops, setShops] = useState<Shop[]>([]);
+  const [canSwitchShops, setCanSwitchShops] = useState(false);
+  const [canSeeAllShops, setCanSeeAllShops] = useState(false);
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
-  const isAdmin = user?.role === 'admin' || user?.role === 'super_admin';
+  // A platform account has no shops of its own.
+  const isPlatform = user?.role === 'super_admin';
 
   useEffect(() => {
-    if (!isAdmin || !token) return;
+    if (isPlatform || !token) return;
     setLoading(true);
-    fetch('/api/portal/shops', {
+    fetch('/api/portal/shops?scope=mine', {
       headers: { Authorization: `Bearer ${token}` },
       cache: 'no-store',
     })
       .then(r => r.json())
-      .then(d => { if (d.success) setShops(d.data || []); })
+      .then(d => {
+        if (!d.success) return;
+        const list: Shop[] = d.data || [];
+        setShops(list);
+        setCanSwitchShops(Boolean(d.canSwitchShops));
+        setCanSeeAllShops(Boolean(d.canSeeAllShops));
+        // A shop they can't use (picked before, or none yet) → their own shop.
+        const current = usePortalStore.getState().currentShop;
+        const stillAllowed = current && list.some(s => s.id === current.id);
+        if (!stillAllowed && (current || !d.canSeeAllShops) && list.length > 0) setCurrentShop(list[0]);
+      })
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, [isAdmin, token]);
+  }, [isPlatform, token, setCurrentShop]);
 
   // Close on outside click
   useEffect(() => {
@@ -205,7 +221,24 @@ function ShopSwitcher({ token }: { token: string | null }) {
     return () => document.removeEventListener('mousedown', handler);
   }, [open]);
 
-  if (!isAdmin) return null;
+  if (isPlatform || shops.length === 0) return null;
+
+  // Fixed to one shop: shown, not switchable.
+  if (!canSwitchShops && shops.length === 1) {
+    return (
+      <div className="px-3 pb-3">
+        <p className="text-[10px] font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-widest mb-1.5 px-1">
+          Your Shop
+        </p>
+        <div className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800">
+          <div className="p-1.5 rounded-lg bg-[hsl(var(--primary)/0.1)] flex-shrink-0">
+            <Store className="h-3.5 w-3.5 text-[hsl(var(--primary))]" />
+          </div>
+          <p className="text-xs font-semibold text-gray-900 dark:text-white truncate">{shops[0].name}</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="px-3 pb-3" ref={ref}>
@@ -222,7 +255,7 @@ function ShopSwitcher({ token }: { token: string | null }) {
         </div>
         <div className="flex-1 text-left min-w-0">
           <p className="text-xs font-semibold text-gray-900 dark:text-white truncate leading-none">
-            {currentShop?.name ?? 'All Shops'}
+            {currentShop?.name ?? (canSeeAllShops ? 'All Shops' : 'Choose a shop')}
           </p>
           <p className="text-[10px] text-gray-400 dark:text-gray-500 mt-0.5 leading-none">
             {loading ? 'Loading…' : `${shops.length} shop${shops.length !== 1 ? 's' : ''} available`}
@@ -234,7 +267,7 @@ function ShopSwitcher({ token }: { token: string | null }) {
       {open && (
         <div className="mt-1.5 w-full bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700 shadow-xl z-50 overflow-hidden">
           {/* All Shops option (admin overview) */}
-          <button
+          {canSeeAllShops && <button
             type="button"
             onClick={() => {
               usePortalStore.getState().clearPortalContext();
@@ -254,9 +287,9 @@ function ShopSwitcher({ token }: { token: string | null }) {
               <p className="text-[10px] text-gray-400 mt-0.5">Overview across all shops</p>
             </div>
             {!currentShop && <span className="ml-auto w-1.5 h-1.5 rounded-full bg-[hsl(var(--primary))] flex-shrink-0" />}
-          </button>
+          </button>}
 
-          {shops.length > 0 && <div className="border-t border-gray-100 dark:border-gray-800" />}
+          {canSeeAllShops && shops.length > 0 && <div className="border-t border-gray-100 dark:border-gray-800" />}
 
           <div className="max-h-56 overflow-y-auto">
             {shops.map(shop => (
