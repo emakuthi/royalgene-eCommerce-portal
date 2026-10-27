@@ -6,6 +6,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { jsonResponse, optionsResponse } from '@/lib/apiResponse';
 import { assertCanCreate } from '@/lib/entitlements/enforce.server';
 import { isShopNameAvailable } from '@/lib/shops.server';
+import { assignedShops, isBusinessAdmin } from '@/lib/shop-access.server';
 
 export async function GET(request: NextRequest) {
   try {
@@ -18,6 +19,14 @@ export async function GET(request: NextRequest) {
     if (auth.organizationId) {
       query = query.eq('organizationId', auth.organizationId);
     }
+    // ?scope=mine — the shop switcher: only the shops this user may work in
+    // (every shop for admins and managers/owners, just their own for a
+    // shopkeeper), plus whether they may switch at all. Without it this stays
+    // the whole business's list (e.g. transfer destinations).
+    const mine = new URL(request.url).searchParams.get('scope') === 'mine';
+    const allowed = mine ? await assignedShops(auth) : null;
+    if (allowed) query = query.in('id', allowed.length > 0 ? allowed.map((s) => s.id) : ['__none__']);
+
     const { data: shops, error } = await query;
 
     if (error) {
@@ -27,7 +36,11 @@ export async function GET(request: NextRequest) {
 
     logger.info('Portal shops fetched', { count: shops?.length || 0, userId: auth.userId, endpoint: '/api/portal/shops' });
 
-    return jsonResponse({ success: true, data: shops || [] }, 200);
+    return jsonResponse({
+      success: true,
+      data: shops || [],
+      ...(mine ? { canSwitchShops: allowed === null, canSeeAllShops: isBusinessAdmin(auth) } : {}),
+    }, 200);
   } catch (err) {
     logger.error('Portal shops fetch error', { error: err instanceof Error ? err.message : String(err), endpoint: '/api/portal/shops' });
     return jsonResponse({ success: false, error: 'Internal server error' }, 500);

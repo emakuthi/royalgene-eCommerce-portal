@@ -3,6 +3,7 @@ import { productUnit } from '@/lib/business-settings.server';
 import { quantityError } from '@/lib/business-types';
 import { supabaseAdmin } from '@/lib/supabase-client';
 import { requireTenantUser } from '@/lib/authorize';
+import { denyUnlessShopAllowed } from '@/lib/shop-access.server';
 import logger from '@/lib/logger';
 import { v4 as uuidv4 } from 'uuid';
 import type { PortalUser, ShopStock } from '@/lib/types';
@@ -88,6 +89,9 @@ export async function GET(request: NextRequest) {
         return jsonResponse({ success: false, error: 'Forbidden' }, 403);
       }
     }
+    // Shopkeepers see only their own shops' inventory; admins and managers every shop's.
+    const denied = await denyUnlessShopAllowed(payload, shopId);
+    if (denied) return denied;
 
     // Fetch shop stocks with product information
     // Note: Try to order by updatedAt for consistency, but fall back to createdAt if updatedAt doesn't exist

@@ -32,6 +32,7 @@ import { ImageUpload } from '@/components/image-upload';
 import type { Shop } from '@/lib/types';
 import { useBusinessSettings } from '@/lib/use-business-settings';
 import { getBusinessType, optionExample, optionsTitle } from '@/lib/business-types';
+import { useProductSuggestions, ProductSuggestionList, type ProductSuggestion } from '@/components/portal/ProductSuggestions';
 
 /* ------------------------------------------------------------------ */
 /*  Form shape                                                        */
@@ -93,6 +94,10 @@ export default function AddNewProductPage() {
   const [creatingProduct, setCreatingProduct] = useState(false);
   const [addProductError, setAddProductError] = useState<string | null>(null);
   const [availableShops, setAvailableShops] = useState<Shop[]>([]);
+  /** False for a shopkeeper: their shop is preselected and fixed. */
+  const [canSwitchShops, setCanSwitchShops] = useState(true);
+  /** Which field's suggestions are showing (null = none). */
+  const [suggestFor, setSuggestFor] = useState<'name' | 'sku' | null>(null);
 
   const [addForm, setAddForm] = useState<AddForm>({
     ...EMPTY_FORM,
@@ -114,7 +119,7 @@ export default function AddNewProductPage() {
     if (!mounted || !token) return;
     (async () => {
       try {
-        const response = await fetch('/api/portal/shops', {
+        const response = await fetch('/api/portal/shops?scope=mine', {
           headers: { Authorization: `Bearer ${token}` },
         });
         if (!response.ok) return;
@@ -122,12 +127,14 @@ export default function AddNewProductPage() {
         if (!data?.success) return;
         const shops: Shop[] = Array.isArray(data.data) ? data.data : [];
         setAvailableShops(shops);
-        if (!addForm.shopId && shops.length > 0) {
-          const defaultShopId = currentShop?.id ?? shops[0].id;
-          setAddForm(prev => ({ ...prev, shopId: defaultShopId }));
-        }
-        if (!currentShop && shops.length > 0) {
-          setCurrentShop(shops[0]);
+        setCanSwitchShops(data.canSwitchShops !== false || shops.length > 1);
+        // Only shops this user may work in are listed; a remembered one they
+        // can't use falls back to their own.
+        const current = currentShop && shops.find(s => s.id === currentShop.id);
+        const target = current ?? shops[0];
+        if (target) {
+          if (!shops.some(s => s.id === addForm.shopId)) setAddForm(prev => ({ ...prev, shopId: target.id }));
+          if (!current) setCurrentShop(target);
         }
       } catch (err) {
         console.error('Failed to fetch shops:', err);
@@ -135,6 +142,30 @@ export default function AddNewProductPage() {
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mounted, token]);
+
+  const suggestions = useProductSuggestions(
+    token,
+    suggestFor === 'sku' ? addForm.sku : suggestFor === 'name' ? addForm.name : '',
+    addForm.shopId,
+  );
+
+  /** Copy an existing product's details so this shop's copy matches it exactly. */
+  const applySuggestion = (p: ProductSuggestion) => {
+    setAddForm(prev => ({
+      ...prev,
+      name: p.name,
+      sku: p.sku ?? prev.sku,
+      category: p.category ?? prev.category,
+      unit: p.unit ?? prev.unit,
+      brand: p.brand ?? prev.brand,
+      sellingPrice: prev.sellingPrice || (p.price != null ? String(p.price) : ''),
+      sizesArray: p.sizes.length > 0 ? p.sizes : prev.sizesArray,
+      colorsArray: p.colors.length > 0 ? p.colors : prev.colorsArray,
+      images: prev.images.length > 0 || !p.image ? prev.images : [p.image],
+    }));
+    setSuggestFor(null);
+    if (p.inThisShop) toast.warning(`${p.name} is already in this shop — add stock to it from Stock instead of adding it again.`);
+  };
 
   /* ---- helpers ---- */
   const handleChange = useCallback(
@@ -324,12 +355,15 @@ export default function AddNewProductPage() {
                   <Store className="h-5 w-5 text-blue-600 dark:text-blue-400" />
                   <CardTitle>Shop / Outlet</CardTitle>
                 </div>
-                <CardDescription>Select which shop this product will be added to</CardDescription>
+                <CardDescription>
+                  {canSwitchShops ? 'Select which shop this product will be added to' : 'Products you add go to your shop'}
+                </CardDescription>
               </CardHeader>
               <CardContent>
                 <select
                   aria-label="Select shop"
-                  className="block w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-950 px-3 py-2.5 text-sm text-gray-900 dark:text-gray-100 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
+                  disabled={!canSwitchShops}
+                  className="block w-full disabled:opacity-80 disabled:cursor-not-allowed rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-950 px-3 py-2.5 text-sm text-gray-900 dark:text-gray-100 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
                   value={addForm.shopId}
                   onChange={e => handleChange('shopId', e.target.value)}
                 >
@@ -356,16 +390,20 @@ export default function AddNewProductPage() {
               </CardHeader>
               <CardContent className="space-y-5">
                 {/* Product Name */}
-                <div className="space-y-1.5">
+                <div className="space-y-1.5 relative">
                   <Label htmlFor="product-name">
                     Product Name <span className="text-red-500">*</span>
                   </Label>
                   <Input
                     id="product-name"
                     value={addForm.name}
-                    onChange={e => handleChange('name', e.target.value)}
+                    onChange={e => { handleChange('name', e.target.value); setSuggestFor('name'); }}
+                    onFocus={() => setSuggestFor('name')}
+                    onBlur={() => setSuggestFor(null)}
+                    autoComplete="off"
                     placeholder="e.g. Elegant Maxi Dress"
                   />
+                  {suggestFor === 'name' && <ProductSuggestionList suggestions={suggestions} onPick={applySuggestion} />}
                 </div>
 
                 {/* Category + Unit + Brand */}
@@ -435,7 +473,7 @@ export default function AddNewProductPage() {
                 </label>
 
                 {/* SKU */}
-                <div className="space-y-1.5">
+                <div className="space-y-1.5 relative">
                   <Label htmlFor="sku">
                     SKU (Stock Keeping Unit) <span className="text-red-500">*</span>
                   </Label>
@@ -443,7 +481,10 @@ export default function AddNewProductPage() {
                     <Input
                       id="sku"
                       value={addForm.sku}
-                      onChange={e => handleChange('sku', e.target.value)}
+                      onChange={e => { handleChange('sku', e.target.value); setSuggestFor('sku'); }}
+                      onFocus={() => setSuggestFor('sku')}
+                      onBlur={() => setSuggestFor(null)}
+                      autoComplete="off"
                       placeholder="e.g. DRE-6095"
                     />
                     <Button
@@ -456,6 +497,7 @@ export default function AddNewProductPage() {
                       Generate
                     </Button>
                   </div>
+                  {suggestFor === 'sku' && <ProductSuggestionList suggestions={suggestions} onPick={applySuggestion} />}
                 </div>
 
                 {/* Barcode */}
