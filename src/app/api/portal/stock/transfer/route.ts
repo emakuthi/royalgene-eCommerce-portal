@@ -1,293 +1,112 @@
 /**
  * POST /api/portal/stock/transfer
- * Transfer stock units of a product from one shop to another.
+ * Send stock units of a product from one shop to another. The receiving
+ * shop has to approve it before the stock lands there; until then it's held
+ * at the source (see transfer-approval.server.ts).
  *
  * Request body:
  *   fromShopStockId – ShopStock.id of the source row
  *   toShopId        – destination Shop.id
  *   quantity        – number of units to transfer (must be > 0 and <= source quantity)
+ *   variants?       – [{ size, color, quantity }] when the product is tracked by size/colour
  *   notes?          – optional reason / notes for the transfer
- *
- * Behaviour:
- *   • Decrements source ShopStock.quantity by [quantity]
- *   • If destination already has a ShopStock row for the same product → increments it
- *   • Otherwise creates a new ShopStock row in the destination shop
- *   • Records a StockTransaction for both the source and destination
- *   • Syncs the aggregated Product.stockQuantity on both products (they are the same product)
  *
  * Auth:
  *   • admin / super_admin → can transfer between any shops
  *   • portal_user          → can only transfer FROM their own shop
  */
 
-import { productUnit } from '@/lib/business-settings.server';
-import { quantityError } from '@/lib/business-types';
 import { NextRequest, NextResponse } from 'next/server';
 import { requireTenantUser } from '@/lib/authorize';
 import { supabaseAdmin } from '@/lib/supabase-client';
 import logger from '@/lib/logger';
-import { v4 as uuidv4 } from 'uuid';
 import { jsonResponse, optionsResponse } from '@/lib/apiResponse';
-import { syncProductStockFromShopStocks } from '@/lib/supabase-db';
-import { hasVariantStock } from '@/lib/variant-stock.server';
-import { resolveTransferDestination } from '@/lib/product-sku.server';
 import { trackFromRequest } from '@/lib/activity-tracker';
-import type { ShopStock } from '@/lib/types';
-import { assertFeatureEnabled } from '@/lib/entitlements/enforce.server';
-import { FeatureCode } from '@/lib/entitlements/feature-codes';
+import { prepareSend, sendTransfer } from '@/lib/transfer-approval.server';
+import { portalUserIdFor, canActForShop } from '@/lib/portal-transfer-access.server';
 
 export async function POST(request: NextRequest) {
   try {
-    // ── Auth ────────────────────────────────────────────────────────────────
     const auth = requireTenantUser(request);
     if (auth instanceof NextResponse) return auth;
     const payload = auth;
 
-    // ── Parse body ──────────────────────────────────────────────────────────
     const body = await request.json() as {
       fromShopStockId?: string;
       toShopId?: string;
       quantity?: number;
+      variants?: unknown;
       notes?: string;
     };
-
-    const { fromShopStockId, toShopId, quantity, notes } = body;
-
-    if (!fromShopStockId || !toShopId || quantity == null) {
-      return jsonResponse(
-        { success: false, error: 'fromShopStockId, toShopId, and quantity are required' },
-        400,
-      );
+    const { fromShopStockId, toShopId, notes } = body;
+    if (!fromShopStockId || !toShopId || (body.quantity == null && body.variants == null)) {
+      return jsonResponse({ success: false, error: 'fromShopStockId, toShopId, and quantity are required' }, 400);
     }
 
-    const transferQty = Number(quantity);
-    if (!Number.isFinite(transferQty) || transferQty <= 0) {
-      return jsonResponse(
-        { success: false, error: 'quantity must be a positive number' },
-        400,
-      );
-    }
-
-    // ── Load source ShopStock ────────────────────────────────────────────────
-    const { data: srcStock, error: srcErr } = await supabaseAdmin
+    const { data: src } = await supabaseAdmin
       .from('ShopStock')
-      .select('*')
+      .select('id, shopId, productId, organizationId')
       .eq('id', fromShopStockId)
       .maybeSingle();
-
-    if (srcErr || !srcStock) {
+    if (!src) {
       logger.warn('Stock transfer: source ShopStock not found', { fromShopStockId, userId: payload.userId });
       return jsonResponse({ success: false, error: 'Source stock not found' }, 404);
     }
-
-    const src = srcStock as ShopStock & { productId: string; shopId: string; organizationId: string };
-
-    const featureResponse = await assertFeatureEnabled(src.organizationId, FeatureCode.STOCK_TRANSFER);
-    if (featureResponse) return featureResponse;
-
-    // ── Guard: even an "admin" role is org-scoped — the source stock must
-    // belong to the caller's own organization (true super_admin exempt) ────
+    // Even an "admin" is org-scoped (true super_admin exempt).
     if (payload.organizationId && src.organizationId !== payload.organizationId) {
       logger.warn('Stock transfer forbidden: source stock not in caller organization', { userId: payload.userId, fromShopStockId });
       return jsonResponse({ success: false, error: 'Forbidden' }, 403);
     }
-
-    // ── Guard: portal users can only transfer from their own shop ───────────
-    if (payload.role !== 'admin' && payload.role !== 'super_admin') {
-      const { data: portalUser } = await supabaseAdmin
-        .from('PortalUser')
-        .select('shopId')
-        .eq('userId', payload.userId)
-        .maybeSingle();
-
-      if (!portalUser || portalUser.shopId !== src.shopId) {
-        logger.warn('Stock transfer forbidden: user not assigned to source shop', {
-          userId: payload.userId,
-          sourceShopId: src.shopId,
-          userShopId: portalUser?.shopId,
-        });
-        return jsonResponse({ success: false, error: 'Forbidden: you can only transfer from your own shop' }, 403);
-      }
+    if (!(await canActForShop(payload, src.shopId as string))) {
+      logger.warn('Stock transfer forbidden: user not assigned to source shop', { userId: payload.userId, sourceShopId: src.shopId });
+      return jsonResponse({ success: false, error: 'Forbidden: you can only transfer from your own shop' }, 403);
     }
 
-    // ── Guard: cannot transfer to the same shop ─────────────────────────────
-    if (src.shopId === toShopId) {
-      return jsonResponse({ success: false, error: 'Source and destination shops must be different' }, 400);
+    const prep = await prepareSend({ fromShopId: src.shopId as string, productId: src.id, toShopId });
+    if (!prep.ok) {
+      if ('response' in prep) return prep.response;
+      return jsonResponse({ success: false, error: prep.error, code: prep.code }, prep.status);
     }
 
-    // ── Guard: variant-tracked stock isn't transferable via the flat path yet ──
-    if (await hasVariantStock(src.id)) {
-      return jsonResponse({
-        success: false,
-        error: 'This product is tracked by size/colour — adjust the breakdown at each shop instead.',
-        code: 'VARIANT_STOCK',
-      }, 409);
-    }
-
-    const qtyProblem = quantityError(transferQty, await productUnit(src.productId));
-    if (qtyProblem) return jsonResponse({ success: false, error: qtyProblem }, 400);
-
-    // ── Guard: sufficient stock in source ───────────────────────────────────
-    if (src.quantity < transferQty) {
-      return jsonResponse(
-        { success: false, error: `Insufficient stock. Available: ${src.quantity}, requested: ${transferQty}` },
-        400,
-      );
-    }
-
-    // ── Verify destination shop exists AND belongs to the SAME organization
-    // as the source — without this, stock could be transferred straight
-    // into a completely different tenant's shop. ────────────────────────────
-    const { data: destShop, error: destShopErr } = await supabaseAdmin
-      .from('Shop')
-      .select('id, name, organizationId')
-      .eq('id', toShopId)
-      .maybeSingle();
-
-    if (destShopErr || !destShop) {
-      return jsonResponse({ success: false, error: 'Destination shop not found' }, 404);
-    }
-    if (destShop.organizationId !== src.organizationId) {
-      logger.warn('Stock transfer forbidden: destination shop in a different organization', {
-        userId: payload.userId, sourceOrg: src.organizationId, destOrg: destShop.organizationId, toShopId,
-      });
-      return jsonResponse({ success: false, error: 'Destination shop must belong to the same organization' }, 403);
-    }
-
-    // ── Destination stock: this product, or the receiving shop's own
-    // product with the same SKU (its count goes up — no second listing) ────
-    const resolved = await resolveTransferDestination({
-      organizationId: src.organizationId, productId: src.productId, toShopId, toShopName: destShop.name, srcShopStockId: src.id,
+    const sent = await sendTransfer({
+      organizationId: prep.organizationId,
+      srcStock: prep.srcStock,
+      fromShopId: src.shopId as string,
+      toShop: prep.toShop,
+      quantity: body.quantity,
+      variants: body.variants,
+      notes: notes ?? null,
+      portalUserId: await portalUserIdFor(payload, src.shopId as string),
     });
-    if (!resolved.ok) {
-      logger.warn('Stock transfer refused: same-SKU product in destination can\'t be merged', {
-        fromShopStockId, toShopId, productId: src.productId, userId: payload.userId, reason: resolved.error,
-      });
-      return jsonResponse({ success: false, error: resolved.error, code: 'SKU_MERGE_MISMATCH' }, 400);
-    }
-    const destStock = resolved.dest.stock;
-    const destProductId = resolved.dest.productId;
+    if (!sent.ok) return jsonResponse({ success: false, error: sent.error, code: sent.code }, sent.status);
 
-    const now = new Date().toISOString();
-    const portalUserId = `${payload.role === 'admin' || payload.role === 'super_admin' ? 'admin' : 'user'}-${payload.userId}`;
-
-    // ── Decrement source ─────────────────────────────────────────────────────
-    const newSrcQty = src.quantity - transferQty;
-    const { data: updatedSrc, error: srcUpdateErr } = await supabaseAdmin
-      .from('ShopStock')
-      .update({ quantity: newSrcQty, updatedAt: now })
-      .eq('id', fromShopStockId)
-      .select()
-      .single();
-
-    if (srcUpdateErr || !updatedSrc) {
-      logger.error('Stock transfer: failed to decrement source', { error: srcUpdateErr?.message, fromShopStockId });
-      return jsonResponse({ success: false, error: 'Failed to update source stock' }, 500);
-    }
-
-    // ── Increment or create destination ─────────────────────────────────────
-    let destStockId: string;
-
-    if (destStock) {
-      const newDestQty = (destStock.quantity as number) + transferQty;
-      await supabaseAdmin
-        .from('ShopStock')
-        .update({ quantity: newDestQty, updatedAt: now })
-        .eq('id', destStock.id);
-      destStockId = destStock.id as string;
-    } else {
-      // Create a fresh ShopStock row in the destination shop
-      const newStockId = uuidv4();
-      await supabaseAdmin.from('ShopStock').insert([{
-        id: newStockId,
-        organizationId: src.organizationId,
-        shopId: toShopId,
-        productId: destProductId,
-        quantity: transferQty,
-        lowStockThreshold: src.lowStockThreshold ?? 5,
-        createdAt: now,
-        updatedAt: now,
-      }]);
-      destStockId = newStockId;
-    }
-
-    // ── StockTransaction – source (subtract) ────────────────────────────────
-    await supabaseAdmin.from('StockTransaction').insert([{
-      id: uuidv4(),
-      organizationId: src.organizationId,
-      shopStockId: fromShopStockId,
-      portalUserId,
-      type: 'subtract',
-      quantity: -transferQty,
-      reason: `Transfer out to shop ${destShop.name}${notes ? ` — ${notes}` : ''}`,
-      reference: `transfer-${now}`,
-      createdAt: now,
-    }]);
-
-    // ── StockTransaction – destination (add) ────────────────────────────────
-    await supabaseAdmin.from('StockTransaction').insert([{
-      id: uuidv4(),
-      organizationId: src.organizationId,
-      shopStockId: destStockId,
-      portalUserId,
-      type: 'add',
-      quantity: transferQty,
-      reason: `Transfer in from shop ${src.shopId}${notes ? ` — ${notes}` : ''}`,
-      reference: `transfer-${now}`,
-      createdAt: now,
-    }]);
-
-    // ── Sync aggregated product stockQuantity ────────────────────────────────
-    try {
-      await syncProductStockFromShopStocks(src.productId);
-      if (destProductId !== src.productId) await syncProductStockFromShopStocks(destProductId);
-    } catch (syncErr) {
-      logger.warn('Stock transfer: failed to sync product stockQuantity', {
-        error: syncErr instanceof Error ? syncErr.message : String(syncErr),
-        productId: src.productId,
-      });
-    }
-
-    // ── Activity tracking ────────────────────────────────────────────────────
+    const { data: after } = await supabaseAdmin.from('ShopStock').select('quantity').eq('id', src.id).maybeSingle();
     void trackFromRequest(request, payload, {
       action: 'stock.transfer',
       category: 'stock',
       resourceType: 'ShopStock',
       resourceId: fromShopStockId,
-      shopId: src.shopId,
+      shopId: src.shopId as string,
       details: {
-        fromShopId: src.shopId,
-        toShopId,
-        toShopName: destShop.name,
-        productId: src.productId,
-        quantity: transferQty,
-        notes,
+        fromShopId: src.shopId, toShopId, toShopName: prep.toShop.name, productId: src.productId,
+        quantity: sent.transfer.quantity, notes, transferId: sent.transfer.id, status: 'pending',
       },
-    });
-
-    logger.info('Stock transfer completed', {
-      userId: payload.userId,
-      fromShopStockId,
-      toShopId,
-      productId: src.productId,
-      quantity: transferQty,
     });
 
     return jsonResponse({
       success: true,
-      message: `${transferQty} unit(s) transferred successfully to ${destShop.name}`,
+      message: `${sent.transfer.quantity} unit(s) sent to ${prep.toShop.name} — they'll be added there once ${prep.toShop.name} approves.`,
       data: {
+        transferId: sent.transfer.id,
+        status: sent.transfer.status,
         fromShopStockId,
         toShopId,
-        toShopName: destShop.name,
+        toShopName: prep.toShop.name,
         productId: src.productId,
-        toProductId: destProductId,
-        mergedBySku: resolved.dest.mergedBySku,
-        quantity: transferQty,
-        newSourceQuantity: newSrcQty,
+        quantity: sent.transfer.quantity,
+        newSourceQuantity: Number(after?.quantity ?? 0),
       },
     }, 200);
-
   } catch (error) {
     logger.error('Stock transfer error', {
       error: error instanceof Error ? error.message : String(error),
@@ -300,4 +119,3 @@ export async function POST(request: NextRequest) {
 export function OPTIONS() {
   return optionsResponse('POST,OPTIONS');
 }
-

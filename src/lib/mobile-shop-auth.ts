@@ -52,7 +52,7 @@ export interface MobileShopAuth {
  * exactly this multi-shop admin case, throwing 500s on this and every other
  * request while making an existing row look like it needed to be re-created.
  */
-async function resolveAdminPortalUserId(
+export async function resolveAdminPortalUserId(
   userId: string,
   shopId: string,
   organizationId: string,

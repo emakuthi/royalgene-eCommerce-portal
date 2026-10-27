@@ -22,6 +22,7 @@ export default function PortalTopBar() {
     '/shops': { title: 'Shops', description: 'Manage outlets' },
     '/users': { title: 'Users', description: 'Manage users and roles' },
     '/alerts': { title: 'Alerts', description: 'System alerts' },
+    '/transfers': { title: 'Transfers', description: 'Approve stock sent between shops' },
     '/settings': { title: 'Settings', description: 'Manage your portal account' },
   };
 

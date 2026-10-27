@@ -7,6 +7,12 @@
  *
  * Scope: an admin sees every transfer in their organization; anyone else sees
  * only transfers that touch a shop they're assigned to (as sender or receiver).
+ *
+ * Every transfer waits for the receiving shop's approval: each row says
+ * whether the caller can approve/reject it (`canApprove` — an admin, or
+ * assigned to the receiving shop) or cancel it (`canCancel` — the sending
+ * side), and `pendingIncoming` counts the approvable ones on this page, for
+ * the menu badge (ask with ?status=pending).
  */
 import { NextRequest } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase-client';
@@ -53,12 +59,13 @@ export async function GET(request: NextRequest) {
 
     if (status && STATUSES.includes(status)) query = query.eq('status', status);
 
+    let shopIds: string[] | null = null; // null = admin, every shop
     if (!auth.isAdmin) {
       const { data: memberships } = await supabaseAdmin
         .from('PortalUser')
         .select('shopId')
         .eq('userId', auth.payload.userId);
-      const shopIds = [...new Set((memberships ?? []).map((m: { shopId: string | null }) => m.shopId).filter(Boolean))] as string[];
+      shopIds = [...new Set((memberships ?? []).map((m: { shopId: string | null }) => m.shopId).filter(Boolean))] as string[];
       if (shopIds.length === 0) {
         return jsonResponse({ success: true, data: { transfers: [], total: 0 } }, 200);
       }
@@ -74,14 +81,19 @@ export async function GET(request: NextRequest) {
 
     const transfers = ((data ?? []) as unknown as Array<Record<string, unknown>>).map((row) => {
       const { initiatedBy, resolvedBy, ...rest } = row;
+      const pending = row.status === 'pending';
+      const mine = (shopId: unknown) => shopIds === null || shopIds.includes(shopId as string);
       return {
         ...rest,
         initiatedBy: person(initiatedBy as Person),
         resolvedBy: person(resolvedBy as Person),
+        canApprove: pending && mine(row.toShopId),
+        canCancel: pending && mine(row.fromShopId),
       };
     });
+    const pendingIncoming = transfers.filter((t) => t.canApprove).length;
 
-    return jsonResponse({ success: true, data: { transfers, total: count ?? transfers.length } }, 200);
+    return jsonResponse({ success: true, data: { transfers, total: count ?? transfers.length, pendingIncoming } }, 200);
   } catch (error) {
     logger.error('Mobile transfers list error', { error: error instanceof Error ? error.message : String(error) });
     return jsonResponse({ success: false, error: 'Internal server error', code: 'INTERNAL_ERROR' }, 500);

@@ -1,11 +1,10 @@
 /**
  * POST /api/mobile/shops/[shopId]/stock/transfer-requests
- * Initiate a two-party stock transfer FROM [shopId]. Distinct from the
- * existing instant transfer (POST .../stock/transfer, unchanged, still
- * atomic/one-call): this reserves the quantity from the source shop
- * immediately (status 'pending') but does NOT touch the destination shop —
- * that only happens when the destination confirms
- * (.../transfer-requests/[transferId]/confirm).
+ * Send stock FROM [shopId] for the receiving shop to approve — the same as
+ * POST .../stock/transfer, which is now approval-based too. The quantity is
+ * held at [shopId] at once (status 'pending'); the receiving shop gets it
+ * only when it approves (.../transfer-requests/[transferId]/confirm). See
+ * transfer-approval.server.ts. Size/colour products send `variants`.
  *
  * GET /api/mobile/shops/[shopId]/stock/transfer-requests?status=pending
  * Lists transfers where [shopId] is either the source or the destination,
@@ -13,20 +12,14 @@
  * covers both "what did I send" and "what's waiting for me to confirm".
  * Pending incoming rows also carry `destinationPreview` (see buildTransferPreview).
  */
-import { productUnit } from '@/lib/business-settings.server';
-import { quantityError } from '@/lib/business-types';
 import { NextRequest } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase-client';
 import logger from '@/lib/logger';
 import { jsonResponse, optionsResponse } from '@/lib/apiResponse';
 import { verifyMobileShopAccess } from '@/lib/mobile-shop-auth';
-import { hasVariantStock } from '@/lib/variant-stock.server';
-import { assertFeatureEnabled } from '@/lib/entitlements/enforce.server';
-import { FeatureCode } from '@/lib/entitlements/feature-codes';
 import { isValidClientId } from '@/lib/sync/syncable-entities';
-import { idempotentInsert } from '@/lib/sync/idempotent-insert.server';
-import { v4 as uuidv4 } from 'uuid';
 import { buildTransferPreview } from '@/lib/product-sku.server';
+import { prepareSend, sendTransfer } from '@/lib/transfer-approval.server';
 
 export async function POST(
   request: NextRequest,
@@ -42,118 +35,38 @@ export async function POST(
       productId?: string;
       toShopId?: string;
       quantity?: number;
+      variants?: unknown;
       notes?: string;
     };
-    const { productId, toShopId, quantity, notes } = body;
-
-    if (!productId || !toShopId || quantity == null) {
-      return jsonResponse(
-        { success: false, error: 'productId, toShopId, and quantity are required', code: 'VALIDATION_ERROR' },
-        400,
-      );
-    }
-    const qty = Number(quantity);
-    if (!Number.isFinite(qty) || qty <= 0) {
-      return jsonResponse({ success: false, error: 'quantity must be a positive number', code: 'VALIDATION_ERROR' }, 400);
-    }
-    if (shopId === toShopId) {
-      return jsonResponse({ success: false, error: 'Source and destination shops must be different', code: 'VALIDATION_ERROR' }, 400);
+    if (body.quantity == null && body.variants == null) {
+      return jsonResponse({ success: false, error: 'productId, toShopId, and quantity are required', code: 'VALIDATION_ERROR' }, 400);
     }
 
-    let { data: srcStock } = await supabaseAdmin
-      .from('ShopStock')
-      .select('id, productId, quantity, lowStockThreshold')
-      .eq('shopId', shopId)
-      .eq('productId', productId)
-      .maybeSingle();
-    if (!srcStock) {
-      const fallback = await supabaseAdmin
-        .from('ShopStock')
-        .select('id, productId, quantity, lowStockThreshold')
-        .eq('shopId', shopId)
-        .eq('id', productId)
-        .maybeSingle();
-      if (fallback.data) srcStock = fallback.data;
-    }
-    if (!srcStock) {
-      return jsonResponse({ success: false, error: 'Product not found in source shop', code: 'NOT_FOUND' }, 404);
+    const prep = await prepareSend({ fromShopId: shopId, productId: body.productId, toShopId: body.toShopId });
+    if (!prep.ok) {
+      if ('response' in prep) return prep.response;
+      return jsonResponse({ success: false, error: prep.error, code: prep.code }, prep.status);
     }
 
-    if (await hasVariantStock(srcStock.id as string)) {
-      return jsonResponse({
-        success: false,
-        error: 'This product is tracked by size/colour — adjust the breakdown at each shop instead.',
-        code: 'VARIANT_STOCK',
-      }, 409);
-    }
-
-    if ((srcStock.quantity as number) < qty) {
-      return jsonResponse(
-        { success: false, error: `Insufficient stock. Available: ${srcStock.quantity}, requested: ${qty}`, code: 'INSUFFICIENT_STOCK' },
-        400,
-      );
-    }
-
-    const { data: srcShop } = await supabaseAdmin.from('Shop').select('organizationId').eq('id', shopId).maybeSingle();
-    if (!srcShop) return jsonResponse({ success: false, error: 'Source shop not found', code: 'NOT_FOUND' }, 404);
-    const organizationId = srcShop.organizationId as string;
-
-    const featureResponse = await assertFeatureEnabled(organizationId, FeatureCode.STOCK_TRANSFER);
-    if (featureResponse) return featureResponse;
-
-    const { data: destShop } = await supabaseAdmin.from('Shop').select('id, name, organizationId').eq('id', toShopId).maybeSingle();
-    if (!destShop) return jsonResponse({ success: false, error: 'Destination shop not found', code: 'NOT_FOUND' }, 404);
-    if (destShop.organizationId !== organizationId) {
-      return jsonResponse({ success: false, error: 'Destination shop must belong to the same organization', code: 'FORBIDDEN' }, 403);
-    }
-
-    const resolvedProductId = srcStock.productId as string;
-    const qtyProblem = quantityError(qty, await productUnit(resolvedProductId));
-    if (qtyProblem) return jsonResponse({ success: false, error: qtyProblem, code: 'VALIDATION_ERROR' }, 400);
-    const transferId = isValidClientId(body.id) ? (body.id as string) : uuidv4();
-    const now = new Date().toISOString();
-
-    // Idempotent: reserving the StockTransfer row IS the gate. If it already
-    // exists (a retry), the source decrement already happened on the first
-    // attempt — return the existing row, touch nothing else.
-    const reserved = await idempotentInsert('StockTransfer', {
-      id: transferId,
-      organizationId,
-      productId: resolvedProductId,
+    // Same as POST .../stock/transfer: held here, lands once the receiving shop approves.
+    const sent = await sendTransfer({
+      id: isValidClientId(body.id) ? (body.id as string) : null,
+      organizationId: prep.organizationId,
+      srcStock: prep.srcStock,
       fromShopId: shopId,
-      toShopId,
-      quantity: qty,
-      status: 'pending',
-      notes: notes ?? null,
-      initiatedByPortalUserId: auth.portalUserId,
-      initiatedAt: now,
+      toShop: prep.toShop,
+      quantity: body.quantity,
+      variants: body.variants,
+      notes: body.notes ?? null,
+      portalUserId: auth.portalUserId,
     });
-    if (!reserved.ok) {
-      logger.error('Stock transfer request: failed to reserve', { error: reserved.error });
-      return jsonResponse({ success: false, error: 'Failed to create transfer request', code: 'INTERNAL_ERROR' }, 500);
-    }
-    if (!reserved.created) {
-      return jsonResponse({ success: true, data: reserved.row, idempotent: true }, 200);
-    }
-
-    const newSrcQty = (srcStock.quantity as number) - qty;
-    const { error: decErr } = await supabaseAdmin
-      .from('ShopStock')
-      .update({ quantity: newSrcQty, updatedAt: now })
-      .eq('id', srcStock.id);
-    if (decErr) {
-      logger.error('Stock transfer request: failed to reserve source quantity', { error: decErr.message, shopStockId: srcStock.id });
-      return jsonResponse({ success: false, error: 'Failed to reserve stock', code: 'INTERNAL_ERROR' }, 500);
-    }
-
-    logger.info('Stock transfer request initiated', {
-      userId: auth.payload.userId, transferId, fromShopId: shopId, toShopId, productId: resolvedProductId, quantity: qty,
-    });
+    if (!sent.ok) return jsonResponse({ success: false, error: sent.error, code: sent.code }, sent.status);
+    if (!sent.created) return jsonResponse({ success: true, data: sent.transfer, idempotent: true }, 200);
 
     return jsonResponse({
       success: true,
-      data: { ...reserved.row, toShopName: destShop.name },
-      message: `Transfer request sent to ${destShop.name}`,
+      data: { ...sent.transfer, toShopName: prep.toShop.name },
+      message: `Transfer request sent to ${prep.toShop.name}`,
     }, 201);
   } catch (error) {
     logger.error('Stock transfer request POST error', { error: error instanceof Error ? error.message : String(error) });

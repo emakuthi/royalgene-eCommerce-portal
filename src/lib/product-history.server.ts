@@ -189,7 +189,9 @@ export async function buildProductHistory(
     // would otherwise label "Sold" — and a transfer note may mention "sale".
     if (reason.includes('transfer') || reference.includes('transfer')) {
       evType = delta < 0 ? 'transfer_out' : 'transfer_in';
-      title = `${delta < 0 ? 'Transferred out' : 'Transferred in'} ${Math.abs(delta)}${vsuffix}`;
+      title = delta < 0
+        ? `${reason.includes('awaiting approval') ? 'Sent for transfer' : 'Transferred out'} ${Math.abs(delta)}${vsuffix}`
+        : `${reason.includes('stock returned') ? 'Returned from transfer' : 'Transferred in'} ${Math.abs(delta)}${vsuffix}`;
     } else if (reason.includes('sale') || (type === 'subtract' && t.reference)) {
       evType = 'sale';
       title = `Sold ${Math.abs(delta)}${vsuffix}`;
