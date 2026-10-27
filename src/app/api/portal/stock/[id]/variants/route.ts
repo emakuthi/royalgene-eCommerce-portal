@@ -7,7 +7,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { jsonResponse, optionsResponse } from '@/lib/apiResponse';
 import { getVariantMatrix, setVariantMatrix, type VariantCellInput, type VariantMatrix } from '@/lib/variant-stock.server';
 import { canViewCostData } from '@/lib/cost-visibility.server';
-import { hasCapability } from '@/lib/permissions.server';
+import { canSetBreakdown } from '@/lib/breakdown-permission.server';
 
 /** Cost is owner-only (see cost-visibility.server.ts) — same rule as the product's own costPrice. */
 function redactMatrixCost(matrix: VariantMatrix): VariantMatrix {
@@ -59,7 +59,8 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
   if ('error' in res) return res.error;
   const { stock, payload } = res;
 
-  if (!(await hasCapability(payload, 'edit_inventory'))) {
+  // "add inventory" is enough for a just-added product's first breakdown (see canSetBreakdown).
+  if (!(await canSetBreakdown(payload, id))) {
     return jsonResponse({ success: false, error: 'You do not have permission to edit inventory. Ask an admin to grant it.' }, 403);
   }
 
