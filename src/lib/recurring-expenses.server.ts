@@ -2,6 +2,7 @@ import 'server-only';
 import { supabaseAdmin } from './supabase-client';
 import { createExpense, categoryNameMap } from './expenses.server';
 import logger from './logger';
+import { businessDateKey } from '@/lib/business-time';
 
 /**
  * Recurring expense templates. A template materialises a real Expense row each
@@ -48,7 +49,8 @@ function mapRow(row: Record<string, unknown>, categoryName: string | null = null
 }
 
 const FREQUENCIES: Frequency[] = ['daily', 'weekly', 'monthly'];
-const todayStr = () => new Date().toISOString().slice(0, 10);
+// Today's date in Kenya — a recurring expense is due by the business's calendar.
+const todayStr = () => businessDateKey();
 
 /** Advance a YYYY-MM-DD date by `interval` periods of `frequency` (UTC, calendar-safe). */
 export function advanceDate(dateStr: string, frequency: Frequency, interval: number): string {

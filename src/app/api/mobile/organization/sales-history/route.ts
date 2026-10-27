@@ -5,6 +5,7 @@ import { jsonResponse, optionsResponse } from '@/lib/apiResponse';
 import { verifyMobileAuth } from '@/lib/mobile-shop-auth';
 import { getOrgShopIds } from '@/lib/mobile-org-shops';
 import { canViewCostData } from '@/lib/cost-visibility.server';
+import { businessDateKey } from '@/lib/business-time';
 
 /**
  * GET /api/mobile/organization/sales-history
@@ -96,7 +97,7 @@ export async function GET(request: NextRequest) {
       const shopId = sale.shopId as string;
       return {
         saleId: sale.id,
-        saleNumber: `SALE-${new Date(sale.createdAt as string).toISOString().split('T')[0].replace(/-/g, '')}-${(sale.id as string).substring(0, 6).toUpperCase()}`,
+        saleNumber: `SALE-${businessDateKey(sale.createdAt as string).replace(/-/g, '')}-${(sale.id as string).substring(0, 6).toUpperCase()}`,
         timestamp: sale.createdAt,
         shop: { id: shopId, name: shopNameMap.get(shopId) ?? null },
         product: { name: product?.name ?? null, sku: product?.sku ?? null },

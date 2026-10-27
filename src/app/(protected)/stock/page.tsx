@@ -35,6 +35,7 @@ import DialogContent from '@mui/material/DialogContent';
 import DialogContentText from '@mui/material/DialogContentText';
 import DialogActions from '@mui/material/DialogActions';
 import MuiButton from '@mui/material/Button';
+import { businessDateKey } from '@/lib/business-time';
 
 // Api row returned by /api/portal/stock (ShopStock with embedded Product and optional shopName)
 type ApiShopStock = ShopStock & { Product?: Product; product?: Product; shopName?: string };
@@ -598,7 +599,7 @@ function StockManagementContent() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `stock-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.download = `stock-${businessDateKey()}.csv`;
     document.body.appendChild(a);
     a.click();
     a.remove();

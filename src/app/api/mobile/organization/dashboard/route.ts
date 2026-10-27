@@ -6,6 +6,7 @@ import { jsonResponse, optionsResponse } from '@/lib/apiResponse';
 import { verifyMobileAuth } from '@/lib/mobile-shop-auth';
 import { getOrgShopIds } from '@/lib/mobile-org-shops';
 import { canViewCostData } from '@/lib/cost-visibility.server';
+import { startOfBusinessDay } from '@/lib/business-time';
 
 /**
  * GET /api/mobile/organization/dashboard
@@ -37,7 +38,8 @@ export async function GET(request: NextRequest) {
         break;
       case 'today':
       default:
-        startDate.setHours(0, 0, 0, 0);
+        // Midnight in Kenya, not on the (UTC) server.
+        startDate.setTime(startOfBusinessDay(now).getTime());
     }
 
     const shopIds = await getOrgShopIds(auth.payload.organizationId ?? null);

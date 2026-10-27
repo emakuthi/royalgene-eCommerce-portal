@@ -4,6 +4,7 @@ import { supabaseAdmin } from '@/lib/supabase-client';
 import logger from '@/lib/logger';
 import { jsonResponse, optionsResponse } from '@/lib/apiResponse';
 import { canViewCostData } from '@/lib/cost-visibility.server';
+import { businessDateKey, startOfBusinessDay } from '@/lib/business-time';
 
 interface ProfitMarginRow {
   profit?: number;
@@ -65,7 +66,8 @@ export async function GET(request: NextRequest) {
 
     // Get current date and calculate date ranges
     const now = new Date();
-    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    // Today in Kenya, not on the (UTC) server.
+    const todayStart = startOfBusinessDay(now);
     // Rolling 30-day window (not calendar month) so recent sales always count —
     // a calendar month resets Revenue/Profit/Sales to 0 on the 1st even when
     // there was plenty of activity a few days earlier. (Field name kept as
@@ -79,7 +81,7 @@ export async function GET(request: NextRequest) {
       .eq('shopId', shopId)
       .is('deletedAt', null)
       .gte('createdAt', todayStart.toISOString())
-      .lt('createdAt', new Date(todayStart.getTime() + 24 * 60 * 60 * 1000).toISOString());
+      .lt('createdAt', startOfBusinessDay(now, 1).toISOString());
 
     // Get this month's sales
     const { data: monthSales } = await supabaseAdmin
@@ -120,8 +122,8 @@ export async function GET(request: NextRequest) {
         .eq('organizationId', payload.organizationId)
         .eq('shopId', shopId)
         .is('deletedAt', null)
-        .gte('expenseDate', monthStart.toISOString().slice(0, 10))
-        .lte('expenseDate', now.toISOString().slice(0, 10));
+        .gte('expenseDate', businessDateKey(monthStart))
+        .lte('expenseDate', businessDateKey(now));
       expensesThisMonth = ((expenseRows as { baseAmount: number }[]) ?? []).reduce(
         (sum, e) => sum + (Number(e.baseAmount) || 0),
         0,

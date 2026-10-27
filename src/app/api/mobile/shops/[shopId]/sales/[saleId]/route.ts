@@ -6,6 +6,7 @@ import { jsonResponse } from '@/lib/apiResponse';
 import { verifyMobileShopAccess } from '@/lib/mobile-shop-auth';
 import { canViewCostData } from '@/lib/cost-visibility.server';
 import { deleteSalesInOrg } from '@/lib/sale-delete.server';
+import { businessDateKey } from '@/lib/business-time';
 
 /**
  * GET /api/mobile/shops/[shopId]/sales/[saleId]
@@ -106,7 +107,7 @@ export async function GET(
       data: {
         sale: {
           saleId: sale.id,
-          saleNumber: `SALE-${new Date(sale.createdAt).toISOString().split('T')[0].replace(/-/g, '')}-${sale.id.substring(0, 6).toUpperCase()}`,
+          saleNumber: `SALE-${businessDateKey(sale.createdAt).replace(/-/g, '')}-${sale.id.substring(0, 6).toUpperCase()}`,
           timestamp: sale.createdAt,
           shopId: sale.shopId,
           shopName,
