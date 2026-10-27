@@ -4,6 +4,7 @@ import { supabaseAdmin } from '@/lib/supabase-client';
 import logger from '@/lib/logger';
 import { jsonResponse } from '@/lib/apiResponse';
 import { getCallerPermissions } from '@/lib/permissions.server';
+import { assignedShops } from '@/lib/shop-access.server';
 
 /**
  * GET /api/mobile/profile
@@ -115,6 +116,10 @@ export async function GET(request: NextRequest) {
           // What this user may do (admin-set per role) — the app shows or
           // hides actions such as Edit Product to match.
           permissions,
+          // Shops whose sales this user may see; null = every shop (admin,
+          // manager, owner). The app limits its shop picker to these and
+          // clears any other shop's sales it had copied before.
+          visibleShopIds: (await assignedShops(payload))?.map((s) => s.id) ?? null,
           shop: portalUser?.Shop ? {
             id: portalUser.Shop.id,
             name: portalUser.Shop.name,

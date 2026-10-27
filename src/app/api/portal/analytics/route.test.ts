@@ -6,6 +6,14 @@ vi.mock('@/lib/authorize', () => ({
   requireTenantUser: vi.fn(() => payload),
 }));
 
+// staff-1 is a shopkeeper assigned to shop-a only; admins see every shop.
+vi.mock('@/lib/shop-access.server', () => ({
+  denyUnlessShopAllowed: vi.fn(async (p: { role: string }, shopId: string) =>
+    p.role === 'admin' || shopId === 'shop-a'
+      ? null
+      : new Response(JSON.stringify({ success: false, code: 'SHOP_ACCESS_DENIED', error: "You don't have access to Shop B. You can only access Shop A." }), { status: 403 })),
+}));
+
 vi.mock('@/lib/entitlements/enforce.server', () => ({
   assertFeatureEnabled: vi.fn(async () => null),
 }));
@@ -98,6 +106,16 @@ describe('GET /api/portal/analytics', () => {
 
     expect(res.status).toBe(200);
     expect(json.data.summary.totalSales).toBe(2000);
+  });
+
+  it("refuses a shopkeeper another shop's figures, naming the shops they do have", async () => {
+    payload = { userId: 'staff-1', role: 'portal_user', organizationId: 'org-1' };
+    const res = await GET(request('?shopId=shop-b&range=month'));
+    const json = await res.json();
+
+    expect(res.status).toBe(403);
+    expect(json.code).toBe('SHOP_ACCESS_DENIED');
+    expect(json.error).toMatch(/only access Shop A/);
   });
 
   it('computes profit from SalesEntry.costPrice, not the unwritten ProfitMargin table', async () => {

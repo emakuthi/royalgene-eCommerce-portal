@@ -5,6 +5,7 @@ import { decodeCursor, encodeCursor, pullChanges } from '@/lib/sync/pull.server'
 import { SYNC_ENTITY_NAMES, type SyncEntityName } from '@/lib/sync/syncable-entities';
 import logger from '@/lib/logger';
 import { canViewCostData } from '@/lib/cost-visibility.server';
+import { assignedShops } from '@/lib/shop-access.server';
 
 /**
  * GET /api/mobile/sync/changes?since=<cursor>&entities=Product,SalesEntry&limit=200
@@ -52,6 +53,8 @@ export async function GET(request: NextRequest) {
       // Cost/profit figures are owner-only and this feed lands in the
       // device's local DB, so gate them here rather than in the UI.
       includeCostData: await canViewCostData(payload),
+      // Shopkeepers get only their own shops' sales; admins and managers every shop's.
+      salesShopIds: (await assignedShops(payload))?.map((s) => s.id) ?? null,
     });
 
     return jsonResponse({

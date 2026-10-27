@@ -61,6 +61,8 @@ export async function pullChanges(opts: {
   entities?: SyncEntityName[];
   pageSize?: number;
   includeCostData?: boolean;
+  /** Shops whose sales this caller may see; null/undefined = every shop (admin, manager, owner). */
+  salesShopIds?: string[] | null;
 }): Promise<{ changes: SyncChange[]; cursor: SyncCursor; hasMore: boolean }> {
   const entities = (opts.entities?.length ? opts.entities : SYNC_ENTITY_NAMES)
     .filter((e): e is SyncEntityName => e in SYNC_ENTITIES);
@@ -81,6 +83,12 @@ export async function pullChanges(opts: {
       .order('updatedAt', { ascending: true })
       .order('id', { ascending: true })
       .limit(pageSize);
+
+    // A shopkeeper's device only ever receives its own shops' sales.
+    if (entityName === 'SalesEntry' && opts.salesShopIds) {
+      if (opts.salesShopIds.length === 0) continue;
+      query = query.in('shopId', opts.salesShopIds);
+    }
 
     // Keyset predicate: (updatedAt, id) > (position.updatedAt, position.id).
     // Supabase-js has no native tuple comparator, so this is expressed as
