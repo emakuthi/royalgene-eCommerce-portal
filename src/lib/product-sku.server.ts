@@ -139,10 +139,20 @@ export async function resolveTransferDestination(opts: {
 
   const target = candidates.find((c) => c.id === match.productId)!;
   const srcVariant = srcShopStockId ? await hasVariantStock(srcShopStockId) : false;
-  if (srcVariant !== (await hasVariantStock(match.id))) {
+  const destVariant = await hasVariantStock(match.id);
+  // Size/colour stock into a plain count: only when that count is empty —
+  // the sizes then simply land there. With stock in it, nobody knows its
+  // sizes, so the receiving shop has to enter its breakdown first.
+  if (srcVariant && !destVariant && Number(match.quantity) > 0) {
     return {
       ok: false,
-      error: `${toShopName} already has "${target.name}" with SKU "${sku}", but only one of the two is tracked by size/colour, so the stock can't be added to it. Change one of the SKUs, or match how they're tracked, then try again.`,
+      error: `"${target.name}" at ${toShopName} (SKU "${sku}") has ${Number(match.quantity)} in stock that isn't split by size/colour yet. Set its size/colour breakdown at ${toShopName} first, then transfer.`,
+    };
+  }
+  if (!srcVariant && destVariant) {
+    return {
+      ok: false,
+      error: `${toShopName} already has "${target.name}" with SKU "${sku}", tracked by size/colour, but this one isn't, so the stock can't be added to it. Track this one by size/colour too, or change one of the SKUs, then try again.`,
     };
   }
   if ((await productUnit(productId)) !== (await productUnit(target.id))) {

@@ -99,11 +99,32 @@ describe('resolveTransferDestination', () => {
     expect(r).toEqual({ ok: true, dest: { stock: null, productId: 'pA', mergedBySku: false } });
   });
 
-  it('refuses to merge when only one side is tracked by size/colour', async () => {
+  it('refuses a plain count into a size/colour product (no sizes to put it in)', async () => {
     variantStocks.add('ssB-town');
     const r = await resolveTransferDestination({ ...base, productId: 'pA', toShopId: 'town' });
     expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.error).toContain('size/colour');
+    if (!r.ok) expect(r.error).toContain('tracked by size/colour, but this one isn');
+  });
+
+  it('refuses size/colour stock into a plain count that has stock, asking for its breakdown first', async () => {
+    variantStocks.add('ssA-main');
+    const r = await resolveTransferDestination({ ...base, productId: 'pA', toShopId: 'town' });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toBe('"Mira short (Town)" at Town Shop (SKU "T6160-1") has 2 in stock that isn\'t split by size/colour yet. Set its size/colour breakdown at Town Shop first, then transfer.');
+  });
+
+  it('lets size/colour stock land on a plain count that is empty', async () => {
+    variantStocks.add('ssA-main');
+    db.ShopStock.find((s) => s.id === 'ssB-town')!.quantity = 0;
+    const r = await resolveTransferDestination({ ...base, productId: 'pA', toShopId: 'town' });
+    expect(r).toEqual({ ok: true, dest: { stock: expect.objectContaining({ id: 'ssB-town' }), productId: 'pB', mergedBySku: true } });
+  });
+
+  it('merges when both sides are tracked by size/colour', async () => {
+    variantStocks.add('ssA-main');
+    variantStocks.add('ssB-town');
+    const r = await resolveTransferDestination({ ...base, productId: 'pA', toShopId: 'town' });
+    expect(r).toEqual({ ok: true, dest: { stock: expect.objectContaining({ id: 'ssB-town' }), productId: 'pB', mergedBySku: true } });
   });
 
   it('refuses to merge across different units', async () => {

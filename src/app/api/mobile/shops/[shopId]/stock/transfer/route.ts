@@ -239,6 +239,8 @@ export async function POST(
         destShopStockId: destStockId,
         organizationId,
         cells: variantCells,
+        // Landing on the receiving shop's own same-SKU product: keep its prices.
+        carryPricing: !resolved.dest.mergedBySku,
       });
       if (!moved.ok) {
         // Nothing moved — drop the history row (and the empty destination row we just made) so a retry starts clean.
@@ -269,8 +271,9 @@ export async function POST(
           portalUserId,
           type: 'add',
           quantity: cell.quantity,
-          size: cell.size,
-          color: cell.color,
+          // The receiving shop's spelling of this size/colour.
+          size: moved.landed[i].size,
+          color: moved.landed[i].color,
           reason: `Mobile transfer in from shop ${shopId}${noteSuffix}`,
           reference: `mobile-transfer-${transferId}`,
           createdAt: now,
