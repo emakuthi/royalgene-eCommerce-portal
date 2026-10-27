@@ -5,6 +5,7 @@ import { jsonResponse, optionsResponse } from '@/lib/apiResponse';
 import { verifyMobileAuth } from '@/lib/mobile-shop-auth';
 import { getOrgShopIds } from '@/lib/mobile-org-shops';
 import { canViewCostData } from '@/lib/cost-visibility.server';
+import { businessDateKey, businessWeekKey } from '@/lib/business-time';
 
 type SalesEntry = {
   createdAt: string;
@@ -84,14 +85,13 @@ export async function GET(request: NextRequest) {
           key = date.toISOString().substring(0, 13);
           break;
         case 'week': {
-          const weekStart = new Date(date);
-          weekStart.setDate(date.getDate() - date.getDay());
-          key = weekStart.toISOString().split('T')[0];
+          // Weeks and days are Kenya calendar days; 'hour' stays UTC (the app buckets those itself).
+          key = businessWeekKey(date);
           break;
         }
         case 'day':
         default:
-          key = date.toISOString().split('T')[0];
+          key = businessDateKey(date);
       }
 
       if (!trendMap.has(key)) {

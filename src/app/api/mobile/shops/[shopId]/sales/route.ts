@@ -21,6 +21,7 @@ import { canViewCostData } from '@/lib/cost-visibility.server';
 import { hasCapability } from '@/lib/permissions.server';
 import { getOrgCurrency } from '@/lib/currency.server';
 import { getRate } from '@/lib/exchange-rates.server';
+import { businessDateKey } from '@/lib/business-time';
 
 /**
  * POST /api/mobile/shops/[shopId]/sales
@@ -433,7 +434,7 @@ export async function POST(
       success: true,
       data: {
         saleId,
-        saleNumber: `SALE-${new Date().toISOString().split('T')[0].replace(/-/g, '')}-${saleId.substring(0, 6).toUpperCase()}`,
+        saleNumber: `SALE-${businessDateKey(new Date()).replace(/-/g, '')}-${saleId.substring(0, 6).toUpperCase()}`,
         timestamp: now,
         product: {
           name: product.name,

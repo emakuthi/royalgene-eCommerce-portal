@@ -10,6 +10,7 @@ import { formatMoney } from '@/lib/currency';
 import { toast } from 'sonner';
 import PortalHeader from '@/components/portal/PortalHeader';
 import { Trash2, Plus, Download, Play, Repeat } from 'lucide-react';
+import { businessDateKey } from '@/lib/business-time';
 
 interface Category { id: string; name: string; isActive: boolean }
 interface Shop { id: string; name: string }
@@ -41,7 +42,7 @@ export default function ExpensesPage() {
   const [categoryId, setCategoryId] = useState('');
   const [shopId, setShopId] = useState('');
   const [description, setDescription] = useState('');
-  const [expenseDate, setExpenseDate] = useState(new Date().toISOString().slice(0, 10));
+  const [expenseDate, setExpenseDate] = useState(businessDateKey());
   const [saving, setSaving] = useState(false);
   const [newCategory, setNewCategory] = useState('');
 
@@ -49,7 +50,7 @@ export default function ExpensesPage() {
   const [recurring, setRecurring] = useState<Recurring[]>([]);
   const [rFrequency, setRFrequency] = useState<Frequency>('monthly');
   const [rInterval, setRInterval] = useState('1');
-  const [rStartDate, setRStartDate] = useState(new Date().toISOString().slice(0, 10));
+  const [rStartDate, setRStartDate] = useState(businessDateKey());
   const [rEndDate, setREndDate] = useState('');
   const [rSaving, setRSaving] = useState(false);
   const [running, setRunning] = useState(false);
@@ -125,7 +126,7 @@ export default function ExpensesPage() {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `expenses-${new Date().toISOString().slice(0, 10)}.csv`;
+      a.download = `expenses-${businessDateKey()}.csv`;
       document.body.appendChild(a);
       a.click();
       a.remove();

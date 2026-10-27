@@ -5,6 +5,7 @@ import { getRate } from './exchange-rates.server';
 import logger from './logger';
 import { isOwnerLevelCaller } from './permissions.server';
 import type { VerifiedPayload } from './auth.server';
+import { businessDateKey } from '@/lib/business-time';
 
 /**
  * Whose expenses this caller may see and change: owner-level (admin or
@@ -169,7 +170,7 @@ export async function createExpense(
     exchangeRate,
     baseAmount: amount * exchangeRate,
     description: input.description ?? null,
-    expenseDate: input.expenseDate || new Date().toISOString().slice(0, 10),
+    expenseDate: input.expenseDate || businessDateKey(),
     recordedBy: input.recordedBy ?? null,
   };
   const { data, error } = await supabaseAdmin.from('Expense').insert([row]).select('*').maybeSingle();

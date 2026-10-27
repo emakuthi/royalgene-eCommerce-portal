@@ -3,6 +3,7 @@ import { supabaseAdmin } from '@/lib/supabase-client';
 import logger from '@/lib/logger';
 import { jsonResponse } from '@/lib/apiResponse';
 import { verifyMobileShopAccess } from '@/lib/mobile-shop-auth';
+import { startOfBusinessDay } from '@/lib/business-time';
 
 /**
  * GET /api/mobile/shops/[shopId]/details
@@ -41,14 +42,14 @@ export async function GET(
     const totalStock = (shopStocks || []).reduce((sum, ss) => sum + (ss.quantity || 0), 0);
 
     // Get today's sales amount
-    const today = new Date().toISOString().split('T')[0];
+    // Today in Kenya, midnight to midnight — not the (UTC) server's day.
     const { data: todaysSales, error: salesError } = await supabaseAdmin
       .from('SalesEntry')
       .select('totalAmount')
       .eq('shopId', shopId)
       .is('deletedAt', null)
-      .gte('createdAt', `${today}T00:00:00Z`)
-      .lt('createdAt', `${today}T23:59:59Z`);
+      .gte('createdAt', startOfBusinessDay().toISOString())
+      .lt('createdAt', startOfBusinessDay(new Date(), 1).toISOString());
 
     const totalSalestoday = (todaysSales || []).reduce((sum, sale: Record<string, unknown>) => sum + ((sale.totalAmount as number) || 0), 0);
 

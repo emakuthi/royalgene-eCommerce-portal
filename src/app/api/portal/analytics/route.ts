@@ -6,6 +6,7 @@ import { jsonResponse } from '@/lib/apiResponse';
 import { assertFeatureEnabled } from '@/lib/entitlements/enforce.server';
 import { FeatureCode } from '@/lib/entitlements/feature-codes';
 import { canViewCostData } from '@/lib/cost-visibility.server';
+import { businessDateKey } from '@/lib/business-time';
 
 interface SaleRecord {
   id?: string;
@@ -171,7 +172,8 @@ export async function GET(request: NextRequest) {
     const dateMap = new Map<string, { date: string; sales: number; transactions: number; profit: number }>();
 
     salesList.forEach((sale) => {
-      const dateStr = (sale.createdAt || '').split('T')[0] || new Date().toISOString().split('T')[0];
+      // The sale's calendar day in Kenya, not the UTC date in the timestamp.
+      const dateStr = businessDateKey(sale.createdAt || new Date());
       const profit = lineProfit(sale);
       const existing = dateMap.get(dateStr);
       if (existing) {
@@ -198,8 +200,8 @@ export async function GET(request: NextRequest) {
         .select('baseAmount')
         .eq('organizationId', payload.organizationId)
         .is('deletedAt', null)
-        .gte('expenseDate', startDate.toISOString().slice(0, 10))
-        .lte('expenseDate', now.toISOString().slice(0, 10));
+        .gte('expenseDate', businessDateKey(startDate))
+        .lte('expenseDate', businessDateKey(now));
       if (requestedShopId) expenseQuery = expenseQuery.eq('shopId', requestedShopId);
       const { data: expenseRows } = await expenseQuery;
       totalExpenses = ((expenseRows as { baseAmount: number }[]) ?? []).reduce(

@@ -5,6 +5,7 @@ import logger from '@/lib/logger';
 import { jsonResponse } from '@/lib/apiResponse';
 import { verifyMobileShopAccess } from '@/lib/mobile-shop-auth';
 import { canViewCostData } from '@/lib/cost-visibility.server';
+import { startOfBusinessDay } from '@/lib/business-time';
 
 /**
  * GET /api/mobile/shops/[shopId]/dashboard
@@ -35,7 +36,8 @@ export async function GET(
         break;
       case 'today':
       default:
-        startDate.setHours(0, 0, 0, 0);
+        // Midnight in Kenya, not on the (UTC) server.
+        startDate.setTime(startOfBusinessDay(now).getTime());
     }
 
     // Get sales data – plain select to avoid missing FK issues
