@@ -99,28 +99,11 @@ describe('resolveTransferDestination', () => {
     expect(r).toEqual({ ok: true, dest: { stock: null, productId: 'pA', mergedBySku: false } });
   });
 
-  it('refuses a plain count into a size/colour product (no sizes to put it in)', async () => {
+  it('refuses to merge when only one side is tracked by size/colour', async () => {
     variantStocks.add('ssB-town');
     const r = await resolveTransferDestination({ ...base, productId: 'pA', toShopId: 'town' });
     expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.error).toContain('tracked by size/colour, but this one isn');
-  });
-
-  it('converts a plain-count product when size/colour stock is going into it', async () => {
-    variantStocks.add('ssA-main');
-    const r = await resolveTransferDestination({ ...base, productId: 'pA', toShopId: 'town' });
-    expect(r).toEqual({
-      ok: true,
-      dest: { stock: expect.objectContaining({ id: 'ssB-town' }), productId: 'pB', mergedBySku: true, convertToSizeColour: true },
-    });
-  });
-
-  it('merges without converting when both sides are tracked by size/colour', async () => {
-    variantStocks.add('ssA-main');
-    variantStocks.add('ssB-town');
-    const r = await resolveTransferDestination({ ...base, productId: 'pA', toShopId: 'town' });
-    expect(r.ok && r.dest.convertToSizeColour).toBeFalsy();
-    expect(r.ok && r.dest.productId).toBe('pB');
+    if (!r.ok) expect(r.error).toContain('size/colour');
   });
 
   it('refuses to merge across different units', async () => {
@@ -154,12 +137,6 @@ describe('buildTransferPreview', () => {
   it('says "new" when the receiving shop has nothing with that SKU', async () => {
     expect(await buildTransferPreview({ ...base, toShopId: 'mall', toShopName: 'Mall Shop', productId: 'pA' }))
       .toMatchObject({ outcome: 'new', target: null, namesDiffer: false });
-  });
-
-  it('says the receiving product will switch to size/colour', async () => {
-    variantStocks.add('ssA-main');
-    expect(await buildTransferPreview({ ...base, productId: 'pA' }))
-      .toMatchObject({ outcome: 'merge', convertsToSizeColour: true, target: { productId: 'pB', quantity: 2 } });
   });
 
   it('still shows the other product when the merge is blocked', async () => {
