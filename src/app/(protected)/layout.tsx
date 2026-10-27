@@ -16,6 +16,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import {
   Package,
+  ArrowLeftRight,
   ShoppingCart,
   Receipt,
   BarChart3,
@@ -452,6 +453,26 @@ export default function ProtectedLayout({ children }: { children: React.ReactNod
   const [searchOpen, setSearchOpen] = useState(false);
   const drawerRef = useRef<HTMLDivElement | null>(null);
   const [alertsCount, setAlertsCount] = useState<number>(0);
+  const [transfersCount, setTransfersCount] = useState<number>(0);
+
+  // Transfers waiting for this user's shop (every shop, for admins) to
+  // approve. Re-read on each page change, and when the Transfers page says
+  // one was just resolved.
+  useEffect(() => {
+    if (!token || user?.role === 'super_admin') return;
+    const load = async () => {
+      try {
+        const res = await fetch('/api/portal/stock/transfer-requests?status=pending', { cache: 'no-store', headers: { Authorization: `Bearer ${token}` } });
+        if (res.ok) {
+          const json = await res.json();
+          if (json?.success && typeof json.data?.pendingIncoming === 'number') setTransfersCount(json.data.pendingIncoming);
+        }
+      } catch { /* ignore */ }
+    };
+    void load();
+    window.addEventListener('transfers:changed', load);
+    return () => window.removeEventListener('transfers:changed', load);
+  }, [token, user?.role, pathname]);
 
   useEffect(() => {
     if (!token) return;
@@ -506,6 +527,7 @@ export default function ProtectedLayout({ children }: { children: React.ReactNod
     : [
         { label: 'Dashboard',       href: '/dashboard',  icon: <Home className="h-5 w-5" /> },
         { label: 'Inventory',       href: '/stock',       icon: <Package className="h-5 w-5" /> },
+        { label: 'Transfers',       href: '/transfers',   icon: <ArrowLeftRight className="h-5 w-5" />, badge: transfersCount },
         { label: 'Sales',           href: '/sales',       icon: <ShoppingCart className="h-5 w-5" /> },
         { label: 'Expenses',        href: '/expenses',    icon: <Receipt className="h-5 w-5" /> },
         { label: 'Analytics',       href: '/analytics',   icon: <BarChart3 className="h-5 w-5" /> },

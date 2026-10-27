@@ -11,7 +11,17 @@ vi.mock('@/lib/mobile-shop-auth', () => ({
 
 vi.mock('@/lib/variant-stock.server', () => ({
   hasVariantStock: vi.fn(async () => false),
+  decrementCell: vi.fn(async () => ({ ok: true, remaining: 0 })),
+  incrementCell: vi.fn(async () => undefined),
 }));
+
+vi.mock('@/lib/product-sku.server', () => ({
+  resolveTransferDestination: vi.fn(async () => ({ ok: true, dest: { productId: 'product-1', stock: null, mergedBySku: false } })),
+  buildTransferPreview: vi.fn(async () => null),
+}));
+
+vi.mock('@/lib/business-settings.server', () => ({ productUnit: vi.fn(async () => 'piece') }));
+vi.mock('@/lib/supabase-db', () => ({ syncProductStockFromShopStocks: vi.fn(async () => undefined) }));
 
 vi.mock('@/lib/entitlements/enforce.server', () => ({
   assertFeatureEnabled: vi.fn(async () => null),
@@ -102,8 +112,11 @@ describe('POST /api/mobile/shops/[shopId]/stock/transfer-requests', () => {
   });
 
   it('rejects a non-positive quantity', async () => {
+    state.shopStockQueue = [{ data: srcStock }];
+    state.shopQueue = [{ data: srcShop }, { data: destShop }];
     const res = await POST(postRequest({ productId: 'p1', toShopId: 'shop-2', quantity: 0 }), ctx());
     expect(res.status).toBe(400);
+    expect(idempotentInsertMock).not.toHaveBeenCalled();
   });
 
   it('rejects transferring to the same shop', async () => {
@@ -121,18 +134,36 @@ describe('POST /api/mobile/shops/[shopId]/stock/transfer-requests', () => {
     expect(json.code).toBe('NOT_FOUND');
   });
 
-  it('409s a variant-tracked product', async () => {
+  it('asks for the size/colour breakdown on a variant-tracked product', async () => {
     const { hasVariantStock } = await import('@/lib/variant-stock.server');
     (hasVariantStock as ReturnType<typeof vi.fn>).mockResolvedValueOnce(true);
     state.shopStockQueue = [{ data: srcStock }];
+    state.shopQueue = [{ data: srcShop }, { data: destShop }];
     const res = await POST(postRequest({ productId: 'p1', toShopId: 'shop-2', quantity: 1 }), ctx());
     const json = await res.json();
-    expect(res.status).toBe(409);
-    expect(json.code).toBe('VARIANT_STOCK');
+    expect(res.status).toBe(400);
+    expect(json.code).toBe('VARIANTS_REQUIRED');
+  });
+
+  it('holds variant cells at the source and records them on the transfer', async () => {
+    const { hasVariantStock, decrementCell } = await import('@/lib/variant-stock.server');
+    (hasVariantStock as ReturnType<typeof vi.fn>).mockResolvedValueOnce(true);
+    state.shopStockQueue = [{ data: srcStock }];
+    state.shopQueue = [{ data: srcShop }, { data: destShop }];
+    const res = await POST(postRequest({
+      productId: 'p1', toShopId: 'shop-2', variants: [{ size: 'M', color: 'Blue', quantity: 2 }, { size: 'L', color: 'Blue', quantity: 1 }],
+    }), ctx());
+    expect(res.status).toBe(201);
+    expect(idempotentInsertMock).toHaveBeenCalledWith('StockTransfer', expect.objectContaining({
+      quantity: 3, status: 'pending', kind: 'request',
+      variants: [{ size: 'M', color: 'Blue', quantity: 2 }, { size: 'L', color: 'Blue', quantity: 1 }],
+    }));
+    expect(decrementCell).toHaveBeenCalledWith('stock-src', 'M', 'Blue', 2);
   });
 
   it('400s when quantity exceeds what is available', async () => {
     state.shopStockQueue = [{ data: srcStock }];
+    state.shopQueue = [{ data: srcShop }, { data: destShop }];
     const res = await POST(postRequest({ productId: 'p1', toShopId: 'shop-2', quantity: 999 }), ctx());
     const json = await res.json();
     expect(res.status).toBe(400);
@@ -166,8 +197,8 @@ describe('POST /api/mobile/shops/[shopId]/stock/transfer-requests', () => {
       created: true,
       row: { id: 'transfer-1', status: 'pending', quantity: 3 },
     });
-    // the source-decrement update is awaited directly (no .single()) — queue an {error: null}
-    state.shopStockQueue.push({ data: null, error: null });
+    // the guarded source decrement: read the count, then the compare-and-set update
+    state.shopStockQueue.push({ data: { quantity: 10 } }, { data: [{ id: 'stock-src' }], error: null });
 
     const res = await POST(postRequest({ productId: 'product-1', toShopId: 'shop-2', quantity: 3 }), ctx());
     const json = await res.json();
@@ -181,7 +212,9 @@ describe('POST /api/mobile/shops/[shopId]/stock/transfer-requests', () => {
       productId: 'product-1',
       quantity: 3,
       status: 'pending',
+      kind: 'request',
     }));
+    expect(state.shopStockQueue.length).toBe(0);
   });
 
   it('returns the existing row without decrementing again on an idempotent replay', async () => {
