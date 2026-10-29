@@ -1,6 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { NextRequest } from 'next/server';
 
+// Permission toggles are covered by their own tests; here every caller has them
+// unless a test says otherwise.
+const permission = vi.hoisted(() => ({ denied: null as Response | null }));
+vi.mock('@/lib/permissions.server', () => ({
+  denyWithoutCapability: vi.fn(async () => permission.denied),
+}));
 vi.mock('@/lib/mobile-shop-auth', () => ({
   verifyMobileShopAccess: vi.fn(async () => ({
     payload: { userId: 'user-1', organizationId: 'org-1' },
@@ -68,6 +74,17 @@ describe('POST .../transfer-requests/[transferId]/confirm', () => {
     state.shopStockQueue = [];
     state.transactionQueue = [];
     syncMock.mockClear();
+  });
+
+  it('403s, touching nothing, when the role may not approve transfers', async () => {
+    permission.denied = new Response(JSON.stringify({ success: false, code: 'FORBIDDEN' }), { status: 403 });
+    try {
+      const res = await POST(req(), ctx());
+      expect(res.status).toBe(403);
+      expect(syncMock).not.toHaveBeenCalled();
+    } finally {
+      permission.denied = null;
+    }
   });
 
   it('404s when the transfer does not exist', async () => {

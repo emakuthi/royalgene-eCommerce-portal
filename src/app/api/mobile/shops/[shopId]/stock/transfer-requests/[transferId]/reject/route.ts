@@ -9,6 +9,7 @@ import { NextRequest } from 'next/server';
 import logger from '@/lib/logger';
 import { jsonResponse, optionsResponse } from '@/lib/apiResponse';
 import { verifyMobileShopAccess } from '@/lib/mobile-shop-auth';
+import { denyWithoutCapability } from '@/lib/permissions.server';
 import { returnTransfer } from '@/lib/transfer-approval.server';
 
 export async function POST(
@@ -19,6 +20,8 @@ export async function POST(
     const { shopId, transferId } = await context.params;
     const auth = await verifyMobileShopAccess(request, shopId);
     if (auth instanceof Response) return auth;
+    const denied = await denyWithoutCapability(auth.payload, 'approve_transfers', 'reject transfers');
+    if (denied) return denied;
     const body = await request.json().catch(() => ({})) as { reason?: string };
 
     const res = await returnTransfer({ transferId, action: 'reject', shopId, portalUserId: auth.portalUserId, reason: body.reason ?? null });

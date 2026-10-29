@@ -6,6 +6,7 @@
  */
 import { NextRequest, NextResponse } from 'next/server';
 import { requireTenantUser } from '@/lib/authorize';
+import { denyWithoutCapability } from '@/lib/permissions.server';
 import { supabaseAdmin } from '@/lib/supabase-client';
 import logger from '@/lib/logger';
 import { jsonResponse, optionsResponse } from '@/lib/apiResponse';
@@ -26,6 +27,10 @@ export async function POST(
     if (action !== 'confirm' && action !== 'reject' && action !== 'cancel') {
       return jsonResponse({ success: false, error: 'Unknown action' }, 404);
     }
+    const denied = action === 'cancel'
+      ? await denyWithoutCapability(auth, 'transfer_stock', 'cancel transfers')
+      : await denyWithoutCapability(auth, 'approve_transfers', action === 'confirm' ? 'approve transfers' : 'reject transfers');
+    if (denied) return denied;
 
     const { data: transfer } = await supabaseAdmin
       .from('StockTransfer')

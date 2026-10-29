@@ -17,6 +17,7 @@ import { supabaseAdmin } from '@/lib/supabase-client';
 import logger from '@/lib/logger';
 import { jsonResponse, optionsResponse } from '@/lib/apiResponse';
 import { verifyMobileShopAccess } from '@/lib/mobile-shop-auth';
+import { denyWithoutCapability } from '@/lib/permissions.server';
 import { isValidClientId } from '@/lib/sync/syncable-entities';
 import { buildTransferPreview } from '@/lib/product-sku.server';
 import { prepareSend, sendTransfer } from '@/lib/transfer-approval.server';
@@ -29,6 +30,8 @@ export async function POST(
     const { shopId } = await context.params;
     const auth = await verifyMobileShopAccess(request, shopId);
     if (auth instanceof Response) return auth;
+    const denied = await denyWithoutCapability(auth.payload, 'transfer_stock', 'transfer stock');
+    if (denied) return denied;
 
     const body = await request.json() as {
       id?: string;

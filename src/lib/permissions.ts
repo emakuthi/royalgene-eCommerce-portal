@@ -2,7 +2,7 @@
 // (Settings -> Permissions tab) — mirrors src/lib/billing.ts's pattern.
 
 export type EditableRole = 'shop_manager' | 'shopkeeper' | 'cashier' | 'assistant';
-export type Capability = 'view_cost_price' | 'add_inventory' | 'edit_inventory' | 'delete_inventory' | 'record_sales' | 'manage_staff';
+export type Capability = 'view_cost_price' | 'add_inventory' | 'edit_inventory' | 'delete_inventory' | 'record_sales' | 'manage_staff' | 'transfer_stock' | 'approve_transfers';
 
 export interface PermissionCatalogEntry {
   key: Capability;
