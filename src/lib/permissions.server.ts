@@ -1,6 +1,7 @@
 import 'server-only';
 import { supabaseAdmin } from './supabase-client';
 import type { VerifiedPayload } from './auth.server';
+import { jsonResponse } from './apiResponse';
 
 /**
  * Per-organization, per-role capability toggles — the "define permissions
@@ -23,7 +24,9 @@ export type Capability =
   | 'edit_inventory'
   | 'delete_inventory'
   | 'record_sales'
-  | 'manage_staff';
+  | 'manage_staff'
+  | 'transfer_stock'
+  | 'approve_transfers';
 
 /** The only positions a permission ROW can apply to — admin/shop_owner are always full, see class doc. */
 export const EDITABLE_ROLES = ['shop_manager', 'shopkeeper', 'cashier', 'assistant'] as const;
@@ -36,6 +39,8 @@ export const PERMISSION_CATALOG: { key: Capability; label: string; description: 
   { key: 'delete_inventory', label: 'Delete inventory items', description: 'Remove a product from the catalog.' },
   { key: 'record_sales', label: 'Record sales', description: 'Ring up a sale against shop stock.' },
   { key: 'manage_staff', label: 'Manage staff', description: 'Change a teammate’s role, shop assignment, or active status.' },
+  { key: 'transfer_stock', label: 'Transfer stock', description: 'Send stock from their own shop to another shop (and cancel a transfer they sent).' },
+  { key: 'approve_transfers', label: 'Approve transfers', description: 'Accept or reject stock sent to their shop.' },
 ];
 
 const CAPABILITY_KEYS = new Set<string>(PERMISSION_CATALOG.map((p) => p.key));
@@ -50,12 +55,14 @@ export function isCapability(value: unknown): value is Capability {
  * but admin/shop_owner ever saw cost price or could manage staff), except
  * add/edit inventory for non-manager staff, which is now opt-in rather than
  * wide open — the admin can flip it back on per role from the new screen.
+ * Transfers (added later) default on for everyone, as they were before they
+ * had a toggle; an admin can switch them off per role.
  */
 export const DEFAULT_PERMISSIONS: Record<EditableRole, Record<Capability, boolean>> = {
-  shop_manager: { view_cost_price: false, add_inventory: true, edit_inventory: true, delete_inventory: false, record_sales: true, manage_staff: false },
-  shopkeeper: { view_cost_price: false, add_inventory: false, edit_inventory: false, delete_inventory: false, record_sales: true, manage_staff: false },
-  cashier: { view_cost_price: false, add_inventory: false, edit_inventory: false, delete_inventory: false, record_sales: true, manage_staff: false },
-  assistant: { view_cost_price: false, add_inventory: false, edit_inventory: false, delete_inventory: false, record_sales: true, manage_staff: false },
+  shop_manager: { view_cost_price: false, add_inventory: true, edit_inventory: true, delete_inventory: false, record_sales: true, manage_staff: false, transfer_stock: true, approve_transfers: true },
+  shopkeeper: { view_cost_price: false, add_inventory: false, edit_inventory: false, delete_inventory: false, record_sales: true, manage_staff: false, transfer_stock: true, approve_transfers: true },
+  cashier: { view_cost_price: false, add_inventory: false, edit_inventory: false, delete_inventory: false, record_sales: true, manage_staff: false, transfer_stock: true, approve_transfers: true },
+  assistant: { view_cost_price: false, add_inventory: false, edit_inventory: false, delete_inventory: false, record_sales: true, manage_staff: false, transfer_stock: true, approve_transfers: true },
 };
 
 function normalizeRole(position: unknown): EditableRole | null {
@@ -188,4 +195,13 @@ export async function setPermissionOverride(
     );
   if (error) return { ok: false, error: error.message };
   return { ok: true };
+}
+
+/** Null when the caller has [capability]; otherwise the 403 to return, naming what they can't do. */
+export async function denyWithoutCapability(payload: VerifiedPayload, capability: Capability, action: string): Promise<Response | null> {
+  if (await hasCapability(payload, capability)) return null;
+  return jsonResponse(
+    { success: false, error: `You do not have permission to ${action}. Ask an admin to grant it.`, code: 'FORBIDDEN' },
+    403,
+  );
 }

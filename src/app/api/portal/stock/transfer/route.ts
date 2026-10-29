@@ -18,6 +18,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { requireTenantUser } from '@/lib/authorize';
+import { denyWithoutCapability } from '@/lib/permissions.server';
 import { supabaseAdmin } from '@/lib/supabase-client';
 import logger from '@/lib/logger';
 import { jsonResponse, optionsResponse } from '@/lib/apiResponse';
@@ -30,6 +31,8 @@ export async function POST(request: NextRequest) {
     const auth = requireTenantUser(request);
     if (auth instanceof NextResponse) return auth;
     const payload = auth;
+    const denied = await denyWithoutCapability(payload, 'transfer_stock', 'transfer stock');
+    if (denied) return denied;
 
     const body = await request.json() as {
       fromShopStockId?: string;
