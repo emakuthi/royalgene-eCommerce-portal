@@ -16,6 +16,7 @@ import { generateTaxInvoiceForSale } from '@/lib/etims/tax-invoice.server';
 import { syncSaleToQuickBooks } from '@/lib/accounting/sync-sale-to-quickbooks.server';
 import { isValidClientId } from '@/lib/sync/syncable-entities';
 import { idempotentInsert } from '@/lib/sync/idempotent-insert.server';
+import { resolveSoldAt } from '@/lib/sale-time';
 import { parsePaymentBreakdown } from '@/lib/payment-breakdown';
 import { canViewCostData } from '@/lib/cost-visibility.server';
 import { hasCapability } from '@/lib/permissions.server';
@@ -61,6 +62,7 @@ export async function POST(
       currency,
       paymentBreakdown: rawPaymentBreakdown,
       discountAmount: rawDiscountAmount,
+      soldAt,
     } = body as {
       productId: string;
       quantity: number;
@@ -80,6 +82,8 @@ export async function POST(
       paymentBreakdown?: unknown;
       /** This line item's share of the checkout discount, in the sale currency. */
       discountAmount?: unknown;
+      /** When the sale really happened, if the app recorded it offline — see resolveSoldAt. */
+      soldAt?: unknown;
     };
 
     const paymentBreakdown = parsePaymentBreakdown(rawPaymentBreakdown);
@@ -352,7 +356,7 @@ export async function POST(
       size: variantCheck.needsVariant ? (size?.trim() || null) : null,
       color: variantCheck.needsVariant ? (color?.trim() || null) : null,
       saleGroupId: isValidClientId(saleGroupId) ? saleGroupId : null,
-      createdAt: now,
+      createdAt: resolveSoldAt(soldAt),
       updatedAt: now,
     });
 
