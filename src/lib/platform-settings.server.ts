@@ -68,3 +68,27 @@ export async function setMinAppVersionCode(versionCode: number, updatedBy?: stri
     .eq('id', SETTINGS_ID);
   if (error) throw new Error(error.message);
 }
+
+/**
+ * Oldest iOS build still allowed to run. Separate from Android's value because
+ * the two apps number their builds independently. Fails OPEN to 0, like
+ * getMinAppVersionCode.
+ */
+export async function getMinIosVersionCode(): Promise<number> {
+  const { data, error } = await supabaseAdmin
+    .from('PlatformSettings')
+    .select('minIosVersionCode')
+    .eq('id', SETTINGS_ID)
+    .maybeSingle();
+  if (error || !data) return 0;
+  const v = Number((data as { minIosVersionCode?: unknown }).minIosVersionCode);
+  return Number.isInteger(v) && v > 0 ? v : 0;
+}
+
+export async function setMinIosVersionCode(versionCode: number, updatedBy?: string | null): Promise<void> {
+  const { error } = await supabaseAdmin
+    .from('PlatformSettings')
+    .update({ minIosVersionCode: versionCode, updatedAt: new Date().toISOString(), updatedBy: updatedBy ?? null })
+    .eq('id', SETTINGS_ID);
+  if (error) throw new Error(error.message);
+}

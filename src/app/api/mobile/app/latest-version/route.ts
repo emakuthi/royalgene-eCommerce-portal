@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase-client';
-import { getMinAppVersionCode } from '@/lib/platform-settings.server';
+import { getMinAppVersionCode, getMinIosVersionCode } from '@/lib/platform-settings.server';
 
 const PLAY_STORE_URL = 'https://play.google.com/store/apps/details?id=com.royalgenegroup.royaltrack';
+// Unset until the app is listed. The iOS app then shows the block with no store button.
+const APP_STORE_URL = process.env.IOS_APP_STORE_URL || null;
 
 interface LatestVersionResponse {
   success: boolean;
@@ -18,8 +20,12 @@ interface LatestVersionResponse {
    * Force-update policy, separate from `data` so it's served even before any
    * release exists. Builds with versionCode < minVersionCode must update
    * before they can be used (0 = no minimum). Older app builds ignore it.
+   * iOS only trusts a policy marked `platform: 'ios'`, because Android's build
+   * numbers would lock out every iPhone.
    */
-  policy?: { minVersionCode: number; playStoreUrl: string };
+  policy?:
+    | { minVersionCode: number; playStoreUrl: string }
+    | { platform: 'ios'; minVersionCode: number; storeUrl: string | null };
 }
 
 /**
@@ -32,13 +38,15 @@ export async function GET(request: NextRequest) {
   try {
     const platform = request.nextUrl.searchParams.get('platform') || 'android';
 
+    const isIos = platform === 'ios';
+
     const [{ data, error }, minVersionCode] = await Promise.all([supabaseAdmin
       .from('AppRelease')
       .select('versionCode, versionName, apkUrl, changelog, createdAt')
       .eq('platform', platform)
       .order('versionCode', { ascending: false })
       .limit(1)
-      .maybeSingle(), getMinAppVersionCode()]);
+      .maybeSingle(), isIos ? getMinIosVersionCode() : getMinAppVersionCode()]);
 
     if (error) {
       return NextResponse.json<LatestVersionResponse>(
@@ -58,7 +66,9 @@ export async function GET(request: NextRequest) {
             releasedAt: data.createdAt,
           }
         : null,
-      policy: { minVersionCode, playStoreUrl: PLAY_STORE_URL },
+      policy: isIos
+        ? { platform: 'ios', minVersionCode, storeUrl: APP_STORE_URL }
+        : { minVersionCode, playStoreUrl: PLAY_STORE_URL },
     });
   } catch (err) {
     console.error('[latest-version] Unexpected error:', err instanceof Error ? err.message : String(err));
