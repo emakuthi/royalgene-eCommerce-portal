@@ -1,3 +1,4 @@
+import { rejectIfDeactivated } from '@/lib/deactivated-staff.server';
 import { NextRequest } from 'next/server';
 import { verifyToken } from '@/lib/auth.server';
 import { jsonResponse, optionsResponse } from '@/lib/apiResponse';
@@ -8,6 +9,8 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   const token = request.headers.get('Authorization')?.replace('Bearer ', '');
   const payload = token ? verifyToken(token) : null;
   if (!payload?.organizationId) return jsonResponse({ success: false, error: 'Unauthorized', code: 'UNAUTHORIZED' }, 401);
+  const deactivated = await rejectIfDeactivated(payload);
+  if (deactivated) return deactivated;
   const { id } = await params;
   const payment = await getStkPayment(payload.organizationId, id);
   if (!payment) return jsonResponse({ success: false, error: 'Payment not found' }, 404);

@@ -1,3 +1,4 @@
+import { rejectIfDeactivated } from '@/lib/deactivated-staff.server';
 import { NextRequest } from 'next/server';
 import { verifyToken } from '@/lib/auth.server';
 import { jsonResponse, optionsResponse } from '@/lib/apiResponse';
@@ -11,6 +12,8 @@ function authed(request: NextRequest) {
 export async function GET(request: NextRequest) {
   const payload = authed(request);
   if (!payload?.organizationId) return jsonResponse({ success: false, error: 'Unauthorized', code: 'UNAUTHORIZED' }, 401);
+  const deactivated = await rejectIfDeactivated(payload);
+  if (deactivated) return deactivated;
   const activeOnly = request.nextUrl.searchParams.get('activeOnly') === '1';
   return jsonResponse({ success: true, data: await getCategories(payload.organizationId, { activeOnly }) });
 }
@@ -18,6 +21,8 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   const payload = authed(request);
   if (!payload?.organizationId) return jsonResponse({ success: false, error: 'Unauthorized', code: 'UNAUTHORIZED' }, 401);
+  const deactivated = await rejectIfDeactivated(payload);
+  if (deactivated) return deactivated;
   const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
   const name = typeof body.name === 'string' ? body.name.trim() : '';
   if (!name) return jsonResponse({ success: false, error: 'name is required', code: 'VALIDATION_ERROR' }, 400);

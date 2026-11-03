@@ -1,3 +1,4 @@
+import { rejectIfDeactivated } from '@/lib/deactivated-staff.server';
 import { NextRequest } from 'next/server';
 import { verifyToken } from '@/lib/auth.server';
 import { supabaseAdmin } from '@/lib/supabase-client';
@@ -24,6 +25,8 @@ export async function POST(
     if (!payload) {
       return jsonResponse({ success: false, error: 'Invalid token', code: 'UNAUTHORIZED' }, 401);
     }
+    const deactivated = await rejectIfDeactivated(payload);
+    if (deactivated) return deactivated;
 
     // Verify shop access
     const { data: portalUser, error: portalError } = await supabaseAdmin

@@ -1,3 +1,4 @@
+import { rejectIfDeactivated } from '@/lib/deactivated-staff.server';
 import { NextRequest } from 'next/server';
 import { productUnit } from '@/lib/business-settings.server';
 import { quantityError } from '@/lib/business-types';
@@ -44,6 +45,8 @@ export async function PUT(
         code: 'UNAUTHORIZED',
       }, 401);
     }
+    const deactivated = await rejectIfDeactivated(payload);
+    if (deactivated) return deactivated;
 
     // Verify user has access to this shop
     const { data: portalUser, error: portalError } = await supabaseAdmin
