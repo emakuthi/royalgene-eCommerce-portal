@@ -1,3 +1,4 @@
+import { rejectIfDeactivated } from '@/lib/deactivated-staff.server';
 import { NextRequest } from 'next/server';
 import { verifyToken } from '@/lib/auth.server';
 import { jsonResponse, optionsResponse } from '@/lib/apiResponse';
@@ -12,6 +13,8 @@ function authed(request: NextRequest) {
 export async function GET(request: NextRequest) {
   const payload = authed(request);
   if (!payload?.organizationId) return jsonResponse({ success: false, error: 'Unauthorized', code: 'UNAUTHORIZED' }, 401);
+  const deactivated = await rejectIfDeactivated(payload);
+  if (deactivated) return deactivated;
   const data = await listRecurring(payload.organizationId);
   return jsonResponse({ success: true, data });
 }
@@ -20,6 +23,8 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   const payload = authed(request);
   if (!payload?.organizationId) return jsonResponse({ success: false, error: 'Unauthorized', code: 'UNAUTHORIZED' }, 401);
+  const deactivated = await rejectIfDeactivated(payload);
+  if (deactivated) return deactivated;
   const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
   const result = await createRecurring(payload.organizationId, {
     shopId: typeof body.shopId === 'string' ? body.shopId : null,

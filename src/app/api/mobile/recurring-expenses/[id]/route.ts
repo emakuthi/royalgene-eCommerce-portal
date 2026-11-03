@@ -1,3 +1,4 @@
+import { rejectIfDeactivated } from '@/lib/deactivated-staff.server';
 import { NextRequest } from 'next/server';
 import { verifyToken } from '@/lib/auth.server';
 import { jsonResponse, optionsResponse } from '@/lib/apiResponse';
@@ -12,6 +13,8 @@ function authed(request: NextRequest) {
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const payload = authed(request);
   if (!payload?.organizationId) return jsonResponse({ success: false, error: 'Unauthorized', code: 'UNAUTHORIZED' }, 401);
+  const deactivated = await rejectIfDeactivated(payload);
+  if (deactivated) return deactivated;
   const { id } = await params;
   const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
   const updated = await updateRecurring(id, payload.organizationId, {
@@ -30,6 +33,8 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 export async function DELETE(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const payload = authed(request);
   if (!payload?.organizationId) return jsonResponse({ success: false, error: 'Unauthorized', code: 'UNAUTHORIZED' }, 401);
+  const deactivated = await rejectIfDeactivated(payload);
+  if (deactivated) return deactivated;
   const { id } = await params;
   const ok = await deleteRecurring(id, payload.organizationId);
   return jsonResponse({ success: ok });

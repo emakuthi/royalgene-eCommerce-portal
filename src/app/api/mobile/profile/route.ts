@@ -1,3 +1,4 @@
+import { rejectIfDeactivated } from '@/lib/deactivated-staff.server';
 import { NextRequest } from 'next/server';
 import { verifyToken } from '@/lib/auth.server';
 import { supabaseAdmin } from '@/lib/supabase-client';
@@ -30,6 +31,8 @@ export async function GET(request: NextRequest) {
         code: 'UNAUTHORIZED'
       }, 401);
     }
+    const deactivated = await rejectIfDeactivated(payload);
+    if (deactivated) return deactivated;
 
     // Get user details
     const { data: user, error: userError } = await supabaseAdmin
@@ -167,6 +170,8 @@ export async function PUT(request: NextRequest) {
         code: 'UNAUTHORIZED'
       }, 401);
     }
+    const deactivated = await rejectIfDeactivated(payload);
+    if (deactivated) return deactivated;
 
     const { name, phone } = await request.json();
 

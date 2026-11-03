@@ -1,3 +1,4 @@
+import { rejectIfDeactivated } from '@/lib/deactivated-staff.server';
 import { NextRequest } from 'next/server';
 import { v4 as uuidv4 } from 'uuid';
 import { verifyToken, type VerifiedPayload } from '@/lib/auth.server';
@@ -148,6 +149,9 @@ export async function verifyMobileShopAccess(
   const deviceRevoked = await rejectIfDeviceRevoked(payload);
   if (deviceRevoked) return deviceRevoked;
 
+  const deactivated = await rejectIfDeactivated(payload);
+  if (deactivated) return deactivated;
+
   const tenantMismatch = assertTenantMatch(request, payload);
   if (tenantMismatch) return tenantMismatch;
 
@@ -259,6 +263,9 @@ export async function verifyMobileAuth(
 
   const deviceRevoked = await rejectIfDeviceRevoked(payload);
   if (deviceRevoked) return deviceRevoked;
+
+  const deactivated = await rejectIfDeactivated(payload);
+  if (deactivated) return deactivated;
 
   const tenantMismatch = assertTenantMatch(request, payload);
   if (tenantMismatch) return tenantMismatch;

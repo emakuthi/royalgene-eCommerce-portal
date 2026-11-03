@@ -1,3 +1,4 @@
+import { rejectIfDeactivated } from '@/lib/deactivated-staff.server';
 import { NextRequest } from 'next/server';
 import { verifyToken } from '@/lib/auth.server';
 import { jsonResponse, optionsResponse } from '@/lib/apiResponse';
@@ -15,6 +16,8 @@ function authed(request: NextRequest) {
 export async function GET(request: NextRequest) {
   const payload = authed(request);
   if (!payload?.organizationId) return jsonResponse({ success: false, error: 'Unauthorized', code: 'UNAUTHORIZED' }, 401);
+  const deactivated = await rejectIfDeactivated(payload);
+  if (deactivated) return deactivated;
   if (!(await canViewCostData(payload))) return jsonResponse({ success: true, data: [] });
   const p = request.nextUrl.searchParams;
   const data = await buildPnlTrend(payload.organizationId, {

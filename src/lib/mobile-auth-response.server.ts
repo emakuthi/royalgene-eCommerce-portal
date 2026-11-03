@@ -1,3 +1,4 @@
+import { allRowsDeactivated, DEACTIVATED_MESSAGE } from '@/lib/deactivated-staff.server';
 import 'server-only';
 import { supabaseAdmin } from './supabase-client';
 import { signAuthToken } from './auth.server';
@@ -71,6 +72,11 @@ export async function buildMobileAuthResponse(
 
   const { data: portalUsers } = await supabaseAdmin.from('PortalUser').select('*, Shop(*)').eq('userId', user.id);
   const portalUser = portalUsers && portalUsers.length > 0 ? portalUsers[0] : null;
+
+  // Separate from the mobile-access gate below, so the testing bypass can't let a deactivated person back in.
+  if (!isAdmin && allRowsDeactivated(portalUsers)) {
+    return { ok: false, error: DEACTIVATED_MESSAGE };
+  }
 
   // Platform kill-switch (super_admin-controlled in /platform): when on, the
   // per-user mobile-access gate below is bypassed so any user with a valid,

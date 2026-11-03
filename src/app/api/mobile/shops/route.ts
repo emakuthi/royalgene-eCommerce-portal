@@ -1,3 +1,4 @@
+import { rejectIfDeactivated } from '@/lib/deactivated-staff.server';
 import { NextRequest } from 'next/server';
 import { v4 as uuidv4 } from 'uuid';
 import { isValidClientId } from '@/lib/sync/syncable-entities';
@@ -44,6 +45,8 @@ export async function GET(request: NextRequest) {
         code: 'UNAUTHORIZED'
       }, 401);
     }
+    const deactivated = await rejectIfDeactivated(payload);
+    if (deactivated) return deactivated;
 
     const isAdmin = payload.role === 'admin' || payload.role === 'super_admin';
 
@@ -183,6 +186,8 @@ export async function POST(request: NextRequest) {
     if (!token) return jsonResponse({ success: false, error: 'Unauthorized', code: 'UNAUTHORIZED' }, 401);
     const payload = verifyToken(token);
     if (!payload) return jsonResponse({ success: false, error: 'Invalid token', code: 'UNAUTHORIZED' }, 401);
+    const deactivated = await rejectIfDeactivated(payload);
+    if (deactivated) return deactivated;
 
     if (payload.role !== 'admin' && payload.role !== 'super_admin') {
       return jsonResponse({ success: false, error: 'Only workspace admins can create shops', code: 'FORBIDDEN' }, 403);

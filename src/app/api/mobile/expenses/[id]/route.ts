@@ -1,3 +1,4 @@
+import { rejectIfDeactivated } from '@/lib/deactivated-staff.server';
 import { NextRequest } from 'next/server';
 import { verifyToken } from '@/lib/auth.server';
 import { jsonResponse, optionsResponse } from '@/lib/apiResponse';
@@ -8,6 +9,8 @@ export async function DELETE(request: NextRequest, context: { params: Promise<{ 
   const token = request.headers.get('Authorization')?.replace('Bearer ', '');
   const payload = token ? verifyToken(token) : null;
   if (!payload?.organizationId) return jsonResponse({ success: false, error: 'Unauthorized', code: 'UNAUTHORIZED' }, 401);
+  const deactivated = await rejectIfDeactivated(payload);
+  if (deactivated) return deactivated;
   const { id } = await context.params;
   const ok = await deleteExpense(id, payload.organizationId, await expenseScopeFor(payload));
   return jsonResponse({ success: ok, ...(ok ? {} : { error: 'Expense not found', code: 'NOT_FOUND' }) }, ok ? 200 : 404);
