@@ -122,6 +122,8 @@ export interface PlatformSettingsData {
   allowAllMobileLogins: boolean;
   /** App builds older than this versionCode must update before use. 0 = no minimum. */
   minAppVersionCode: number;
+  /** The same for iOS, whose build numbers are unrelated to Android's. */
+  minIosVersionCode: number;
 }
 
 export function getPlatformSelfSignupEnabled(token?: string | null) {
@@ -146,6 +148,13 @@ export function setPlatformMinAppVersionCode(token: string | null | undefined, m
   return request<PlatformSettingsData>('/api/platform/settings', token, {
     method: 'PATCH',
     body: JSON.stringify({ minAppVersionCode }),
+  });
+}
+
+export function setPlatformMinIosVersionCode(token: string | null | undefined, minIosVersionCode: number) {
+  return request<PlatformSettingsData>('/api/platform/settings', token, {
+    method: 'PATCH',
+    body: JSON.stringify({ minIosVersionCode }),
   });
 }
 

@@ -30,6 +30,7 @@ import {
   setPlatformSelfSignupEnabled,
   setPlatformAllowAllMobileLogins,
   setPlatformMinAppVersionCode,
+  setPlatformMinIosVersionCode,
   syncPlatformPlanBilling,
   updatePlanEntitlements,
   updatePlatformOrganization,
@@ -119,6 +120,8 @@ function PlatformAdminConsole() {
   // Force update: builds below minAppVersionCode are blocked until updated.
   const [minAppVersionCode, setMinAppVersionCodeState] = useState(0);
   const [minVersionDraft, setMinVersionDraft] = useState('');
+  const [minIosVersionCode, setMinIosVersionCodeState] = useState(0);
+  const [minIosVersionDraft, setMinIosVersionDraft] = useState('');
   const [latestRelease, setLatestRelease] = useState<{ versionCode: number; versionName: string } | null>(null);
   const [minVersionBusy, setMinVersionBusy] = useState(false);
   const [orgBusyId, setOrgBusyId] = useState<string | null>(null);
@@ -187,6 +190,9 @@ function PlatformAdminConsole() {
       const min = Number(settingsRes.data.minAppVersionCode) || 0;
       setMinAppVersionCodeState(min);
       setMinVersionDraft(min > 0 ? String(min) : '');
+      const minIos = Number(settingsRes.data.minIosVersionCode) || 0;
+      setMinIosVersionCodeState(minIos);
+      setMinIosVersionDraft(minIos > 0 ? String(minIos) : '');
     }
     // Public feed — the newest published build, to offer "require latest".
     fetch('/api/mobile/app/latest-version?platform=android')
@@ -236,6 +242,20 @@ function PlatformAdminConsole() {
       toast.success(min > 0 ? `Apps older than build ${min} must now update` : 'Force update turned off');
     } else {
       toast.error(res.error || 'Failed to update minimum version');
+    }
+    setMinVersionBusy(false);
+  };
+
+  const saveMinIosVersion = async (next: number) => {
+    setMinVersionBusy(true);
+    const res = await setPlatformMinIosVersionCode(token, next);
+    if (res.success && res.data) {
+      const min = Number(res.data.minIosVersionCode) || 0;
+      setMinIosVersionCodeState(min);
+      setMinIosVersionDraft(min > 0 ? String(min) : '');
+      toast.success(min > 0 ? `iPhones older than build ${min} must now update` : 'iOS force update turned off');
+    } else {
+      toast.error(res.error || 'Failed to update the iOS minimum');
     }
     setMinVersionBusy(false);
   };
@@ -659,6 +679,38 @@ function PlatformAdminConsole() {
                   Turn off
                 </Button>
               )}
+            </div>
+            <div className="space-y-3 border-t border-gray-200 pt-3 dark:border-gray-700">
+              <p className="text-sm font-medium text-gray-900 dark:text-white">
+                {minIosVersionCode > 0 ? `iPhone builds older than ${minIosVersionCode} must update` : 'iPhone: no minimum — every build can be used'}
+              </p>
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                iPhone build numbers are separate from Android's. Only require a build once it is live on the App Store.
+              </p>
+              <div className="flex flex-wrap items-center gap-2">
+                <Input
+                  type="number"
+                  min={0}
+                  inputMode="numeric"
+                  placeholder="Minimum iPhone build, e.g. 12"
+                  value={minIosVersionDraft}
+                  onChange={(e) => setMinIosVersionDraft(e.target.value)}
+                  className="w-56"
+                  disabled={minVersionBusy || loading}
+                />
+                <Button
+                  variant="outline"
+                  disabled={minVersionBusy || loading || !/^\d+$/.test(minIosVersionDraft) || Number(minIosVersionDraft) === minIosVersionCode}
+                  onClick={() => saveMinIosVersion(Number(minIosVersionDraft))}
+                >
+                  Save
+                </Button>
+                {minIosVersionCode > 0 && (
+                  <Button variant="outline" disabled={minVersionBusy || loading} onClick={() => saveMinIosVersion(0)}>
+                    Turn off
+                  </Button>
+                )}
+              </div>
             </div>
           </div>
         </Section>

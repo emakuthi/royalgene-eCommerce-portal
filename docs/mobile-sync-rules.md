@@ -100,11 +100,12 @@ Each sync pushes first, then pulls. Push takes up to 25 `PENDING` or `FAILED` ro
 | 2xx with `success: true` (including `idempotent: true`) | Row and sale become `SYNCED` | No | No | Next row |
 | 2xx with `success: false` | `REJECTED` | n/a | Yes | Next row |
 | 401, still failing after a token refresh | Waits | No | No | **Stop the push** |
-| 402 with code `READ_ONLY` or `TRIAL_EXPIRED` | Waits | No | No | **Stop the push** |
+| Any 402 on iOS. On Android, 402 with code `READ_ONLY` or `TRIAL_EXPIRED` | Waits | No | No | **Stop the push** |
 | 403 with code `ORG_SUSPENDED` | Waits | No | No | **Stop the push** |
+| 403 with code `PLAN_LIMIT_REACHED` | iOS: waits. Android: `REJECTED` (see section 10) | No | iOS: no. Android: yes | iOS: **Stop the push** |
 | No response (offline, timeout, DNS, TLS) | Waits | No | No | **Stop the push** |
 | 400, 403 (including `ORG_CLOSED`), 409 or 422 | `REJECTED` | n/a | Yes | Next row |
-| Any other HTTP status, including 5xx, 404, 429 and other 402s, or an unexpected error | `FAILED` | Yes | No | Next row |
+| Any other HTTP status, including 5xx, 404 and 429, plus other 402s on Android, or an unexpected error | `FAILED` | Yes | No | Next row |
 | 10th failed attempt | `REJECTED` | n/a | Yes | Next row |
 
 Save the server's `error` or `message` text on the queue row, because it's what the user sees. The exception is a `VERSION_CONFLICT` 409 on a product update, which isn't a rejection. Only the unused product queue path can hit that.
@@ -253,10 +254,14 @@ Found by reading the code. Severity is my own estimate. iOS changes here are pro
 - Unsent product deletes (`PENDING_DELETE`) are never sent, and they block pulls for that row. This code currently has no callers.
 - A later version that starts handling a new entity type must reset the cursor, because older builds have already skipped past those rows. Sending an explicit `entities` list avoids this.
 
-## 10. Open decisions
+## 10. Billing refusals and force update
 
-1. **Force update:** `PlatformSettings.minAppVersionCode` is a single value. iOS needs its own, because its version numbers will differ.
-2. **Plan-limit 402s:** other 402s use up all 10 retries even though retrying won't help. Should they be refusals instead?
+**Decided 2026-11-03: a sale refused for billing reasons stays on the phone, is never reversed, and says why it's waiting.**
+
+- **Plan limits:** the monthly sales limit answers `403 PLAN_LIMIT_REACHED`, not 402. The server sends no 402 other than `READ_ONLY`. iOS waits on both.
+- **Android gap:** Android still treats `PLAN_LIMIT_REACHED` as a refusal, so the sale is reversed and shows as failed. The user can retry it. Android should change to match.
+- **Force update:** `PlatformSettings.minIosVersionCode` is iOS's minimum, separate from Android's `minAppVersionCode`. `latest-version?platform=ios` marks its policy `platform: 'ios'`, and iOS ignores any policy without that mark.
+- **While blocked:** the last minimum is saved on the phone, so a build stays blocked offline. iOS stops syncing and keeps its queue for the new build.
 
 ## 11. Shared test cases
 
@@ -276,6 +281,7 @@ Both apps should pass these. "Android" marks cases I saw in Android's test suite
 | 8 | 500, 10 times | `REJECTED` on the 10th, stock restored | |
 | 9 | Offline, repeated 15 times | Still queued, `retryCount` 0, stock still reduced | Yes |
 | 9a | 403 `ORG_SUSPENDED`, repeated 15 times | Still queued, `retryCount` 0, stock still reduced | Yes |
+| 9d | 403 `PLAN_LIMIT_REACHED`, repeated 15 times | iOS only: still queued, `retryCount` 0, stock still reduced | No |
 | 9b | 403 `ORG_CLOSED` | Same as 3 | Yes |
 | 9c | Sale made offline yesterday | Sent with yesterday's time as `soldAt` | Yes |
 | 10 | Transfer refused | Quantity returned to the source, receiving shop unchanged | Yes |
