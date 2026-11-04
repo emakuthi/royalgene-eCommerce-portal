@@ -31,6 +31,7 @@ import {
   setPlatformAllowAllMobileLogins,
   setPlatformMinAppVersionCode,
   setPlatformMinIosVersionCode,
+  setPlatformPlayLiveVersionCode,
   syncPlatformPlanBilling,
   updatePlanEntitlements,
   updatePlatformOrganization,
@@ -124,6 +125,10 @@ function PlatformAdminConsole() {
   const [minIosVersionDraft, setMinIosVersionDraft] = useState('');
   const [latestRelease, setLatestRelease] = useState<{ versionCode: number; versionName: string } | null>(null);
   const [minVersionBusy, setMinVersionBusy] = useState(false);
+  const [playLiveVersionCode, setPlayLiveVersionCodeState] = useState(0);
+  const [playLiveDraft, setPlayLiveDraft] = useState('');
+  // A minimum newer than Play's build, waiting for the admin to confirm it.
+  const [pendingMinVersion, setPendingMinVersion] = useState<number | null>(null);
   const [orgBusyId, setOrgBusyId] = useState<string | null>(null);
   const [plans, setPlans] = useState<PlatformPlan[]>([]);
   const [planDialogOpen, setPlanDialogOpen] = useState(false);
@@ -193,6 +198,9 @@ function PlatformAdminConsole() {
       const minIos = Number(settingsRes.data.minIosVersionCode) || 0;
       setMinIosVersionCodeState(minIos);
       setMinIosVersionDraft(minIos > 0 ? String(minIos) : '');
+      const playLive = Number(settingsRes.data.playLiveVersionCode) || 0;
+      setPlayLiveVersionCodeState(playLive);
+      setPlayLiveDraft(playLive > 0 ? String(playLive) : '');
     }
     // Public feed — the newest published build, to offer "require latest".
     fetch('/api/mobile/app/latest-version?platform=android')
@@ -232,9 +240,29 @@ function PlatformAdminConsole() {
     setMobileGateToggleBusy(false);
   };
 
-  const saveMinAppVersion = async (next: number) => {
+  const requestMinAppVersion = (next: number) => {
+    if (next > playLiveVersionCode) setPendingMinVersion(next);
+    else saveMinAppVersion(next);
+  };
+
+  const savePlayLiveVersion = async (next: number) => {
     setMinVersionBusy(true);
-    const res = await setPlatformMinAppVersionCode(token, next);
+    const res = await setPlatformPlayLiveVersionCode(token, next);
+    if (res.success && res.data) {
+      const playLive = Number(res.data.playLiveVersionCode) || 0;
+      setPlayLiveVersionCodeState(playLive);
+      setPlayLiveDraft(playLive > 0 ? String(playLive) : '');
+      toast.success(`Google Play build recorded as ${playLive}`);
+    } else {
+      toast.error(res.error || 'Failed to save the Google Play build');
+    }
+    setMinVersionBusy(false);
+  };
+
+  const saveMinAppVersion = async (next: number, confirmAheadOfPlay = false) => {
+    setPendingMinVersion(null);
+    setMinVersionBusy(true);
+    const res = await setPlatformMinAppVersionCode(token, next, confirmAheadOfPlay);
     if (res.success && res.data) {
       const min = Number(res.data.minAppVersionCode) || 0;
       setMinAppVersionCodeState(min);
@@ -649,8 +677,31 @@ function PlatformAdminConsole() {
               {minAppVersionCode > 0 ? `Builds older than ${minAppVersionCode} must update` : 'No minimum — every build can be used'}
             </p>
             <p className="text-xs text-gray-500 dark:text-gray-400">
-              {latestRelease ? `Latest published build: ${latestRelease.versionCode} (v${latestRelease.versionName}).` : 'No published build found.'}
+              {latestRelease ? `Latest direct download build: ${latestRelease.versionCode} (v${latestRelease.versionName}). Google Play can be behind this.` : 'No direct download build found.'}
             </p>
+            <div className="flex flex-wrap items-center gap-2">
+              <Input
+                type="number"
+                min={0}
+                inputMode="numeric"
+                placeholder="Build live on Google Play"
+                aria-label="Build live on Google Play"
+                value={playLiveDraft}
+                onChange={(e) => setPlayLiveDraft(e.target.value)}
+                className="w-56"
+                disabled={minVersionBusy || loading}
+              />
+              <Button
+                variant="outline"
+                disabled={minVersionBusy || loading || !/^\d+$/.test(playLiveDraft) || Number(playLiveDraft) === playLiveVersionCode}
+                onClick={() => savePlayLiveVersion(Number(playLiveDraft))}
+              >
+                Save Play build
+              </Button>
+              <span className="text-xs text-gray-500 dark:text-gray-400">
+                {playLiveVersionCode > 0 ? `Live on Google Play: ${playLiveVersionCode}` : 'Live on Google Play: not recorded'}
+              </span>
+            </div>
             <div className="flex flex-wrap items-center gap-2">
               <Input
                 type="number"
@@ -665,13 +716,13 @@ function PlatformAdminConsole() {
               <Button
                 variant="outline"
                 disabled={minVersionBusy || loading || !/^\d+$/.test(minVersionDraft) || Number(minVersionDraft) === minAppVersionCode}
-                onClick={() => saveMinAppVersion(Number(minVersionDraft))}
+                onClick={() => requestMinAppVersion(Number(minVersionDraft))}
               >
                 Save
               </Button>
               {latestRelease && latestRelease.versionCode !== minAppVersionCode && (
-                <Button disabled={minVersionBusy || loading} onClick={() => saveMinAppVersion(latestRelease.versionCode)}>
-                  Require latest ({latestRelease.versionCode})
+                <Button disabled={minVersionBusy || loading} onClick={() => requestMinAppVersion(latestRelease.versionCode)}>
+                  Require latest direct build ({latestRelease.versionCode})
                 </Button>
               )}
               {minAppVersionCode > 0 && (
@@ -680,6 +731,21 @@ function PlatformAdminConsole() {
                 </Button>
               )}
             </div>
+            {pendingMinVersion !== null && (
+              <div role="alert" className="space-y-2 rounded-lg border border-amber-300 bg-amber-50 p-3 dark:border-amber-700 dark:bg-amber-950">
+                <p className="text-sm text-amber-900 dark:text-amber-100">
+                  {playLiveVersionCode > 0
+                    ? `Google Play only has build ${playLiveVersionCode}. If you require ${pendingMinVersion}, people who installed from Play will be blocked with nothing to update to.`
+                    : `The Google Play build isn't recorded, so this can't confirm Play has build ${pendingMinVersion}. If it doesn't, people who installed from Play will be blocked with nothing to update to.`}
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  <Button variant="outline" onClick={() => setPendingMinVersion(null)}>Cancel</Button>
+                  <Button variant="outline" disabled={minVersionBusy} onClick={() => saveMinAppVersion(pendingMinVersion, true)}>
+                    Require {pendingMinVersion} anyway
+                  </Button>
+                </div>
+              </div>
+            )}
             <div className="space-y-3 border-t border-gray-200 pt-3 dark:border-gray-700">
               <p className="text-sm font-medium text-gray-900 dark:text-white">
                 {minIosVersionCode > 0 ? `iPhone builds older than ${minIosVersionCode} must update` : 'iPhone: no minimum — every build can be used'}

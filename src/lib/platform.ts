@@ -124,6 +124,8 @@ export interface PlatformSettingsData {
   minAppVersionCode: number;
   /** The same for iOS, whose build numbers are unrelated to Android's. */
   minIosVersionCode: number;
+  /** The build live on Google Play, recorded by hand. 0 = not recorded. */
+  playLiveVersionCode: number;
 }
 
 export function getPlatformSelfSignupEnabled(token?: string | null) {
@@ -144,10 +146,17 @@ export function setPlatformAllowAllMobileLogins(token: string | null | undefined
   });
 }
 
-export function setPlatformMinAppVersionCode(token: string | null | undefined, minAppVersionCode: number) {
+export function setPlatformMinAppVersionCode(token: string | null | undefined, minAppVersionCode: number, confirmAheadOfPlay = false) {
   return request<PlatformSettingsData>('/api/platform/settings', token, {
     method: 'PATCH',
-    body: JSON.stringify({ minAppVersionCode }),
+    body: JSON.stringify({ minAppVersionCode, confirmAheadOfPlay }),
+  });
+}
+
+export function setPlatformPlayLiveVersionCode(token: string | null | undefined, playLiveVersionCode: number) {
+  return request<PlatformSettingsData>('/api/platform/settings', token, {
+    method: 'PATCH',
+    body: JSON.stringify({ playLiveVersionCode }),
   });
 }
 
