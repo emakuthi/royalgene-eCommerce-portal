@@ -70,6 +70,30 @@ export async function setMinAppVersionCode(versionCode: number, updatedBy?: stri
 }
 
 /**
+ * The build live on Google Play, recorded by hand. 0 = not recorded, including
+ * when the column is missing: the minimum-version check must not depend on a
+ * migration having been run.
+ */
+export async function getPlayLiveVersionCode(): Promise<number> {
+  const { data, error } = await supabaseAdmin
+    .from('PlatformSettings')
+    .select('playLiveVersionCode')
+    .eq('id', SETTINGS_ID)
+    .maybeSingle();
+  if (error || !data) return 0;
+  const v = Number((data as { playLiveVersionCode?: unknown }).playLiveVersionCode);
+  return Number.isInteger(v) && v > 0 ? v : 0;
+}
+
+export async function setPlayLiveVersionCode(versionCode: number, updatedBy?: string | null): Promise<void> {
+  const { error } = await supabaseAdmin
+    .from('PlatformSettings')
+    .update({ playLiveVersionCode: versionCode, updatedAt: new Date().toISOString(), updatedBy: updatedBy ?? null })
+    .eq('id', SETTINGS_ID);
+  if (error) throw new Error(error.message);
+}
+
+/**
  * Oldest iOS build still allowed to run. Separate from Android's value because
  * the two apps number their builds independently. Fails OPEN to 0, like
  * getMinAppVersionCode.
