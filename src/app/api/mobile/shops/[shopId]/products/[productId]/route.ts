@@ -7,7 +7,7 @@ import { verifyMobileShopAccess } from '@/lib/mobile-shop-auth';
 import { deleteUploadedFiles } from '@/lib/storage-usage.server';
 import { canViewCostData, hasCostPrice } from '@/lib/cost-visibility.server';
 import { hasCapability } from '@/lib/permissions.server';
-import { deleteProductsInOrg } from '@/lib/product-delete.server';
+import { deleteProductsInOrg, logProductDeletes, PRODUCT_DELETED_MESSAGE } from '@/lib/product-delete.server';
 import { trackActivity } from '@/lib/activity-tracker';
 import { duplicateSkuMessage, findSkuConflict, isSkuUniqueViolation, normalizeSku } from '@/lib/product-sku.server';
 
@@ -479,14 +479,13 @@ export async function DELETE(
     if (outcome.failed.length > 0) {
       return jsonResponse({ success: false, error: 'Failed to delete product', code: 'INTERNAL_ERROR' }, 500);
     }
+    await logProductDeletes(request, auth.payload, outcome);
     const archived = outcome.archived.length > 0;
     logger.info('Mobile product deleted', { userId: auth.payload.userId, shopId, productId, archived });
     return jsonResponse({
       success: true,
       data: { archived },
-      message: archived
-        ? 'This product has sales history, so it was archived instead of deleted — it no longer shows in any shop.'
-        : 'Product deleted',
+      message: PRODUCT_DELETED_MESSAGE,
     }, 200);
   } catch (error) {
     logger.error('Mobile product delete error', { error: error instanceof Error ? error.message : String(error) });

@@ -78,11 +78,12 @@ describe('DELETE /api/portal/products', () => {
     expect(trackMock).not.toHaveBeenCalled();
   });
 
-  it('passes through the archive notice when the product has sales history', async () => {
+  it('says a deleted product can come back', async () => {
     deleteProductMock.mockResolvedValue({ softDeleted: true });
     const res = await DELETE(req({ productId: 'prod-1' }));
     const json = await res.json();
     expect(res.status).toBe(200);
     expect(json.data).toEqual({ deactivated: true });
+    expect(json.message).toMatch(/bring it back/);
   });
 });

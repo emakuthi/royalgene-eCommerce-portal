@@ -2,7 +2,6 @@ import { supabaseAdmin } from './supabase-client';
 import { v4 as uuidv4 } from 'uuid';
 import { idempotentInsert } from './sync/idempotent-insert.server';
 import type { User, Product, Order, Invoice, Receipt, PaymentDetails, BankTransferDetails, MpesaDetails, CardDetails } from './types';
-import { deleteUploadedFiles } from './storage-usage.server';
 
 // Helper function to check if credentials are available
 export function hasValidCredentials(): boolean {
@@ -125,53 +124,25 @@ export async function updateProduct(productId: string, updateData: Partial<Produ
   }
 }
 
+/**
+ * Deleting never erases a product: its row stays with deletedAt set, so its sales,
+ * photos and history can come back. Removing its ShopStock rows takes it out of
+ * every shop, and the database keeps a copy of them first (DeletedShopStock).
+ */
 export async function deleteProduct(productId: string): Promise<{ softDeleted: boolean }> {
   try {
     console.log('[Supabase] Deleting product:', productId);
 
-    // Fetch images + organizationId before the row is gone — needed to
-    // clean up Storage/the usage ledger afterward.
-    const { data: existingProduct } = await supabaseAdmin
-      .from('Product')
-      .select('images, organizationId')
-      .eq('id', productId)
-      .maybeSingle();
-    const imagesToDelete = ((existingProduct as { images?: string[] } | null)?.images ?? []) as string[];
-    const productOrgId = (existingProduct as { organizationId?: string } | null)?.organizationId;
-
     const { error } = await supabaseAdmin
       .from('Product')
-      .delete()
+      .update({ deletedAt: new Date().toISOString(), updatedAt: new Date().toISOString() })
       .eq('id', productId);
-
-    let softDeleted = false;
-
     if (error) {
-      // A product that's been sold has a SalesEntry row pointing at it (and
-      // possibly StockTransaction/Alert too) — the same referential-integrity
-      // block already handled for Shop/PortalUser. Fall back to tombstoning
-      // the row (Product already carries deletedAt/version from the sync
-      // metadata migration) instead of surfacing a raw FK error.
-      if (error.code === '23503') {
-        const { error: softError } = await supabaseAdmin
-          .from('Product')
-          .update({ deletedAt: new Date().toISOString(), updatedAt: new Date().toISOString() })
-          .eq('id', productId);
-        if (softError) {
-          const msg = errorToMessage(softError) || 'Failed to delete product';
-          console.error('[Supabase] Product soft-delete failed:', msg);
-          throw new Error(msg);
-        }
-        softDeleted = true;
-      } else {
-        const msg = errorToMessage(error) || 'Failed to delete product';
-        console.error('[Supabase] Product deletion failed:', msg);
-        throw new Error(msg);
-      }
+      const msg = errorToMessage(error) || 'Failed to delete product';
+      console.error('[Supabase] Product soft-delete failed:', msg);
+      throw new Error(msg);
     }
 
-    // Remove associated ShopStock rows to avoid orphaned stock records — the
-    // product should no longer show as stocked at any shop either way.
     try {
       const { error: stockErr } = await supabaseAdmin
         .from('ShopStock')
@@ -185,15 +156,7 @@ export async function deleteProduct(productId: string): Promise<{ softDeleted: b
       console.warn('[Supabase] Error deleting ShopStock rows after product deletion:', errorToMessage(stockDeleteErr));
     }
 
-    // A soft-deleted product still exists (just tombstoned) — its images stay
-    // with it, since historical sales/receipts may still reference them.
-    if (!softDeleted && imagesToDelete.length > 0) {
-      void deleteUploadedFiles(imagesToDelete, productOrgId);
-    }
-
-    return { softDeleted };
-
-    console.log('[Supabase] Product deleted successfully:', productId);
+    return { softDeleted: true };
   } catch (error) {
     console.error('[Supabase] Delete product error:', errorToMessage(error));
     throw error;

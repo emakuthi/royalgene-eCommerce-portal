@@ -12,7 +12,7 @@ import logger from '@/lib/logger';
 import { jsonResponse, optionsResponse } from '@/lib/apiResponse';
 import { verifyMobileAuth } from '@/lib/mobile-shop-auth';
 import { hasCapability } from '@/lib/permissions.server';
-import { deleteProductsInOrg } from '@/lib/product-delete.server';
+import { deleteProductsInOrg, logProductDeletes, PRODUCT_DELETED_MESSAGE } from '@/lib/product-delete.server';
 
 const MAX_IDS = 50;
 
@@ -39,6 +39,7 @@ export async function POST(request: NextRequest) {
     }
 
     const outcome = await deleteProductsInOrg(organizationId, productIds);
+    await logProductDeletes(request, auth.payload, outcome);
     logger.info('Mobile bulk product delete', {
       userId: auth.payload.userId, organizationId, requested: productIds.length,
       deleted: outcome.deleted.length, archived: outcome.archived.length, failed: outcome.failed.length,
@@ -48,9 +49,7 @@ export async function POST(request: NextRequest) {
     return jsonResponse({
       success: removed > 0 || outcome.failed.length === 0,
       data: outcome,
-      message: outcome.archived.length > 0
-        ? `${removed} removed — ${outcome.archived.length} had sales history, so ${outcome.archived.length === 1 ? 'it was' : 'they were'} archived instead of erased.`
-        : `${removed} removed`,
+      message: removed === 1 ? PRODUCT_DELETED_MESSAGE : `${removed} products deleted. A workspace admin can bring them back with their stock and history from Deleted Products on the web portal.`,
     }, removed > 0 || outcome.failed.length === 0 ? 200 : 500);
   } catch (error) {
     logger.error('Mobile bulk product delete error', { error: error instanceof Error ? error.message : String(error) });
