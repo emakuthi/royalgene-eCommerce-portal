@@ -216,13 +216,13 @@ export async function DELETE(request: NextRequest) {
     const DELETE_FAILED = 'Failed to delete the product — nothing was changed. Please try again.';
     const trackDelete = () => void trackFromRequest(request, payload, {
       action: 'product.delete', category: 'product',
-      resourceType: 'Product', resourceId: productId,
+      resourceType: 'product', resourceId: productId,
       shopId: providedShopId,
       details: { adminDelete: payload.role === 'admin' || payload.role === 'super_admin' },
     });
 
     // Admin/super_admin: with a shopId, remove only that shop's ShopStock row;
-    // without one, delete (or archive, if it has sales history) the whole product.
+    // without one, delete the whole product. Both can be restored.
     if (payload.role === 'admin' || payload.role === 'super_admin') {
       if (providedShopId) {
         const { error } = await supabaseAdmin.from('ShopStock').delete().eq('productId', productId).eq('shopId', providedShopId);
@@ -235,16 +235,13 @@ export async function DELETE(request: NextRequest) {
       }
 
       try {
-        const { softDeleted } = await (await import('@/lib/supabase-db')).deleteProduct(productId);
+        await (await import('@/lib/supabase-db')).deleteProduct(productId);
         trackDelete();
-        if (softDeleted) {
-          return jsonResponse({
-            success: true,
-            data: { deactivated: true },
-            message: 'This product has sales history, so it was archived instead of deleted — it no longer shows in any shop.',
-          }, 200);
-        }
-        return jsonResponse({ success: true }, 200);
+        return jsonResponse({
+          success: true,
+          data: { deactivated: true },
+          message: 'Product deleted. You can bring it back with its stock and history from Deleted Products.',
+        }, 200);
       } catch (err) {
         logger.error('Admin full-product delete failed', { error: err instanceof Error ? err.message : String(err), productId });
         return jsonResponse({ success: false, error: DELETE_FAILED }, 500);

@@ -5,17 +5,15 @@
  * Delete several products in one call — the web portal's counterpart to
  * POST /api/mobile/products/bulk-delete (same shared helper, same rules):
  * workspace admins only, removes each product from EVERY shop (not just the
- * one currently in view), and a product that already has sales history is
- * archived instead of erased so its sales stay intact (reported back in
- * `archived`, distinct from `deleted`).
+ * one currently in view). Nothing is erased: each is reported in `archived` and
+ * can be restored from Deleted Products.
  */
 import { NextRequest, NextResponse } from 'next/server';
 import { requireTenantUser } from '@/lib/authorize';
 import logger from '@/lib/logger';
 import { jsonResponse, optionsResponse } from '@/lib/apiResponse';
-import { trackFromRequest } from '@/lib/activity-tracker';
 import { hasCapability } from '@/lib/permissions.server';
-import { deleteProductsInOrg } from '@/lib/product-delete.server';
+import { deleteProductsInOrg, logProductDeletes, PRODUCT_DELETED_MESSAGE } from '@/lib/product-delete.server';
 
 const MAX_IDS = 50;
 
@@ -42,10 +40,7 @@ export async function POST(request: NextRequest) {
     // organizationId is guaranteed by requireTenantUser above.
     const outcome = await deleteProductsInOrg(payload.organizationId as string, productIds);
 
-    void trackFromRequest(request, payload, {
-      action: 'product.bulk_delete', category: 'product',
-      details: { requested: productIds.length, deleted: outcome.deleted.length, archived: outcome.archived.length, failed: outcome.failed.length },
-    });
+    await logProductDeletes(request, payload, outcome);
 
     logger.info('Portal bulk product delete', {
       userId: payload.userId, organizationId: payload.organizationId, requested: productIds.length,
@@ -56,9 +51,7 @@ export async function POST(request: NextRequest) {
     return jsonResponse({
       success: removed > 0 || outcome.failed.length === 0,
       data: outcome,
-      message: outcome.archived.length > 0
-        ? `${removed} removed — ${outcome.archived.length} had sales history, so ${outcome.archived.length === 1 ? 'it was' : 'they were'} archived instead of erased.`
-        : `${removed} removed`,
+      message: removed === 1 ? PRODUCT_DELETED_MESSAGE : `${removed} products deleted. A workspace admin can bring them back with their stock and history from Deleted Products on the web portal.`,
     }, removed > 0 || outcome.failed.length === 0 ? 200 : 500);
   } catch (error) {
     logger.error('Portal bulk product delete error', { error: error instanceof Error ? error.message : String(error) });

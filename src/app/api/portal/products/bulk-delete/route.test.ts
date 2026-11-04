@@ -12,13 +12,12 @@ vi.mock('@/lib/permissions.server', () => ({
   hasCapability: (...args: unknown[]) => hasCapabilityMock(...args),
 }));
 
-vi.mock('@/lib/activity-tracker', () => ({
-  trackFromRequest: vi.fn(async () => null),
-}));
-
+const logProductDeletesMock = vi.fn(async (..._args: unknown[]) => undefined);
 const deleteProductsInOrgMock = vi.fn(async (..._args: unknown[]): Promise<ProductDeleteOutcome> => ({ deleted: [], archived: [], notFound: [], failed: [] }));
 vi.mock('@/lib/product-delete.server', () => ({
   deleteProductsInOrg: (...args: unknown[]) => deleteProductsInOrgMock(...args),
+  logProductDeletes: (...args: unknown[]) => logProductDeletesMock(...args),
+  PRODUCT_DELETED_MESSAGE: 'Product deleted.',
 }));
 
 import { POST } from './route';
@@ -73,12 +72,14 @@ describe('POST /api/portal/products/bulk-delete', () => {
     expect(json.data.deleted).toEqual(['p1', 'p2']);
   });
 
-  it('reports an archive instead of erase in the message when a product has sales history', async () => {
-    deleteProductsInOrgMock.mockResolvedValue({ deleted: ['p1'], archived: ['p2'], notFound: [], failed: [] });
+  it('logs who deleted what and says the products can come back', async () => {
+    const outcome = { deleted: [], archived: ['p1', 'p2'], notFound: [], failed: [] };
+    deleteProductsInOrgMock.mockResolvedValue(outcome);
     const res = await POST(request({ productIds: ['p1', 'p2'] }));
     const json = await res.json();
 
-    expect(json.message).toMatch(/archived instead of erased/);
+    expect(logProductDeletesMock).toHaveBeenCalledWith(expect.anything(), payload, outcome);
+    expect(json.message).toMatch(/bring them back/);
   });
 
   it('reports failure (500) when nothing at all could be removed', async () => {

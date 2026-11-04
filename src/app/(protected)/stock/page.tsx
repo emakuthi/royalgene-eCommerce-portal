@@ -9,7 +9,7 @@ import { Input } from '@/components/ui/input';
 import { useHydratedAuth } from '@/lib/hooks';
 import { usePortalStore } from '@/lib/store';
 import { toast } from 'sonner';
-import { Search, Eye, ArrowRightLeft, MoreHorizontal, RefreshCw, Grid3x3, Trash2, X } from 'lucide-react';
+import { ArchiveRestore, Search, Eye, ArrowRightLeft, MoreHorizontal, RefreshCw, Grid3x3, Trash2, X } from 'lucide-react';
 import { Checkbox } from '@/components/ui/checkbox';
 import {
   DropdownMenu,
@@ -575,11 +575,7 @@ function StockManagementContent() {
         return false;
       }
       setStocks(prev => prev.filter(s => s.id !== stockId));
-      if (delRes.json.data?.deactivated) {
-        toast.success(delRes.json.message || 'Product has sales history, so it was archived instead of deleted.');
-      } else {
-        toast.success('Product deleted');
-      }
+      toast.success(delRes.json.message || 'Product deleted');
       return true;
     } catch (err) {
       console.error('Delete error', err);
@@ -619,6 +615,14 @@ function StockManagementContent() {
         breadcrumbs={[{ label: 'Portal', href: '/portal' }, { label: 'Stock' }]}
         actions={(
           <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+            {isAdmin && (
+              <Link href="/stock/deleted">
+                <Button variant="outline" className="flex items-center gap-2">
+                  <ArchiveRestore className="h-4 w-4" />
+                  <span className="text-sm">Deleted Products</span>
+                </Button>
+              </Link>
+            )}
             <Button variant="outline" onClick={exportStockCsv}>Export</Button>
             <Link href="/stock/add-new">
               <Button className="bg-[hsl(var(--primary))] text-white hover:brightness-90">+ Add Product</Button>

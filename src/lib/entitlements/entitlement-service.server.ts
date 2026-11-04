@@ -164,7 +164,8 @@ export async function getUsage(organizationId: string, resource: ResourceTypeVal
       const { count } = await supabaseAdmin
         .from('Product')
         .select('*', { count: 'exact', head: true })
-        .eq('organizationId', organizationId);
+        .eq('organizationId', organizationId)
+        .is('deletedAt', null);
       return count ?? 0;
     }
     case 'TRANSACTION': {
