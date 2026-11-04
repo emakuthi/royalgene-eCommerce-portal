@@ -36,7 +36,8 @@ export async function GET(
 
 /**
  * PATCH /api/portal/shops/[shopId]
- * Update a shop's details, scoped to the caller's organization.
+ * Update a shop's details, scoped to the caller's organization. Admin (or
+ * super_admin) only, like deleting one: this can also deactivate the shop.
  */
 export async function PATCH(
   request: NextRequest,
@@ -46,6 +47,9 @@ export async function PATCH(
     const { shopId } = await params;
     const auth = requireTenantUser(request);
     if (auth instanceof NextResponse) return auth;
+    if (auth.role !== 'admin' && auth.role !== 'super_admin') {
+      return jsonResponse({ success: false, error: 'Admin access required' }, 403);
+    }
 
     const body = await request.json() as Record<string, unknown>;
     const allowedFields = ['name', 'location', 'phone', 'email', 'manager', 'description', 'isActive'];
