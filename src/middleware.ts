@@ -21,6 +21,7 @@ const TENANT_OPTIONAL_PATHS = [
   // says which workspace to use.
   '/api/mobile/auth/login',
   '/api/mobile/auth/google',
+  '/api/mobile/auth/apple',
   '/api/mobile/auth/facebook',
   '/api/auth/signup-status',
   '/api/auth/check-slug',

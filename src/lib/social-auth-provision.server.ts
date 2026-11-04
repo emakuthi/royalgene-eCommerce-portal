@@ -9,10 +9,10 @@ import { RESERVED_SUBDOMAINS } from './tenant';
 import logger from './logger';
 
 export interface SocialIdentity {
-  /** Already lowercased, and already verified by the provider (Google/Facebook) — never re-verified here. */
+  /** Already lowercased, and already verified by the provider (Google/Facebook/Apple) — never re-verified here. */
   email: string;
   name: string | null;
-  provider: 'google' | 'facebook';
+  provider: 'google' | 'facebook' | 'apple';
 }
 
 async function uniqueSlugFor(baseName: string): Promise<string> {
@@ -133,4 +133,34 @@ export async function findOrProvisionUserForSocialIdentity(
   });
 
   return { userId, isNewUser: true };
+}
+
+/**
+ * Finds a person by Apple's permanent id first, because Apple may leave the email
+ * out of later sign-ins and the person can change it. Otherwise it goes by email,
+ * like the other providers, and remembers the id. Returns null when there's no way
+ * to tell who this is. A failed lookup throws rather than guessing, since carrying on
+ * could give an existing customer a second, empty workspace.
+ */
+export async function findOrProvisionUserForAppleIdentity(identity: {
+  subject: string;
+  email: string | null;
+  name: string | null;
+}): Promise<{ userId: string; isNewUser: boolean } | null> {
+  const { data: link, error: lookupError } = await supabaseAdmin
+    .from('AppleIdentity')
+    .select('userId')
+    .eq('subject', identity.subject)
+    .maybeSingle();
+  if (lookupError) throw new Error(`Apple identity lookup failed: ${lookupError.message}`);
+  if (link) return { userId: link.userId, isNewUser: false };
+  if (!identity.email) return null;
+
+  const result = await findOrProvisionUserForSocialIdentity({ email: identity.email, name: identity.name, provider: 'apple' });
+  const { error: linkError } = await supabaseAdmin
+    .from('AppleIdentity')
+    .upsert([{ subject: identity.subject, userId: result.userId }], { onConflict: 'subject' });
+  // The email still finds them next time, as long as Apple keeps sending it.
+  if (linkError) logger.error('Apple sign-in: could not save the identity link', { userId: result.userId, error: linkError.message });
+  return result;
 }

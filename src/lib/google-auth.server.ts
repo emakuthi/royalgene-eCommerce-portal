@@ -7,7 +7,9 @@ import logger from './logger';
  * GoogleSignIn API requires requesting an ID token using the *Web* client
  * ID (not the Android one), so in practice this only ever needs one value,
  * but a list keeps the door open for a future web sign-in flow using its
- * own client ID without code changes here.
+ * own client ID without code changes here. iOS signs in with its own client
+ * ID, so it needs a place in this list too. The portal uses the first entry,
+ * so the web client stays first.
  */
 const CLIENT_IDS = (process.env.GOOGLE_OAUTH_CLIENT_IDS ?? '')
   .split(',')
