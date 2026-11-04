@@ -101,6 +101,7 @@ function friendlyAction(action: string): string {
     'product.update':     'Updated a product',
     'product.delete':     'Deleted a product',
     'product.restore':    'Restored a product',
+    'data.export':        'Exported workspace data',
     'sale.record':        'Recorded a sale',
     'stock.update':       'Updated stock',
     'order.create':       'Created an order',
