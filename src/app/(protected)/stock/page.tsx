@@ -218,7 +218,6 @@ function StockManagementContent() {
           // Normalize each row to ensure `product` exists (Supabase may embed as `Product`)
           const normalizedEnriched = enriched.map((r: ApiShopStock) => ({ ...r, product: r.Product ?? r.product }));
           setStocks(normalizedEnriched);
-          if (!currentShop?.name) setShopName('Stock Management');
         } else {
           console.warn('[StockPage] stocks API returned success=false', json);
           toast.error(json.error || 'Failed to load stock data');
@@ -238,9 +237,8 @@ function StockManagementContent() {
 
   // Fetch all stocks for the "All Products" tab — and also whenever the
   // GLOBAL shop selector itself is set to "All Shops" (currentShop === null),
-  // regardless of which local tab is active: the KPI cards below need this
-  // org-wide data to reflect that choice even while sitting on "Current
-  // Stock" (which itself silently falls back to the first shop in that case).
+  // regardless of which local tab is active: "Current Stock" then lists every
+  // shop too, rather than quietly showing just the first one.
   useEffect(() => {
     if (!mounted || !token || !_hasHydrated) return;
     const isAdminRole = authUser?.role === 'admin' || authUser?.role === 'super_admin';
@@ -287,6 +285,9 @@ function StockManagementContent() {
   // server enforce it, but bulk delete has no such per-row confirmation
   // step to lean on, so it's worth gating the controls themselves too.
   const isAdmin = authUser?.role === 'admin' || authUser?.role === 'super_admin';
+  // Only admins can load every shop; anyone else without a shop picked sees
+  // their first shop, labelled with its name.
+  const showsEveryShop = activeTab === 'all' || (isAdmin && !currentShop);
 
   // Accurate, variant-aware stock value — the same source the Android app's
   // and the web Analytics page's own Inventory card already use (see
@@ -316,12 +317,9 @@ function StockManagementContent() {
   // so switching to "All Products" actually changes these numbers instead of
   // silently staying locked to the current shop's own stock. Also switches to
   // the org-wide data whenever the GLOBAL shop selector is "All Shops"
-  // (currentShop === null), even while sitting on the "Current Stock" tab —
-  // that tab's own table falls back to showing just the first shop in that
-  // case, but the KPI cards shouldn't silently follow it into one shop's
-  // numbers when the user picked "All Shops" up top.
+  // (currentShop === null), even while sitting on the "Current Stock" tab.
   const metrics = useMemo(() => {
-    const rows = (activeTab === 'current' && currentShop) ? stocks : allStocks;
+    const rows = showsEveryShop ? allStocks : stocks;
     // Total UNITS in stock (not distinct products) — matches the Android
     // Analytics screen's own Inventory card ("Total items"). quantity is
     // already the correctly rolled-up total for a variant product (kept in
@@ -334,7 +332,7 @@ function StockManagementContent() {
 
     let stockValue: number;
     if (inventoryValue) {
-      stockValue = activeTab === 'current' && currentShop
+      stockValue = !showsEveryShop && currentShop
         ? (inventoryValue.shops.find(s => s.shopId === currentShop.id)?.retailValue ?? 0)
         : inventoryValue.totalRetailValue;
     } else {
@@ -349,9 +347,10 @@ function StockManagementContent() {
     }
 
     return { totalItems, stockValue, lowStock, outOfStock };
-  }, [stocks, allStocks, activeTab, inventoryValue, currentShop]);
+  }, [stocks, allStocks, showsEveryShop, inventoryValue, currentShop]);
 
-  const filteredStocks = (activeTab === 'current' ? stocks : allStocks).filter(stock =>
+  const visibleStocks = showsEveryShop ? allStocks : stocks;
+  const filteredStocks = visibleStocks.filter(stock =>
     (stock.product?.name || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
     (stock.product?.sku || '').toLowerCase().includes(searchQuery.toLowerCase())
   );
@@ -540,12 +539,14 @@ function StockManagementContent() {
 
       // Update local state with returned stock data if provided
       const updatedQty = stockRes.json.data?.quantity ?? (stockPayload.quantity as number);
-      setStocks(prev => prev.map(s => s.id === stockId ? ({
+      const applySavedRow = (rows: ApiShopStock[]) => rows.map(s => s.id === stockId ? ({
         ...s,
         quantity: updatedQty,
         lowStockThreshold: (stockPayload.lowStockThreshold as number) ?? s.lowStockThreshold,
         product: { ...(s.product ?? s.Product ?? {}), ...(productPayload as Partial<Product>) }
-      } as ApiShopStock) : s));
+      } as ApiShopStock) : s);
+      setStocks(applySavedRow);
+      setAllStocks(applySavedRow);
       toast.success('Product & stock updated');
       return true;
     } catch (err) {
@@ -575,6 +576,7 @@ function StockManagementContent() {
         return false;
       }
       setStocks(prev => prev.filter(s => s.id !== stockId));
+      setAllStocks(prev => prev.filter(s => getProductFromRow(s)?.id !== productId));
       toast.success(delRes.json.message || 'Product deleted');
       return true;
     } catch (err) {
@@ -638,7 +640,7 @@ function StockManagementContent() {
             <CardContent>
               <p className="text-sm text-gray-500">Total Items</p>
               <h2 className="text-2xl font-bold">{metrics.totalItems.toLocaleString('en-KE')}</h2>
-              <p className="text-xs text-gray-400">{activeTab === 'current' ? 'Units in this shop' : 'Units across all shops'}</p>
+              <p className="text-xs text-gray-400">{showsEveryShop ? 'Units across all shops' : 'Units in this shop'}</p>
             </CardContent>
           </Card>
 
@@ -722,14 +724,14 @@ function StockManagementContent() {
           )}
 
           {/* Loading state for All Products tab */}
-          {activeTab === 'all' && loadingAll && (
+          {showsEveryShop && loadingAll && (
             <div className="flex justify-center py-10">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" />
             </div>
           )}
 
           {/* ── Mobile card grid (< md) ── */}
-          {!(activeTab === 'all' && loadingAll) && (
+          {!(showsEveryShop && loadingAll) && (
           <>
           <div className="block md:hidden space-y-3">
             {isAdmin && filteredStocks.length > 0 && (
@@ -752,7 +754,7 @@ function StockManagementContent() {
               </div>
             )}
             {filteredStocks.length === 0 && (
-              <div className={`text-center py-8 ${muted}`}>{stocks.length === 0 ? 'No stock items found' : 'No matching items'}</div>
+              <div className={`text-center py-8 ${muted}`}>{visibleStocks.length === 0 ? 'No stock items found' : 'No matching items'}</div>
             )}
             {filteredStocks.map((stock) => {
               const status = stockStatusBadge(stock.quantity, stock.lowStockThreshold, theme === 'dark', getProductFromRow(stock)?.kind === 'menu');
@@ -954,7 +956,7 @@ function StockManagementContent() {
             </table>
 
             {filteredStocks.length === 0 && (
-              <div className={`text-center py-8 ${muted}`}>{stocks.length === 0 ? 'No stock items found' : 'No matching items'}</div>
+              <div className={`text-center py-8 ${muted}`}>{visibleStocks.length === 0 ? 'No stock items found' : 'No matching items'}</div>
             )}
           </div>{/* end desktop table wrapper */}
           </>
@@ -1000,6 +1002,7 @@ function StockManagementContent() {
                     if (!res.ok || !json.success) { toast.error(json.error || 'Failed to restock'); setRestocking(false); return; }
                     // update local stocks
                     setStocks(prev => prev.map(s => s.id === restockStockId ? { ...s, quantity: json.data.quantity } : s));
+                    setAllStocks(prev => prev.map(s => s.id === restockStockId ? { ...s, quantity: json.data.quantity } : s));
                     toast.success('Stock updated');
                     setIsRestockModalOpen(false);
                     setRestockStockId(null);
@@ -1076,11 +1079,12 @@ function StockManagementContent() {
       <StockTransferModal
         open={isTransferModalOpen}
         stock={transferStock}
-        currentShopId={currentShop?.id ?? ''}
+        currentShopId={transferStock?.shopId ?? currentShop?.id ?? ''}
         token={token}
         onClose={() => { setIsTransferModalOpen(false); setTransferStock(null); }}
         onTransferred={(stockId, newQty) => {
           setStocks(prev => prev.map(s => s.id === stockId ? { ...s, quantity: newQty } : s));
+          setAllStocks(prev => prev.map(s => s.id === stockId ? { ...s, quantity: newQty } : s));
         }}
       />
 
