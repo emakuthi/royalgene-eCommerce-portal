@@ -93,3 +93,50 @@ describe('findOrProvisionUserForSocialIdentity', () => {
     expect(mockTables.Organization).toHaveLength(1);
   });
 });
+
+describe('findOrProvisionUserForAppleIdentity', () => {
+  it('finds a linked person even when Apple sends no email', async () => {
+    mockTables.AppleIdentity = [{ subject: 'sub-1', userId: 'user-1' }];
+    const { findOrProvisionUserForAppleIdentity } = await import('../social-auth-provision.server');
+    await expect(
+      findOrProvisionUserForAppleIdentity({ subject: 'sub-1', email: null, name: null }),
+    ).resolves.toEqual({ userId: 'user-1', isNewUser: false });
+  });
+
+  it('goes by the link when the Apple email has changed, without a new workspace', async () => {
+    mockTables.AppleIdentity = [{ subject: 'sub-1', userId: 'user-1' }];
+    const { findOrProvisionUserForAppleIdentity } = await import('../social-auth-provision.server');
+    await expect(
+      findOrProvisionUserForAppleIdentity({ subject: 'sub-1', email: 'changed@acme.com', name: null }),
+    ).resolves.toEqual({ userId: 'user-1', isNewUser: false });
+    expect(mockTables.Organization).toHaveLength(1);
+  });
+
+  it('matches an existing account by email and remembers the Apple id', async () => {
+    mockTables.AppleIdentity = [];
+    const { findOrProvisionUserForAppleIdentity } = await import('../social-auth-provision.server');
+    await expect(
+      findOrProvisionUserForAppleIdentity({ subject: 'sub-1', email: 'existing@acme.com', name: null }),
+    ).resolves.toEqual({ userId: 'user-1', isNewUser: false });
+    expect(mockTables.AppleIdentity).toEqual([expect.objectContaining({ subject: 'sub-1', userId: 'user-1' })]);
+    expect(mockTables.Organization).toHaveLength(1);
+  });
+
+  it('creates a workspace for a first-time person and remembers the Apple id', async () => {
+    mockTables.AppleIdentity = [];
+    const { findOrProvisionUserForAppleIdentity } = await import('../social-auth-provision.server');
+    const result = await findOrProvisionUserForAppleIdentity({ subject: 'sub-2', email: 'new@privaterelay.appleid.com', name: 'New Person' });
+    expect(result?.isNewUser).toBe(true);
+    expect(mockTables.Organization.find((o) => o.id !== ORG_ID)?.name).toBe("New Person's Workspace");
+    expect(mockTables.AppleIdentity).toEqual([expect.objectContaining({ subject: 'sub-2', userId: result?.userId })]);
+  });
+
+  it('returns null when there is no link and no email', async () => {
+    mockTables.AppleIdentity = [];
+    const { findOrProvisionUserForAppleIdentity } = await import('../social-auth-provision.server');
+    await expect(
+      findOrProvisionUserForAppleIdentity({ subject: 'sub-3', email: null, name: null }),
+    ).resolves.toBeNull();
+    expect(mockTables.Organization).toHaveLength(1);
+  });
+});
