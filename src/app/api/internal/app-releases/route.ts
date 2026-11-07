@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase-client';
+import { publicObjectUrl } from '@/lib/supabase-env';
 
 const APK_BUCKET = 'app-releases';
 
@@ -96,14 +97,14 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { data: publicUrlData } = supabaseAdmin.storage.from(APK_BUCKET).getPublicUrl(path);
+    const apkUrl = publicObjectUrl(APK_BUCKET, path);
 
     const { error: insertError } = await supabaseAdmin.from('AppRelease').insert({
       platform,
       versionCode,
       versionName,
       apkPath: path,
-      apkUrl: publicUrlData.publicUrl,
+      apkUrl,
       fileSizeBytes: buffer.byteLength,
       changelog,
     });
@@ -117,7 +118,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json<PublishResponse>({
       success: true,
       message: 'Release published',
-      release: { platform, versionCode, versionName, apkUrl: publicUrlData.publicUrl },
+      release: { platform, versionCode, versionName, apkUrl },
     });
   } catch (err) {
     console.error('[app-releases publish] Unexpected error:', err instanceof Error ? err.message : String(err));

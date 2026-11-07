@@ -1,8 +1,9 @@
 import { createClient } from '@supabase/supabase-js';
 import { startRealtimeStockSync } from './supabase-realtime';
+import { supabaseUrl, supabaseAnonKey } from './supabase-env';
 
-const getSupabaseUrl = () => process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://placeholder.supabase.co';
-const getSupabasePublishableKey = () => process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY || 'placeholder-key';
+const getSupabaseUrl = () => supabaseUrl() || 'https://placeholder.supabase.co';
+const getSupabasePublishableKey = () => supabaseAnonKey() || 'placeholder-key';
 const getSupabaseServiceKey = () => process.env.SUPABASE_SERVICE_ROLE_KEY || 'placeholder-key';
 
 // Resolve env values once at module initialization so we can log them safely
@@ -97,7 +98,7 @@ if (typeof window === 'undefined' && !isSupabaseAdminConfigured) {
   // This makes misconfiguration obvious in Vercel/function logs.
   console.error('[Supabase] WARNING: Supabase admin client appears unconfigured.\n' +
     `Detected URL: ${maskUrl(SUPABASE_URL)}; Service key present: ${SUPABASE_SERVICE_KEY === 'placeholder-key' ? 'no' : (SUPABASE_SERVICE_KEY ? 'yes' : 'no')}.\n` +
-    'Ensure SUPABASE_SERVICE_ROLE_KEY and NEXT_PUBLIC_SUPABASE_URL are set in your deployment environment.'
+    'Ensure SUPABASE_SERVICE_ROLE_KEY and SUPABASE_URL (or NEXT_PUBLIC_SUPABASE_URL) are set in your deployment environment.'
   );
 }
 
