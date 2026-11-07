@@ -1,11 +1,12 @@
 import { supabaseAdmin } from './supabase-client';
+import { supabaseUrl } from './supabase-env';
 import { v4 as uuidv4 } from 'uuid';
 import { idempotentInsert } from './sync/idempotent-insert.server';
 import type { User, Product, Order, Invoice, Receipt, PaymentDetails, BankTransferDetails, MpesaDetails, CardDetails } from './types';
 
 // Helper function to check if credentials are available
 export function hasValidCredentials(): boolean {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const url = supabaseUrl();
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
   const hasValidUrl = Boolean(url && url !== 'https://placeholder.supabase.co');
