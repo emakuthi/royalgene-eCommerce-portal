@@ -1,7 +1,8 @@
 // Edge-safe tenant resolution. Deliberately does NOT import '@/lib/supabase-client'
 // — that module starts realtime stock-sync subscriptions as an import side-effect,
 // which must not run on every middleware invocation (and may not be edge-safe at
-// all). Uses a raw PostgREST fetch instead.
+// all). Uses a raw PostgREST fetch instead. supabase-env has no side effects.
+import { supabaseUrl as runtimeSupabaseUrl } from './supabase-env';
 
 export const ROOT_DOMAIN = (process.env.NEXT_PUBLIC_ROOT_DOMAIN || 'localhost:3001').toLowerCase();
 export const DEV_TENANT_SLUG = process.env.DEV_TENANT_SLUG || 'royalgene';
@@ -59,7 +60,7 @@ export const READ_ONLY_MESSAGES: Record<ReadOnlyReason, string> = {
 };
 
 async function fetchOrganizationEdge(filter: string): Promise<ResolvedOrganization | null> {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseUrl = runtimeSupabaseUrl();
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!supabaseUrl || !serviceKey) return null;
   for (const fields of [ORG_SELECT_FIELDS, ORG_SELECT_FIELDS_BASE]) {

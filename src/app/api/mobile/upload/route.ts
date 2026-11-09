@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin, IMAGE_BUCKET } from '@/lib/supabase-client';
+import { publicObjectUrl } from '@/lib/supabase-env';
 import { verifyMobileAuth } from '@/lib/mobile-shop-auth';
 import { assertStorageQuota } from '@/lib/entitlements/enforce.server';
 import { recordFileUpload } from '@/lib/storage-usage.server';
@@ -100,14 +101,11 @@ export async function POST(request: NextRequest) {
     }
 
     // Get and return the public URL
-    const { data: publicUrlData } = supabaseAdmin.storage
-      .from(IMAGE_BUCKET)
-      .getPublicUrl(data.path);
 
     return NextResponse.json(
       {
         success: true,
-        url: publicUrlData.publicUrl,
+        url: publicObjectUrl(IMAGE_BUCKET, data.path),
         message: 'Image uploaded successfully',
       },
       { status: 200 },

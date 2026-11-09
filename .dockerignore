@@ -1,0 +1,25 @@
+# Secrets and credentials must never enter the image
+.env
+.env.*
+
+# Build artefacts and dependencies are recreated in the image
+node_modules
+.next
+*.tsbuildinfo
+
+# Runtime logs live outside the image
+logs
+
+# Not needed to build or run the app
+.git
+.github
+.idea
+.claude
+.vercel
+.DS_Store
+Dockerfile
+.dockerignore
+vercel.json
+docs
+supabase
+*.md
