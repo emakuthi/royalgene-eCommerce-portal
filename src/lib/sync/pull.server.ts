@@ -114,7 +114,9 @@ export async function pullChanges(opts: {
         operation: isDeleted ? 'DELETE' : 'UPSERT',
         version: typeof row.version === 'number' ? row.version : null,
         updatedAt: String(row.updatedAt),
-        data: isDeleted ? null : (opts.includeCostData ? row : redactCostFields(entityName, row)),
+        // A deleted Product still carries its row: products with sales are archived, not
+        // erased, and phones need the name to show those sales. Other tombstones stay bare.
+        data: isDeleted && entityName !== 'Product' ? null : (opts.includeCostData ? row : redactCostFields(entityName, row)),
       });
     }
 

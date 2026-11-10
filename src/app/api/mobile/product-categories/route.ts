@@ -4,6 +4,7 @@ import { verifyToken } from '@/lib/auth.server';
 import { jsonResponse, optionsResponse } from '@/lib/apiResponse';
 import { listProductCategories } from '@/lib/business-settings.server';
 import { productCategoryCreate } from '@/lib/business-routes.server';
+import { hasCapability } from '@/lib/permissions.server';
 
 function authed(request: NextRequest) {
   const token = request.headers.get('Authorization')?.replace('Bearer ', '');
@@ -22,15 +23,17 @@ export async function GET(request: NextRequest) {
   return jsonResponse({ success: true, data: await listProductCategories(payload.organizationId, { activeOnly }) });
 }
 
-// POST /api/mobile/product-categories — { name }. Workspace owner only.
+// POST /api/mobile/product-categories — { name }. Anyone who may add products
+// (owners, and managers by default), so a missing category doesn't block a new product.
+// Renaming and removing stay owner-only ([id]/route.ts).
 export async function POST(request: NextRequest) {
   const payload = authed(request);
   if (!payload) return jsonResponse({ success: false, error: 'Unauthorized', code: 'UNAUTHORIZED' }, 401);
   const deactivated = await rejectIfDeactivated(payload);
   if (deactivated) return deactivated;
   if (!payload.organizationId) return jsonResponse({ success: false, error: 'No workspace', code: 'FORBIDDEN' }, 403);
-  if (payload.role !== 'admin' && payload.role !== 'super_admin') {
-    return jsonResponse({ success: false, error: 'Only the workspace owner can manage categories', code: 'FORBIDDEN' }, 403);
+  if (!(await hasCapability(payload, 'add_inventory'))) {
+    return jsonResponse({ success: false, error: 'Your role may not add categories', code: 'FORBIDDEN' }, 403);
   }
   return productCategoryCreate(payload.organizationId, request);
 }

@@ -112,7 +112,7 @@ export async function GET(
           images: prod.images || [],
           colors: prod.colors || [],
           sizes: prod.sizes || [],
-          reorderLevel: shopStock.lowStockThreshold || 5
+          reorderLevel: shopStock.lowStockThreshold ?? 0, // the admin's own limit; 0 is a real value, not "unset"
         }
       }
     }, 200);
@@ -433,7 +433,7 @@ export async function PUT(
         images: updatedProd?.images || [],
         colors: updatedProd?.colors || [],
         sizes: updatedProd?.sizes || [],
-        reorderLevel: updatedStock?.lowStockThreshold || 5,
+        reorderLevel: updatedStock?.lowStockThreshold ?? 0,
         // The version after this update — a caller doing optimistic
         // concurrency (see the `version` request field above) uses this as
         // its new baseline for the next edit.
