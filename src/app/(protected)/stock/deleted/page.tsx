@@ -1,11 +1,12 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { ArchiveRestore } from 'lucide-react';
+import { ArchiveRestore, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import PortalHeader from '@/components/portal/PortalHeader';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useHydratedAuth } from '@/lib/hooks';
 import { useTheme } from '@/lib/theme-context';
 
@@ -31,6 +32,8 @@ export default function DeletedProductsPage() {
   const [products, setProducts] = useState<DeletedProduct[]>([]);
   const [loading, setLoading] = useState(true);
   const [restoringId, setRestoringId] = useState<string | null>(null);
+  const [purgeTarget, setPurgeTarget] = useState<DeletedProduct | null>(null);
+  const [purging, setPurging] = useState(false);
 
   useEffect(() => setMounted(true), []);
 
@@ -75,6 +78,31 @@ export default function DeletedProductsPage() {
       toast.error('Failed to restore product');
     } finally {
       setRestoringId(null);
+    }
+  };
+
+  const purge = async () => {
+    if (!purgeTarget) return;
+    setPurging(true);
+    try {
+      const res = await fetch('/api/portal/products/deleted/purge', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: token ? `Bearer ${token}` : '' },
+        body: JSON.stringify({ id: purgeTarget.id }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || !json.success) {
+        toast.error(json.error || 'Failed to delete product');
+        return;
+      }
+      toast.success(json.message || 'Permanently deleted');
+      setPurgeTarget(null);
+      void fetchDeleted();
+    } catch (err) {
+      console.error('Purge product error', err);
+      toast.error('Failed to delete product');
+    } finally {
+      setPurging(false);
     }
   };
 
@@ -143,18 +171,29 @@ export default function DeletedProductsPage() {
                         </div>
                       )}
                     </div>
-                    {p.shops.length > 0 && (
+                    <div className="flex gap-2 shrink-0 self-start sm:self-center">
+                      {p.shops.length > 0 && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="gap-1.5"
+                          onClick={() => void restore(p.id)}
+                          disabled={restoringId === p.id}
+                        >
+                          <ArchiveRestore className="h-3.5 w-3.5" />
+                          {restoringId === p.id ? 'Restoring…' : 'Restore'}
+                        </Button>
+                      )}
                       <Button
                         size="sm"
                         variant="outline"
-                        className="gap-1.5 shrink-0 self-start sm:self-center"
-                        onClick={() => void restore(p.id)}
-                        disabled={restoringId === p.id}
+                        className="gap-1.5 text-red-600 hover:text-red-700 dark:text-red-400"
+                        onClick={() => setPurgeTarget(p)}
                       >
-                        <ArchiveRestore className="h-3.5 w-3.5" />
-                        {restoringId === p.id ? 'Restoring…' : 'Restore'}
+                        <Trash2 className="h-3.5 w-3.5" />
+                        Delete permanently
                       </Button>
-                    )}
+                    </div>
                   </li>
                 ))}
               </ul>
@@ -162,6 +201,23 @@ export default function DeletedProductsPage() {
           </CardContent>
         </Card>
       </div>
+
+      <Dialog open={Boolean(purgeTarget)} onOpenChange={(open) => !open && !purging && setPurgeTarget(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Permanently delete {purgeTarget?.name || 'this product'}?</DialogTitle>
+            <DialogDescription>
+              It leaves Deleted Products for good and can’t be restored. Its sales, orders and transfers stay in your history with its name.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex gap-3 pt-2">
+            <Button className="flex-1 bg-red-600 hover:bg-red-700 text-white" disabled={purging} onClick={() => void purge()}>
+              {purging ? 'Deleting…' : 'Delete permanently'}
+            </Button>
+            <Button variant="outline" type="button" disabled={purging} onClick={() => setPurgeTarget(null)}>Cancel</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
