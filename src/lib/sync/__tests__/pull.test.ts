@@ -61,6 +61,7 @@ beforeEach(() => {
     ],
     Shop: [
       { id: 's1', organizationId: 'org-1', updatedAt: '2026-09-10T09:00:00.000Z', version: 1, deletedAt: null, name: 'Shop 1' },
+      { id: 's2', organizationId: 'org-1', updatedAt: '2026-09-10T09:00:01.000Z', version: 1, deletedAt: '2026-09-10T09:00:01.000Z', name: 'Shop 2' },
     ],
   };
 });
@@ -86,10 +87,17 @@ describe('pullChanges', () => {
   });
 
   it('marks a soft-deleted row as DELETE with no data', async () => {
+    const r = await pullChanges({ organizationId: 'org-1', cursor: {}, entities: ['Shop'] });
+    const del = r.changes.find((c) => c.id === 's2')!;
+    expect(del.operation).toBe('DELETE');
+    expect(del.data).toBeNull();
+  });
+
+  it('a deleted (archived) Product still carries its row, so phones can name its old sales', async () => {
     const r = await pullChanges({ organizationId: 'org-1', cursor: {}, entities: ['Product'] });
     const del = r.changes.find((c) => c.id === 'p3')!;
     expect(del.operation).toBe('DELETE');
-    expect(del.data).toBeNull();
+    expect(del.data).toMatchObject({ id: 'p3', name: 'C' });
   });
 
   it('a second pull with the returned cursor only sees newer rows', async () => {
@@ -105,6 +113,6 @@ describe('pullChanges', () => {
   it('pulls multiple entities independently and advances each cursor', async () => {
     const r = await pullChanges({ organizationId: 'org-1', cursor: {}, entities: ['Product', 'Shop'] });
     expect(r.cursor.Product).toBeDefined();
-    expect(r.cursor.Shop).toEqual({ updatedAt: '2026-09-10T09:00:00.000Z', id: 's1' });
+    expect(r.cursor.Shop).toEqual({ updatedAt: '2026-09-10T09:00:01.000Z', id: 's2' });
   });
 });

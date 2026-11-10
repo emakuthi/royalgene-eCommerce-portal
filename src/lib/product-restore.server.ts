@@ -39,7 +39,7 @@ interface SavedStock {
 export async function listDeletedProducts(organizationId: string): Promise<DeletedProduct[]> {
   const [{ data: deleted, error: deletedErr }, { data: saved, error: savedErr }] = await Promise.all([
     supabaseAdmin.from('Product').select('id, name, sku, deletedAt')
-      .eq('organizationId', organizationId).not('deletedAt', 'is', null),
+      .eq('organizationId', organizationId).not('deletedAt', 'is', null).is('purgedAt', null),
     supabaseAdmin.from('DeletedShopStock').select('productId, shopId, stock, transactions, deletedAt')
       .eq('organizationId', organizationId).is('restoredAt', null).order('deletedAt', { ascending: false }),
   ]);
@@ -117,4 +117,50 @@ export async function restoreDeletedProduct(organizationId: string, productId: s
   });
   if (error) throw new Error(error.message);
   return data as RestoreResult;
+}
+
+export type PurgeResult = { ok: true; erased: boolean } | { ok: false; code: 'NOT_FOUND' };
+
+/**
+ * "Delete permanently" from Deleted Products. Never touches history: a product with
+ * sales (trashed ones included), shop orders, stock transfers or recipe lines keeps its row, marked
+ * purged, so that history still has its name; one with none of these is erased. Its
+ * saved stock goes either way, so it can't be restored. A live product that was only
+ * removed from a shop just loses that saved copy and leaves the list.
+ */
+export async function purgeDeletedProduct(organizationId: string, productId: string): Promise<PurgeResult> {
+  const { data: product, error } = await supabaseAdmin.from('Product').select('id, deletedAt, purgedAt')
+    .eq('organizationId', organizationId).eq('id', productId).maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!product || product.purgedAt) return { ok: false, code: 'NOT_FOUND' };
+
+  const { error: savedErr } = await supabaseAdmin.from('DeletedShopStock').delete()
+    .eq('organizationId', organizationId).eq('productId', productId).is('restoredAt', null);
+  if (savedErr) throw new Error(savedErr.message);
+  if (!product.deletedAt) return { ok: true, erased: false };
+
+  // Rows that would block or lose something if the product row went: sales and orders
+  // block the delete; transfers and recipe lines (as dish or ingredient) would cascade.
+  const checks: Array<[string, string]> = [
+    ['SalesEntry', `productId.eq.${productId}`],
+    ['OrderItem', `productId.eq.${productId}`],
+    ['StockTransfer', `productId.eq.${productId}`],
+    ['RecipeItem', `productId.eq.${productId},ingredientProductId.eq.${productId}`],
+  ];
+  const counts = await Promise.all(checks.map(async ([table, filter]) => {
+    const { count, error: countErr } = await supabaseAdmin.from(table).select('id', { count: 'exact', head: true }).or(filter);
+    if (countErr) throw new Error(countErr.message);
+    return count ?? 0;
+  }));
+
+  if (counts.every((n) => n === 0)) {
+    const { error: deleteErr } = await supabaseAdmin.from('Product').delete().eq('id', productId);
+    // Anything else still pointing at it blocks the delete; marking it purged is just as final.
+    if (!deleteErr) return { ok: true, erased: true };
+  }
+
+  const now = new Date().toISOString();
+  const { error: markErr } = await supabaseAdmin.from('Product').update({ purgedAt: now, updatedAt: now }).eq('id', productId);
+  if (markErr) throw new Error(markErr.message);
+  return { ok: true, erased: false };
 }
