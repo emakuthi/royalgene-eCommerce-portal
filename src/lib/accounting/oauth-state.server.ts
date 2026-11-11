@@ -1,5 +1,6 @@
 import 'server-only';
 import { createHmac, timingSafeEqual } from 'node:crypto';
+import { jwtSecret } from '../auth.server';
 
 /**
  * Binds an OAuth `state` param to the initiating tenant without a DB table
@@ -19,7 +20,7 @@ interface OAuthStatePayload {
 }
 
 function getSecret(): string {
-  return process.env.JWT_SECRET || 'dev_jwt_secret';
+  return jwtSecret();
 }
 
 export function signOAuthState(organizationId: string, userId: string): string {

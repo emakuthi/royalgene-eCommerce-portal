@@ -23,7 +23,18 @@ export type VerifiedPayload = {
   [k: string]: unknown;
 };
 
-const JWT_SECRET = process.env.JWT_SECRET || 'dev_jwt_secret';
+/**
+ * Signs and checks every login token. Production has no fallback: a built-in
+ * default lets anyone mint a token, and a value that differs from the one
+ * phones were issued under rejects every existing session (Nov 2026: the VPS
+ * move dropped it and phones silently stopped syncing).
+ */
+export function jwtSecret(): string {
+  const secret = process.env.JWT_SECRET;
+  if (secret) return secret;
+  if (process.env.NODE_ENV === 'production') throw new Error('JWT_SECRET is not set');
+  return 'dev_jwt_secret';
+}
 
 /**
  * @deprecated Use signAuthToken() with an explicit AuthTokenPayload instead.
@@ -34,7 +45,7 @@ const JWT_SECRET = process.env.JWT_SECRET || 'dev_jwt_secret';
 export function generateToken(user: unknown, opts?: { expiresInSeconds?: number }) {
   const expiresIn = opts?.expiresInSeconds ?? 60 * 60 * 24 * 7;
   const payload = (typeof user === 'object' && user !== null) ? (user as Record<string, unknown>) : { data: user };
-  return jwt.sign(payload as jwt.JwtPayload, JWT_SECRET, { expiresIn });
+  return jwt.sign(payload as jwt.JwtPayload, jwtSecret(), { expiresIn });
 }
 
 export interface AuthTokenPayload {
@@ -58,7 +69,7 @@ export interface AuthTokenPayload {
 /** Standardized JWT signing helper — every signing site should use this. */
 export function signAuthToken(payload: AuthTokenPayload, opts?: { expiresInSeconds?: number }) {
   const expiresIn = opts?.expiresInSeconds ?? 60 * 60 * 24 * 7;
-  return jwt.sign(payload as jwt.JwtPayload, JWT_SECRET, { expiresIn });
+  return jwt.sign(payload as jwt.JwtPayload, jwtSecret(), { expiresIn });
 }
 
 /**
@@ -86,12 +97,12 @@ function toVerifiedPayload(raw: unknown): VerifiedPayload | null {
 export function verifyToken(token: string | null | undefined): VerifiedPayload | null {
   if (!token) return null;
   try {
-	return toVerifiedPayload(jwt.verify(token, JWT_SECRET));
+	return toVerifiedPayload(jwt.verify(token, jwtSecret()));
   } catch (err) {
 	if (err instanceof jwt.TokenExpiredError) {
 	  try {
 		// Signature still checked — only the expiry is relaxed, and only for app tokens.
-		const raw = jwt.verify(token, JWT_SECRET, { ignoreExpiration: true }) as Record<string, unknown>;
+		const raw = jwt.verify(token, jwtSecret(), { ignoreExpiration: true }) as Record<string, unknown>;
 		const exp = typeof raw?.exp === 'number' ? raw.exp : 0;
 		if ('deviceId' in raw && Date.now() / 1000 - exp < MOBILE_TOKEN_GRACE_SECONDS) {
 		  const payload = toVerifiedPayload(raw);
