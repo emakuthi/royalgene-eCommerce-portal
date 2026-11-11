@@ -1,5 +1,6 @@
 import 'server-only';
 import { supabaseAdmin } from './supabase-client';
+import { decryptSecret, encryptSecret } from './crypto/secret-box.server';
 
 const SETTINGS_ID = 'singleton';
 
@@ -114,5 +115,96 @@ export async function setMinIosVersionCode(versionCode: number, updatedBy?: stri
     .from('PlatformSettings')
     .update({ minIosVersionCode: versionCode, updatedAt: new Date().toISOString(), updatedBy: updatedBy ?? null })
     .eq('id', SETTINGS_ID);
+  if (error) throw new Error(error.message);
+}
+
+// ── WhatsApp sending account ────────────────────────────────────────────────
+
+export const DEFAULT_WHATSAPP_TEMPLATE = 'daily_sales_report';
+export const DEFAULT_WHATSAPP_LANG = 'en';
+
+export interface WhatsappConfig {
+  phoneNumberId: string;
+  accessToken: string;
+  template: string;
+  language: string;
+}
+
+type WhatsappRow = {
+  whatsappPhoneNumberId?: string | null;
+  whatsappAccessTokenEnc?: string | null;
+  whatsappTemplate?: string | null;
+  whatsappTemplateLang?: string | null;
+};
+
+async function readWhatsappRow(): Promise<WhatsappRow | null> {
+  const { data, error } = await supabaseAdmin
+    .from('PlatformSettings')
+    .select('whatsappPhoneNumberId, whatsappAccessTokenEnc, whatsappTemplate, whatsappTemplateLang')
+    .eq('id', SETTINGS_ID)
+    .maybeSingle();
+  // A missing column (migration 20261111_02 not run) reads as "not set here".
+  return error ? null : (data as WhatsappRow | null);
+}
+
+/**
+ * The account messages are sent from: what the platform console saved, else
+ * the WHATSAPP_* env vars. Null when neither has a phone number id and token,
+ * which keeps all sending off.
+ */
+export async function getWhatsappConfig(): Promise<WhatsappConfig | null> {
+  const row = await readWhatsappRow();
+  let accessToken = process.env.WHATSAPP_ACCESS_TOKEN || '';
+  if (row?.whatsappAccessTokenEnc) {
+    try {
+      accessToken = decryptSecret(row.whatsappAccessTokenEnc);
+    } catch {
+      // Key missing or changed: the saved token can't be read, so don't send with a stale one.
+      accessToken = '';
+    }
+  }
+  const phoneNumberId = row?.whatsappPhoneNumberId || process.env.WHATSAPP_PHONE_NUMBER_ID || '';
+  if (!phoneNumberId || !accessToken) return null;
+  return {
+    phoneNumberId,
+    accessToken,
+    template: row?.whatsappTemplate || process.env.WHATSAPP_DAILY_REPORT_TEMPLATE || DEFAULT_WHATSAPP_TEMPLATE,
+    language: row?.whatsappTemplateLang || process.env.WHATSAPP_TEMPLATE_LANG || DEFAULT_WHATSAPP_LANG,
+  };
+}
+
+/** What the console shows: never the token itself, only whether one is saved. */
+export async function getWhatsappSettingsView() {
+  const row = await readWhatsappRow();
+  let tokenReadable = true;
+  if (row?.whatsappAccessTokenEnc) {
+    try { decryptSecret(row.whatsappAccessTokenEnc); } catch { tokenReadable = false; }
+  }
+  return {
+    available: row !== null,
+    phoneNumberId: row?.whatsappPhoneNumberId ?? '',
+    hasAccessToken: Boolean(row?.whatsappAccessTokenEnc),
+    tokenReadable,
+    template: row?.whatsappTemplate || DEFAULT_WHATSAPP_TEMPLATE,
+    language: row?.whatsappTemplateLang || DEFAULT_WHATSAPP_LANG,
+    configured: (await getWhatsappConfig()) !== null,
+  };
+}
+
+/**
+ * Saves any of the fields given. An accessToken of "" removes it. Throws when
+ * the token can't be encrypted (CREDENTIALS_ENCRYPTION_KEY unset) — the token
+ * is never stored as plain text.
+ */
+export async function setWhatsappSettings(
+  patch: { phoneNumberId?: string; accessToken?: string; template?: string; language?: string },
+  updatedBy?: string | null,
+): Promise<void> {
+  const update: Record<string, unknown> = { updatedAt: new Date().toISOString(), updatedBy: updatedBy ?? null };
+  if (patch.phoneNumberId !== undefined) update.whatsappPhoneNumberId = patch.phoneNumberId || null;
+  if (patch.template !== undefined) update.whatsappTemplate = patch.template || null;
+  if (patch.language !== undefined) update.whatsappTemplateLang = patch.language || null;
+  if (patch.accessToken !== undefined) update.whatsappAccessTokenEnc = patch.accessToken ? encryptSecret(patch.accessToken) : null;
+  const { error } = await supabaseAdmin.from('PlatformSettings').update(update).eq('id', SETTINGS_ID);
   if (error) throw new Error(error.message);
 }

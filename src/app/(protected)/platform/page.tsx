@@ -44,6 +44,7 @@ import {
 import { DomainManager } from '@/components/domain/DomainManager';
 import { TenantUsersPanel } from './tenant-users-panel';
 import { TenantUsagePanel } from './tenant-usage-panel';
+import { WhatsappPanel } from './whatsapp-panel';
 import type { DomainState } from '@/lib/domains';
 import type { Organization, PlatformPlan } from '@/lib/types';
 
@@ -779,6 +780,9 @@ function PlatformAdminConsole() {
               </div>
             </div>
           </div>
+        </Section>
+        <Section title="WhatsApp" description="The WhatsApp Business account owners' daily reports are sent from. Fill this in when the provider gives you the number.">
+          <WhatsappPanel token={token} />
         </Section>
 
         {/* Organizations */}
