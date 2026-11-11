@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { useBranding } from '@/lib/branding-context';
 import { BUSINESS_TYPES, MAX_CATEGORY_NAME_LENGTH, MAX_OPTION_LABEL_LENGTH, getBusinessType } from '@/lib/business-types';
 import { useBusinessSettings, type ProductCategoryOption } from '@/lib/use-business-settings';
+import DailyReportCard from './DailyReportCard';
 
 const card = 'bg-white dark:bg-gray-900 rounded-2xl border border-[hsl(var(--border))] overflow-hidden';
 const field = 'w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 py-2 text-sm';
@@ -120,6 +121,7 @@ export default function BusinessTab({ token, canEdit }: { token: string | null |
 
   return (
     <div className="space-y-6">
+      {canEdit && <DailyReportCard token={token} />}
       <div className={card}>
         <div className="px-6 py-5 flex items-start gap-3">
           <Smartphone className="h-5 w-5 text-[hsl(var(--primary))] mt-0.5 shrink-0" />
