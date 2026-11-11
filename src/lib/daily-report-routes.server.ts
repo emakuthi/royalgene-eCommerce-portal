@@ -17,7 +17,7 @@ export async function dailyReportGet(organizationId: string) {
     .eq('id', organizationId)
     .maybeSingle();
   const whatsapp = error ? '' : ((data as { dailyReportWhatsapp?: string | null } | null)?.dailyReportWhatsapp ?? '');
-  return jsonResponse({ success: true, data: { whatsapp, available: whatsappConfigured() } });
+  return jsonResponse({ success: true, data: { whatsapp, available: await whatsappConfigured() } });
 }
 
 /** Body: { whatsapp: string } — "" turns the report off. */
@@ -41,12 +41,12 @@ export async function dailyReportPut(organizationId: string, request: Request) {
     logger.error('[daily-report] saving the number failed (migration 20261111_01 run?)', { organizationId, error: error.message });
     return jsonResponse({ success: false, error: 'The daily report is not available yet', code: 'INTERNAL_ERROR' }, 500);
   }
-  return jsonResponse({ success: true, data: { whatsapp: whatsapp ?? '', available: whatsappConfigured() } });
+  return jsonResponse({ success: true, data: { whatsapp: whatsapp ?? '', available: await whatsappConfigured() } });
 }
 
 /** Sends today's report now, without marking the day as sent. */
 export async function dailyReportTest(organizationId: string) {
-  if (!whatsappConfigured()) {
+  if (!(await whatsappConfigured())) {
     return jsonResponse({ success: false, error: 'WhatsApp sending is not set up on the server yet', code: 'NOT_CONFIGURED' }, 503);
   }
   const { data } = await supabaseAdmin.from('Organization').select('dailyReportWhatsapp').eq('id', organizationId).maybeSingle();
@@ -54,7 +54,7 @@ export async function dailyReportTest(organizationId: string) {
   if (!to) return jsonResponse({ success: false, error: 'Save a WhatsApp number first', code: 'VALIDATION_ERROR' }, 400);
   try {
     const params = await buildDailyReportParams(organizationId);
-    const result = await sendWhatsappTemplate(to, process.env.WHATSAPP_DAILY_REPORT_TEMPLATE || 'daily_sales_report', params);
+    const result = await sendWhatsappTemplate(to, params);
     if (!result.ok) return jsonResponse({ success: false, error: `WhatsApp refused it: ${result.error}`, code: 'SEND_FAILED' }, 502);
     return jsonResponse({ success: true, message: 'Sent — check WhatsApp' });
   } catch (err) {
