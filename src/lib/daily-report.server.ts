@@ -5,8 +5,6 @@ import { businessDateKey, startOfBusinessDay, BUSINESS_TIME_ZONE } from './busin
 import { summariseDay, reportTemplateParams, type ReportSale, type ReportStock } from './daily-report';
 import { sendWhatsappTemplate, whatsappConfigured } from './whatsapp.server';
 
-const TEMPLATE = () => process.env.WHATSAPP_DAILY_REPORT_TEMPLATE || 'daily_sales_report';
-
 /** Builds one business's report for the business day containing `now`, as template parameters. */
 export async function buildDailyReportParams(organizationId: string, now = new Date()): Promise<string[]> {
   const from = startOfBusinessDay(now).toISOString();
@@ -41,7 +39,7 @@ export async function buildDailyReportParams(organizationId: string, now = new D
  * day is recorded per business, so a retry only sends the ones that failed).
  */
 export async function sendDueDailyReports(now = new Date()): Promise<{ sent: number; failed: number; skipped: number }> {
-  if (!whatsappConfigured()) return { sent: 0, failed: 0, skipped: 0 };
+  if (!(await whatsappConfigured())) return { sent: 0, failed: 0, skipped: 0 };
   const today = businessDateKey(now);
   const { data, error } = await supabaseAdmin
     .from('Organization')
@@ -57,7 +55,7 @@ export async function sendDueDailyReports(now = new Date()): Promise<{ sent: num
     if (org.dailyReportLastSentOn === today) { skipped++; continue; }
     try {
       const params = await buildDailyReportParams(org.id, now);
-      const result = await sendWhatsappTemplate(org.dailyReportWhatsapp, TEMPLATE(), params);
+      const result = await sendWhatsappTemplate(org.dailyReportWhatsapp, params);
       if (!result.ok) { failed++; continue; }
       await supabaseAdmin.from('Organization').update({ dailyReportLastSentOn: today }).eq('id', org.id);
       sent++;
