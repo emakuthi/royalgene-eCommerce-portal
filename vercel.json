@@ -11,6 +11,10 @@
     {
       "path": "/api/cron/paystack-renewals",
       "schedule": "0 6 * * *"
+    },
+    {
+      "path": "/api/cron/daily-whatsapp-report",
+      "schedule": "0 18 * * *"
     }
   ]
 }
