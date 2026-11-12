@@ -1,4 +1,5 @@
 import { applySaleEdit, canEditSale, NOT_YOUR_SALE } from '@/lib/sale-edit.server';
+import { checkSaleEditCustomer } from '@/lib/customers.server';
 import { NextRequest, NextResponse } from 'next/server';
 import { requireTenantUser } from '@/lib/authorize';
 import { supabaseAdmin } from '@/lib/supabase-client';
@@ -173,7 +174,9 @@ export async function PATCH(request: NextRequest, context: unknown) {
       return jsonResponse({ success: false, error: NOT_YOUR_SALE }, 403);
     }
 
-    const result = await applySaleEdit(existingSale, body, portalUser.id ?? null);
+    const edit = await checkSaleEditCustomer(payload, existingSale, body);
+    if (!edit.ok) return jsonResponse({ success: false, error: edit.error, code: edit.code }, edit.status);
+    const result = await applySaleEdit(existingSale, edit.body, portalUser.id ?? null);
     if (!result.ok) return jsonResponse({ success: false, error: result.error }, result.status);
     const updatedSale = result.sale;
 

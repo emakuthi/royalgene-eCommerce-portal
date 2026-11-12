@@ -42,14 +42,18 @@ export function paymentMethodsOf(sale: { paymentMethod?: unknown; paymentBreakdo
   return [(typeof sale.paymentMethod === 'string' && sale.paymentMethod) || 'cash'];
 }
 
+export type PaymentKind = 'cash' | 'mpesa' | 'card' | 'credit';
+
 /**
  * Normalises a method name to one of the known kinds. The app saves
- * "M-Pesa"/"Card"/"Cash", the portal "mobile_money"/"card"/"cash" — an
- * exact-match check on either spelling mislabels the other.
+ * "M-Pesa"/"Card"/"Cash"/"Credit", the portal "mobile_money"/"card"/"cash" —
+ * an exact-match check on either spelling mislabels the other. "Credit"
+ * (also "deni") is money still owed: see lib/credit.ts.
  */
-export function paymentKind(method: string | null | undefined): 'cash' | 'mpesa' | 'card' {
+export function paymentKind(method: string | null | undefined): PaymentKind {
   const m = (method ?? '').toLowerCase().replace(/[^a-z]/g, '');
   if (m === 'mpesa' || m === 'mobilemoney') return 'mpesa';
   if (m === 'card') return 'card';
+  if (m === 'credit' || m === 'deni' || m === 'oncredit') return 'credit';
   return 'cash';
 }

@@ -16,7 +16,7 @@ describe('summariseDay', () => {
     );
     expect(r.total).toBe(1250);
     expect(r.orders).toBe(2);
-    expect(r.byPayment).toEqual({ cash: 250, mpesa: 1000, card: 0 });
+    expect(r.byPayment).toEqual({ cash: 250, mpesa: 1000, card: 0, credit: 0 });
     expect(r.shops).toEqual([{ name: 'Town', total: 1000, orders: 1 }, { name: 'Mall', total: 250, orders: 1 }]);
   });
 

@@ -10,6 +10,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useHydratedAuth } from '@/lib/hooks';
 import { useBranding } from '@/lib/branding-context';
+import CustomerPicker from '@/components/sales/CustomerPicker';
 import { formatMoney } from '@/lib/currency';
 import { usePortalStore } from '@/lib/store';
 import { toast } from 'sonner';
@@ -83,6 +84,9 @@ export default function NewSalePage() {
   // owner — the server rejects the save anyway; this just says so up front.
   const [canEditSale, setCanEditSale] = useState(true);
   const [originalPaymentMethod, setOriginalPaymentMethod] = useState<string | null>(null);
+  // The customer a credit sale is on (see lib/credit.ts); required when Credit is picked.
+  const [customerId, setCustomerId] = useState('');
+  const [originalCustomerId, setOriginalCustomerId] = useState('');
 
   // recent sales + stats
   const [recentSales, setRecentSales] = useState<RecentSale[]>([]);
@@ -185,6 +189,8 @@ export default function NewSalePage() {
               customerPhone: s.customerPhone || '',
               notes: s.notes || '',
             };
+            setCustomerId(s.customerId || '');
+            setOriginalCustomerId(s.customerId || '');
             setFormData(newForm);
             setOriginalPaymentMethod(newForm.paymentMethod);
             setCanEditSale(s.canEdit !== false);
@@ -513,6 +519,10 @@ export default function NewSalePage() {
       return;
     }
 
+    if (formData.paymentMethod === 'credit' && !customerId) {
+      toast.error('Choose the customer this sale is on credit to');
+      return;
+    }
     setSubmitting(true);
     const paymentMethod = formData.paymentMethod === 'mpesa' ? 'mobile_money' : formData.paymentMethod;
     const total = cart.length;
@@ -533,6 +543,7 @@ export default function NewSalePage() {
             discountAmount: Math.min(line.discount, line.unitPrice * line.quantity),
             currency: saleCurrency,
             paymentMethod,
+            ...(customerId ? { customerId } : {}),
             customerName: formData.customerName || null,
             customerPhone: formData.customerPhone || null,
             notes: formData.notes || null,
@@ -591,6 +602,10 @@ export default function NewSalePage() {
     setErrors(newErrors);
     if (Object.keys(newErrors).length > 0) return;
 
+    if (formData.paymentMethod === 'credit' && !customerId) {
+      toast.error('Choose the customer this sale is on credit to');
+      return;
+    }
     setSubmitting(true);
     try {
       const shopId = currentShop?.id;
@@ -607,6 +622,7 @@ export default function NewSalePage() {
             // Only when actually changed: sending it replaces a split payment
             // (Cash + M-Pesa) with the single method shown in the form.
             ...(formData.paymentMethod !== originalPaymentMethod ? { paymentMethod } : {}),
+            ...(customerId !== originalCustomerId ? { customerId: customerId || null } : {}),
             customerName: formData.customerName || null,
             customerPhone: formData.customerPhone || null,
             notes: formData.notes || null,
@@ -632,6 +648,7 @@ export default function NewSalePage() {
             discountAmount: Math.min(discount, unitPrice * quantity),
             currency: saleCurrency,
             paymentMethod,
+            ...(customerId ? { customerId } : {}),
             customerName: formData.customerName || null,
             customerPhone: formData.customerPhone || null,
             notes: formData.notes || null,
@@ -853,16 +870,18 @@ export default function NewSalePage() {
 
                 <div>
                   <Label>Payment Method *</Label>
-                  <div className="flex items-center gap-3 mt-2">
-                    {(['cash', 'mpesa', 'card'] as const).map((method) => {
+                  <div className="flex flex-wrap items-center gap-3 mt-2">
+                    {(['cash', 'mpesa', 'card', 'credit'] as const).map((method) => {
                       const label = method === 'mpesa' ? 'M-Pesa' : method[0].toUpperCase() + method.slice(1);
-                      const icon  = method === 'mpesa' ? '📱' : method === 'card' ? '💳' : '💵';
+                      const icon  = method === 'mpesa' ? '📱' : method === 'card' ? '💳' : method === 'credit' ? '📒' : '💵';
                       const active = formData.paymentMethod === method;
                       const activeCls = method === 'mpesa'
                         ? 'bg-green-600 border-green-600 text-white'
                         : method === 'card'
                           ? 'bg-blue-600 border-blue-600 text-white'
-                          : 'bg-amber-500 border-amber-500 text-white';
+                          : method === 'credit'
+                            ? 'bg-rose-600 border-rose-600 text-white'
+                            : 'bg-amber-500 border-amber-500 text-white';
                       return (
                         <label
                           key={method}
@@ -877,6 +896,18 @@ export default function NewSalePage() {
                     })}
                   </div>
                 </div>
+
+                {formData.paymentMethod === 'credit' && (
+                  <CustomerPicker
+                    token={token}
+                    value={customerId}
+                    currency={cur}
+                    onChange={(c) => {
+                      setCustomerId(c?.id ?? '');
+                      if (c) setFormData((prev) => ({ ...prev, customerName: c.name, customerPhone: c.phone ?? '' }));
+                    }}
+                  />
+                )}
 
                 <div className="grid grid-cols-2 gap-4">
                   <div>

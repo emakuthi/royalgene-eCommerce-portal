@@ -31,6 +31,8 @@ const EXPORT_TABLES: Array<{ table: string; file: string; byShop?: boolean }> = 
   { table: 'StockTransaction', file: 'stock-movements.csv', byShop: true },
   { table: 'StockTransfer', file: 'stock-transfers.csv' },
   { table: 'SalesEntry', file: 'sales.csv', byShop: true },
+  { table: 'Customer', file: 'customers.csv' },
+  { table: 'CustomerPayment', file: 'customer-payments.csv' },
   { table: 'Expense', file: 'expenses.csv' },
   { table: 'ExpenseCategory', file: 'expense-categories.csv' },
   { table: 'RecurringExpense', file: 'recurring-expenses.csv' },

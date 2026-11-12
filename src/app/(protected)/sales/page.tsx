@@ -502,14 +502,16 @@ function SalesEntryContent() {
                               ? 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300'
                               : kind === 'card'
                                 ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300'
-                                : 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300';
+                                : kind === 'credit'
+                                  ? 'bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300'
+                                  : 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300';
                             return (
                               <span
                                 key={part.method}
                                 title={part.amount != null ? formatMoneyMajor(part.amount, cur) : undefined}
                                 className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold ${cls}`}
                               >
-                                {kind === 'mpesa' ? '📱' : kind === 'card' ? '💳' : '💵'} {kind === 'mpesa' ? 'M-Pesa' : kind === 'card' ? 'Card' : 'Cash'}
+                                {kind === 'mpesa' ? '📱' : kind === 'card' ? '💳' : kind === 'credit' ? '📒' : '💵'} {kind === 'mpesa' ? 'M-Pesa' : kind === 'card' ? 'Card' : kind === 'credit' ? 'Credit' : 'Cash'}
                                 {part.amount != null && <span className="font-normal">{formatMoneyMajor(part.amount, cur)}</span>}
                               </span>
                             );

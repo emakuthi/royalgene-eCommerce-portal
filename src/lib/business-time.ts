@@ -45,3 +45,8 @@ export function businessWeekKey(date: Date | string | number, timeZone = BUSINES
   day.setUTCDate(day.getUTCDate() - day.getUTCDay());
   return day.toISOString().slice(0, 10);
 }
+
+/** "12 Nov, 14:05" in business time, for lists of sales and payments. */
+export function formatBusinessDateTime(date: Date | string | number, timeZone = BUSINESS_TIME_ZONE): string {
+  return new Intl.DateTimeFormat('en-GB', { timeZone, day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(date));
+}

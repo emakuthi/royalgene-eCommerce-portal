@@ -84,8 +84,9 @@ export async function pullChanges(opts: {
       .order('id', { ascending: true })
       .limit(pageSize);
 
-    // A shopkeeper's device only ever receives its own shops' sales.
-    if (entityName === 'SalesEntry' && opts.salesShopIds) {
+    // A shopkeeper's device only ever receives its own shops' sales, and the
+    // credit repayments those shops took.
+    if ((entityName === 'SalesEntry' || entityName === 'CustomerPayment') && opts.salesShopIds) {
       if (opts.salesShopIds.length === 0) continue;
       query = query.in('shopId', opts.salesShopIds);
     }

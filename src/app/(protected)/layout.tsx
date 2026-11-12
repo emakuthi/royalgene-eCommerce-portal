@@ -36,6 +36,7 @@ import {
   Store,
   ChevronsUpDown,
   ShieldCheck,
+  BookUser,
 } from 'lucide-react';
 import { usePortalStore } from '@/lib/store';
 import type { Shop } from '@/lib/types';
@@ -562,6 +563,7 @@ export default function ProtectedLayout({ children }: { children: React.ReactNod
         { label: 'Inventory',       href: '/stock',       icon: <Package className="h-5 w-5" /> },
         { label: 'Transfers',       href: '/transfers',   icon: <ArrowLeftRight className="h-5 w-5" />, badge: transfersCount },
         { label: 'Sales',           href: '/sales',       icon: <ShoppingCart className="h-5 w-5" /> },
+        { label: 'Customers',       href: '/customers',   icon: <BookUser className="h-5 w-5" /> },
         { label: 'Expenses',        href: '/expenses',    icon: <Receipt className="h-5 w-5" /> },
         { label: 'Analytics',       href: '/analytics',   icon: <BarChart3 className="h-5 w-5" /> },
         { label: 'Shops',           href: '/shops',       icon: <MapPin className="h-5 w-5" /> },

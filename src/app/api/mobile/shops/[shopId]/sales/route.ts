@@ -15,6 +15,7 @@ import { assertCanCreate } from '@/lib/entitlements/enforce.server';
 import { generateTaxInvoiceForSale } from '@/lib/etims/tax-invoice.server';
 import { syncSaleToQuickBooks } from '@/lib/accounting/sync-sale-to-quickbooks.server';
 import { isValidClientId } from '@/lib/sync/syncable-entities';
+import { resolveSaleCustomer } from '@/lib/customers.server';
 import { idempotentInsert } from '@/lib/sync/idempotent-insert.server';
 import { resolveSoldAt } from '@/lib/sale-time';
 import { parsePaymentBreakdown } from '@/lib/payment-breakdown';
@@ -63,6 +64,7 @@ export async function POST(
       paymentBreakdown: rawPaymentBreakdown,
       discountAmount: rawDiscountAmount,
       soldAt,
+      customerId,
     } = body as {
       productId: string;
       quantity: number;
@@ -84,6 +86,8 @@ export async function POST(
       discountAmount?: unknown;
       /** When the sale really happened, if the app recorded it offline — see resolveSoldAt. */
       soldAt?: unknown;
+      /** The customer the sale is (partly) on credit to — required when any of it is on credit. */
+      customerId?: unknown;
     };
 
     const paymentBreakdown = parsePaymentBreakdown(rawPaymentBreakdown);
@@ -164,6 +168,15 @@ export async function POST(
     if (organizationId) {
       const limitResponse = await assertCanCreate(organizationId, 'TRANSACTION');
       if (limitResponse) return limitResponse;
+    }
+
+    const saleCustomer = await resolveSaleCustomer(auth.payload, sRow['organizationId'] as string, {
+      customerId,
+      paymentMethod,
+      paymentBreakdown: paymentBreakdown ?? undefined,
+    });
+    if (!saleCustomer.ok) {
+      return jsonResponse({ success: false, error: saleCustomer.error, code: saleCustomer.code }, saleCustomer.status);
     }
 
     // Get product details
@@ -350,8 +363,10 @@ export async function POST(
       paymentBreakdown: paymentBreakdown ?? undefined,
       // Left off when 0 so an undiscounted sale doesn't depend on the column.
       discountAmount: discountAmount > 0 ? discountAmount : undefined,
-      customerName: customerName || null,
-      customerPhone: customerPhone || null,
+      customerName: customerName || saleCustomer.customer?.name || null,
+      customerPhone: customerPhone || saleCustomer.customer?.phone || null,
+      // Left off when there's no customer so a plain sale doesn't depend on the column.
+      customerId: saleCustomer.customer?.id ?? undefined,
       notes: notes || null,
       size: variantCheck.needsVariant ? (size?.trim() || null) : null,
       color: variantCheck.needsVariant ? (color?.trim() || null) : null,
