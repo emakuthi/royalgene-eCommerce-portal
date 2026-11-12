@@ -53,4 +53,10 @@ describe('middleware read-only gate', () => {
     state.org = { ...state.org!, trialEndsAt: '2099-01-01T00:00:00Z' };
     expect((await call('POST', '/api/mobile/shops/s1/sales')).status).not.toBe(402);
   });
+
+  it('lets the daily jobs run on a host that is no workspace (run-cron.mjs on the VPS)', async () => {
+    state.org = null;
+    expect((await call('GET', '/api/cron/sync-exchange-rates')).status).not.toBe(404);
+    expect((await call('GET', '/api/portal/sales')).status).toBe(404);
+  });
 });
