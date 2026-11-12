@@ -11,6 +11,8 @@ concurrency:
 
 env:
   IMAGE: ghcr.io/emakuthi/royalgene-ecommerce-portal
+  # The portal's application in Coolify (its containers are named <uuid>-<time>).
+  COOLIFY_APP_UUID: l16bf9d6tsvcg8vjjzcxkdh5
 
 jobs:
   build:
@@ -43,3 +45,25 @@ jobs:
             NEXT_PUBLIC_SUPABASE_URL=${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
             NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY=${{ secrets.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY }}
             NEXT_PUBLIC_ROOT_DOMAIN=${{ vars.NEXT_PUBLIC_ROOT_DOMAIN }}
+
+      # Point the Coolify app at the image just built and redeploy it, so a merge
+      # to main goes live without editing the tag by hand. Skipped (not failed)
+      # until COOLIFY_URL and COOLIFY_TOKEN are set as repository secrets.
+      - name: Deploy to Coolify
+        if: github.ref == 'refs/heads/main'
+        env:
+          COOLIFY_URL: ${{ secrets.COOLIFY_URL }}
+          COOLIFY_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
+        run: |
+          if [ -z "$COOLIFY_URL" ] || [ -z "$COOLIFY_TOKEN" ]; then
+            echo "::notice::COOLIFY_URL / COOLIFY_TOKEN not set, so not deploying. Set the image tag in Coolify to ${GITHUB_SHA} by hand."
+            exit 0
+          fi
+          api="${COOLIFY_URL%/}/api/v1"
+          curl -fsS -X PATCH "$api/applications/$COOLIFY_APP_UUID" \
+            -H "Authorization: Bearer $COOLIFY_TOKEN" -H "Content-Type: application/json" \
+            -d "{\"docker_registry_image_tag\":\"${GITHUB_SHA}\"}"
+          echo
+          curl -fsS "$api/deploy?uuid=$COOLIFY_APP_UUID" -H "Authorization: Bearer $COOLIFY_TOKEN"
+          echo
+          echo "Deploy of ${GITHUB_SHA} queued in Coolify."
