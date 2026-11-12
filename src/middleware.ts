@@ -39,6 +39,9 @@ const TENANT_OPTIONAL_PATHS = [
   '/tenant-not-found',
   '/tenant-suspended',
   '/api/health',
+  // Daily jobs run across every workspace and are guarded by CRON_SECRET. On the
+  // VPS they're called on 127.0.0.1 (run-cron.mjs), which is no tenant's host.
+  '/api/cron',
   '/api/webhooks/paystack',
   // Safaricom's STK push results; the per-payment token in the path finds the workspace.
   '/api/webhooks/mpesa',
