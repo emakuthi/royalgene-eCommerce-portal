@@ -15,8 +15,8 @@ export async function buildDailyReportParams(organizationId: string, now = new D
       .from('SalesEntry')
       .select('id, shopId, saleGroupId, totalAmount, paymentMethod, paymentBreakdown, deletedAt')
       .eq('organizationId', organizationId)
-      .gte('entryDate', from)
-      .lt('entryDate', to),
+      .gte('createdAt', from)
+      .lt('createdAt', to),
     supabaseAdmin.from('Shop').select('id, name').eq('organizationId', organizationId),
     supabaseAdmin
       .from('ShopStock')
