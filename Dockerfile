@@ -60,6 +60,8 @@ RUN addgroup -g 1001 -S nodejs && \
 COPY --from=builder /app/public ./public
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
+# Daily jobs: Coolify scheduled tasks run `node run-cron.mjs <job>` in this container.
+COPY --from=builder /app/scripts/run-cron.mjs ./run-cron.mjs
 
 RUN mkdir -p /app/.next/cache /app/logs && \
     chown -R nextjs:nodejs /app
