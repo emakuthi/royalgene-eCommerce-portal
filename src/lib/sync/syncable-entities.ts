@@ -13,7 +13,9 @@ export type SyncEntityName =
   | 'ShopStockVariant'
   | 'SalesEntry'
   | 'StockTransaction'
-  | 'Alert';
+  | 'Alert'
+  | 'Customer'
+  | 'CustomerPayment';
 
 export interface SyncEntitySpec {
   /** DB table name. */
@@ -34,6 +36,9 @@ export const SYNC_ENTITIES: Record<SyncEntityName, SyncEntitySpec> = {
   SalesEntry:       { table: 'SalesEntry',       orgColumn: 'organizationId', mode: 'mutable',     cursorColumn: 'updatedAt' },
   StockTransaction: { table: 'StockTransaction', orgColumn: 'organizationId', mode: 'append-only', cursorColumn: 'updatedAt' },
   Alert:            { table: 'Alert',            orgColumn: 'organizationId', mode: 'mutable',     cursorColumn: 'updatedAt' },
+  // Credit sales (20261112_01). Older app builds skip entity types they don't know.
+  Customer:         { table: 'Customer',         orgColumn: 'organizationId', mode: 'mutable',     cursorColumn: 'updatedAt' },
+  CustomerPayment:  { table: 'CustomerPayment',  orgColumn: 'organizationId', mode: 'mutable',     cursorColumn: 'updatedAt' },
 };
 
 export const SYNC_ENTITY_NAMES = Object.keys(SYNC_ENTITIES) as SyncEntityName[];

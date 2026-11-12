@@ -1,4 +1,5 @@
 import { applySaleEdit, canEditSale, NOT_YOUR_SALE } from '@/lib/sale-edit.server';
+import { checkSaleEditCustomer } from '@/lib/customers.server';
 import { NextRequest } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase-client';
 import logger from '@/lib/logger';
@@ -178,7 +179,9 @@ export async function PATCH(
     }
 
     const body = await request.json().catch(() => ({}));
-    const result = await applySaleEdit(existingSale, body, auth.portalUserId ?? null);
+    const edit = await checkSaleEditCustomer(auth.payload, existingSale, body);
+    if (!edit.ok) return jsonResponse({ success: false, error: edit.error, code: edit.code }, edit.status);
+    const result = await applySaleEdit(existingSale, edit.body, auth.portalUserId ?? null);
     if (!result.ok) return jsonResponse({ success: false, error: result.error, code: result.code }, result.status);
     const updatedSale = result.sale;
 

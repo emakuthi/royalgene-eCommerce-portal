@@ -21,6 +21,7 @@ import { editableSaleIds } from '@/lib/sale-edit.server';
 import { getOrgCurrency } from '@/lib/currency.server';
 import { getRate } from '@/lib/exchange-rates.server';
 import { isValidClientId } from '@/lib/sync/syncable-entities';
+import { resolveSaleCustomer } from '@/lib/customers.server';
 
 export async function POST(request: NextRequest) {
   const startTime = Date.now();
@@ -45,6 +46,7 @@ export async function POST(request: NextRequest) {
       currency,
       discountAmount: rawDiscountAmount,
       saleGroupId,
+      customerId,
     } = await request.json();
 
     logger.info('Sales entry attempt', { shopStockId: shopStockId || null, shopId: payloadShopId, productId: payloadProductId, quantity, userId: payload.userId, endpoint: '/api/portal/sales' });
@@ -279,6 +281,11 @@ export async function POST(request: NextRequest) {
     const profit = baseAmount - (costPrice * quantity); // base currency
     const marginPercentage = baseAmount > 0 ? (profit / baseAmount) * 100 : 0;
 
+    const saleCustomer = await resolveSaleCustomer(payload, organizationId, { customerId, paymentMethod });
+    if (!saleCustomer.ok) {
+      return jsonResponse({ success: false, error: saleCustomer.error, code: saleCustomer.code }, saleCustomer.status);
+    }
+
     // Create sales entry
     const saleId = uuidv4();
     const now = new Date().toISOString();
@@ -302,8 +309,9 @@ export async function POST(request: NextRequest) {
         // undefined as NULL, which the NOT NULL column would reject.
         ...(discountAmount > 0 ? { discountAmount } : {}),
         paymentMethod,
-        customerName: customerName || null,
-        customerPhone: customerPhone || null,
+        customerName: customerName || saleCustomer.customer?.name || null,
+        customerPhone: customerPhone || saleCustomer.customer?.phone || null,
+        ...(saleCustomer.customer ? { customerId: saleCustomer.customer.id } : {}),
         notes: notes || null,
         size: salesUsesVariant ? (typeof size === 'string' ? size.trim() || null : null) : null,
         color: salesUsesVariant ? (typeof color === 'string' ? color.trim() || null : null) : null,

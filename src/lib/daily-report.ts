@@ -25,7 +25,7 @@ export interface ReportStock {
 export interface DailyReport {
   total: number;
   orders: number;
-  byPayment: { cash: number; mpesa: number; card: number };
+  byPayment: { cash: number; mpesa: number; card: number; credit: number };
   shops: Array<{ name: string; total: number; orders: number }>;
   outOfStock: number;
   lowStock: number;
@@ -38,7 +38,7 @@ export function summariseDay(
   stock: ReportStock[],
 ): DailyReport {
   const live = sales.filter((s) => !s.deletedAt);
-  const byPayment = { cash: 0, mpesa: 0, card: 0 };
+  const byPayment = { cash: 0, mpesa: 0, card: 0, credit: 0 };
   const perShop = new Map<string, { total: number; groups: Set<string> }>();
 
   for (const s of live) {
@@ -94,9 +94,10 @@ export function reportTemplateParams(
   currency: string,
 ): string[] {
   const money = (n: number) => formatMoney(n, currency, { decimals: 0 });
-  const payments = (['mpesa', 'cash', 'card'] as const)
+  const label = { mpesa: 'M-Pesa', cash: 'Cash', card: 'Card', credit: 'On credit' } as const;
+  const payments = (['mpesa', 'cash', 'card', 'credit'] as const)
     .filter((k) => report.byPayment[k] > 0)
-    .map((k) => `${k === 'mpesa' ? 'M-Pesa' : k === 'cash' ? 'Cash' : 'Card'} ${money(report.byPayment[k])}`)
+    .map((k) => `${label[k]} ${money(report.byPayment[k])}`)
     .join(' · ') || 'none';
   const shops = report.shops.length
     ? report.shops.map((s) => `${s.name} ${money(s.total)} (${s.orders})`).join(' · ')

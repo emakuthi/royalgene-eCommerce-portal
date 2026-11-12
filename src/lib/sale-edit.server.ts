@@ -98,6 +98,8 @@ export async function applySaleEdit(
     if (sale.paymentBreakdown != null) updates.paymentBreakdown = null;
   }
   if (customerName !== undefined) updates.customerName = customerName;
+  // Already checked by checkSaleEditCustomer; null unlinks the customer.
+  if (body.customerId !== undefined) updates.customerId = body.customerId;
   if (customerPhone !== undefined) updates.customerPhone = customerPhone;
   if (notes !== undefined) updates.notes = notes;
 
