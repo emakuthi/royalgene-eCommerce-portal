@@ -76,5 +76,5 @@ jobs:
           }
           call -X PATCH "$api/applications/$COOLIFY_APP_UUID" -H "Content-Type: application/json" \
             -d "{\"docker_registry_image_tag\":\"${GITHUB_SHA}\"}"
-          call "$api/deploy?uuid=$COOLIFY_APP_UUID"
+          call -X POST "$api/deploy?uuid=$COOLIFY_APP_UUID"
           echo "Deploy of ${GITHUB_SHA} queued in Coolify."
