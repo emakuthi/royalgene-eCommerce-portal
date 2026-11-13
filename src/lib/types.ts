@@ -61,13 +61,13 @@ export interface Currency {
 
 export interface ExchangeRate {
   id: string;
-  /** NULL/absent = global (Frankfurter) rate; set = this tenant's manual override. */
+  /** NULL/absent = global (daily-synced) rate; set = this tenant's manual override. */
   organizationId?: string | null;
   baseCurrency: string;
   targetCurrency: string;
   rate: number;
   rateDate: string;      // YYYY-MM-DD
-  source: 'FRANKFURTER' | 'MANUAL' | string;
+  source: 'OPEN_ER_API' | 'FRANKFURTER' | 'MANUAL' | string;
   manuallyOverridden: boolean;
   createdBy?: string | null;
   createdAt?: string;

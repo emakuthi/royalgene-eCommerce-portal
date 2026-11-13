@@ -98,7 +98,7 @@ export default function CurrencyRatesPanel({ canEdit }: { canEdit: boolean }) {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <p className="text-sm text-gray-600 dark:text-gray-400">Rates are relative to <strong>{base}</strong> (base). Auto rates come from Frankfurter; you can override any pair for this workspace.</p>
+        <p className="text-sm text-gray-600 dark:text-gray-400">Rates are relative to <strong>{base}</strong> (base). Auto rates come from <a href="https://www.exchangerate-api.com" target="_blank" rel="noopener noreferrer" className="underline">Rates By Exchange Rate API</a>; you can override any pair for this workspace.</p>
         {canEdit && (
           <Button type="button" variant="outline" size="sm" onClick={syncNow} disabled={syncing}>
             <RefreshCw className={`h-3.5 w-3.5 mr-1.5 ${syncing ? 'animate-spin' : ''}`} />
