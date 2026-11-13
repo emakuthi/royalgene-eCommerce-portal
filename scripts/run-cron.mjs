@@ -2,7 +2,8 @@
 // On the VPS these are Coolify scheduled tasks (vercel.json's crons only ran on
 // Vercel), e.g. `node run-cron.mjs sync-exchange-rates`. Reads CRON_SECRET from
 // the container's own environment, so the task command holds no secret, and
-// exits non-zero on failure so Coolify shows the run as failed.
+// exits non-zero on failure (an HTTP error or success:false) so Coolify shows
+// the run as failed.
 
 const JOBS = ['sync-exchange-rates', 'generate-recurring-expenses', 'paystack-renewals', 'daily-whatsapp-report'];
 
@@ -24,7 +25,11 @@ try {
   });
   const body = await res.text();
   console.log(`${job}: HTTP ${res.status} ${body.slice(0, 2000)}`);
-  process.exit(res.ok ? 0 : 1);
+  // Some jobs answer 200 with success:false (e.g. the rate service was down), so
+  // Vercel wouldn't retry; count that as a failed run too.
+  let succeeded = res.ok;
+  try { if (JSON.parse(body)?.success === false) succeeded = false; } catch { /* not JSON */ }
+  process.exit(succeeded ? 0 : 1);
 } catch (err) {
   console.error(`${job}: ${err instanceof Error ? err.message : String(err)}`);
   process.exit(1);

@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server';
 import { jsonResponse } from '@/lib/apiResponse';
-import { syncFromFrankfurter } from '@/lib/exchange-rates.server';
+import { syncExchangeRates } from '@/lib/exchange-rates.server';
 import logger from '@/lib/logger';
 
 /**
@@ -16,9 +16,9 @@ export async function GET(request: NextRequest) {
     return jsonResponse({ success: false, error: 'Unauthorized' }, 401);
   }
 
-  const result = await syncFromFrankfurter();
+  const result = await syncExchangeRates();
   logger.info('Cron exchange-rate sync', { ...result });
-  // Return 200 even on a Frankfurter outage — Vercel shouldn't retry-storm a
+  // Return 200 even on a rate-service outage — Vercel shouldn't retry-storm a
   // temporary upstream failure; the result flags ok:false for observability.
   return jsonResponse({ success: result.ok, data: result });
 }

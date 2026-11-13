@@ -1135,7 +1135,7 @@ export default function PortalSettingsPage() {
               </fieldset>
             </Section>
 
-            <Section title="Exchange Rates" description="Live rates from Frankfurter (auto-synced daily), with per-workspace manual overrides. Used for converting amounts between currencies.">
+            <Section title="Exchange Rates" description="Live rates (auto-synced daily), with per-workspace manual overrides. Used for converting amounts between currencies.">
               <CurrencyRatesPanel canEdit={isBillingAdmin} />
             </Section>
           </>

@@ -1,15 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireRole } from '@/lib/authorize';
 import { jsonResponse, optionsResponse } from '@/lib/apiResponse';
-import { syncFromFrankfurter } from '@/lib/exchange-rates.server';
+import { syncExchangeRates } from '@/lib/exchange-rates.server';
 
 // POST /api/exchange-rates/sync — manual "Sync Now" (admin). Pulls latest global
-// rates from Frankfurter. Never touches tenant overrides.
+// rates from ExchangeRate-API. Never touches tenant overrides.
 export async function POST(request: NextRequest) {
   const auth = requireRole(request, ['admin']);
   if (auth instanceof NextResponse) return auth;
 
-  const result = await syncFromFrankfurter();
+  const result = await syncExchangeRates();
   if (!result.ok) {
     // Reliability: a failed sync must not look like success, but also must not
     // 500 the UI — surface the reason; existing rates remain usable.

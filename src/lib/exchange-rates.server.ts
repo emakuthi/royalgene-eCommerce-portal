@@ -1,6 +1,6 @@
 import 'server-only';
 import { supabaseAdmin } from './supabase-client';
-import { fetchLatestRates } from './frankfurter.server';
+import { fetchLatestRates } from './fx-rates.server';
 import logger from './logger';
 import type { Currency, ExchangeRate } from './types';
 
@@ -25,7 +25,7 @@ export async function getActiveCurrencies(): Promise<Currency[]> {
 // ── Rate resolution ───────────────────────────────────────────────────────────
 /**
  * The applicable rate row for base→target on (or before) `date`: a tenant
- * override wins over the global Frankfurter rate. Returns null if none exists.
+ * override wins over the global synced rate. Returns null if none exists.
  */
 async function getRateRow(base: string, target: string, date: string, organizationId?: string | null): Promise<ExchangeRate | null> {
   const b = base.toUpperCase();
@@ -108,20 +108,20 @@ export async function listRates(organizationId?: string | null): Promise<Exchang
   return [...latest.values()];
 }
 
-// ── Sync from Frankfurter (global rows only) ──────────────────────────────────
+// ── Daily sync from ExchangeRate-API (global rows only) ──────────────────────────────────
 /**
  * Fetch today's rates for every active currency (relative to the base) and
  * append global rows. Never overwrites a tenant override (those carry an
  * organizationId and live in separate rows). On API failure it leaves the
  * existing rates untouched and returns { ok: false }.
  */
-export async function syncFromFrankfurter(): Promise<{ ok: boolean; count: number; date?: string; error?: string }> {
+export async function syncExchangeRates(): Promise<{ ok: boolean; count: number; date?: string; error?: string }> {
   const currencies = await getActiveCurrencies();
   const targets = currencies.map((c) => c.code).filter((c) => c.toUpperCase() !== GLOBAL_BASE);
   if (targets.length === 0) return { ok: true, count: 0 };
 
   const fx = await fetchLatestRates(GLOBAL_BASE, targets);
-  if (!fx) return { ok: false, count: 0, error: 'Frankfurter unavailable' };
+  if (!fx) return { ok: false, count: 0, error: 'Exchange-rate service unavailable' };
 
   const rows = Object.entries(fx.rates).map(([target, rate]) => ({
     organizationId: GLOBAL_ID,
@@ -129,7 +129,7 @@ export async function syncFromFrankfurter(): Promise<{ ok: boolean; count: numbe
     targetCurrency: target,
     rate,
     rateDate: fx.date,
-    source: 'FRANKFURTER',
+    source: 'OPEN_ER_API',
     manuallyOverridden: false,
   }));
   if (rows.length === 0) return { ok: true, count: 0, date: fx.date };
