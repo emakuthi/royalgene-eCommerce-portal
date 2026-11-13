@@ -54,18 +54,25 @@ jobs:
         env:
           COOLIFY_URL: ${{ secrets.COOLIFY_URL }}
           COOLIFY_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
+          # The dashboard is behind Cloudflare Access; a service token lets this job through.
+          CF_ACCESS_CLIENT_ID: ${{ secrets.CF_ACCESS_CLIENT_ID }}
+          CF_ACCESS_CLIENT_SECRET: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
         run: |
           if [ -z "$COOLIFY_URL" ] || [ -z "$COOLIFY_TOKEN" ]; then
             echo "::notice::COOLIFY_URL / COOLIFY_TOKEN not set, so not deploying. Set the image tag in Coolify to ${GITHUB_SHA} by hand."
             exit 0
           fi
           api="${COOLIFY_URL%/}/api/v1"
+          access=()
+          if [ -n "$CF_ACCESS_CLIENT_ID" ] && [ -n "$CF_ACCESS_CLIENT_SECRET" ]; then
+            access=(-H "CF-Access-Client-Id: $CF_ACCESS_CLIENT_ID" -H "CF-Access-Client-Secret: $CF_ACCESS_CLIENT_SECRET")
+          fi
           # Fail on anything but 2xx. A redirect (e.g. Cloudflare sending http:// to
           # https://, or to an Access login) means Coolify never saw the request.
           call() {
-            code=$(curl -sS -o /tmp/coolify.out -w '%{http_code} %{redirect_url}' "$@" -H "Authorization: Bearer $COOLIFY_TOKEN")
+            code=$(curl -sS -o /tmp/coolify.out -w '%{http_code} %{redirect_url}' "$@" "${access[@]}" -H "Authorization: Bearer $COOLIFY_TOKEN")
             echo "HTTP $code"; head -c 1000 /tmp/coolify.out; echo
-            case "$code" in 2*) ;; *) echo "::error::Coolify API call failed (HTTP $code). Check COOLIFY_URL (https://, no Cloudflare Access) and the token."; exit 1 ;; esac
+            case "$code" in 2*) ;; *) echo "::error::Coolify API call failed (HTTP $code). Check COOLIFY_URL, the token, and (behind Cloudflare Access) CF_ACCESS_CLIENT_ID/SECRET."; exit 1 ;; esac
           }
           call -X PATCH "$api/applications/$COOLIFY_APP_UUID" -H "Content-Type: application/json" \
             -d "{\"docker_registry_image_tag\":\"${GITHUB_SHA}\"}"
