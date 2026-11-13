@@ -60,10 +60,14 @@ jobs:
             exit 0
           fi
           api="${COOLIFY_URL%/}/api/v1"
-          curl -fsS -X PATCH "$api/applications/$COOLIFY_APP_UUID" \
-            -H "Authorization: Bearer $COOLIFY_TOKEN" -H "Content-Type: application/json" \
+          # Fail on anything but 2xx. A redirect (e.g. Cloudflare sending http:// to
+          # https://, or to an Access login) means Coolify never saw the request.
+          call() {
+            code=$(curl -sS -o /tmp/coolify.out -w '%{http_code} %{redirect_url}' "$@" -H "Authorization: Bearer $COOLIFY_TOKEN")
+            echo "HTTP $code"; head -c 1000 /tmp/coolify.out; echo
+            case "$code" in 2*) ;; *) echo "::error::Coolify API call failed (HTTP $code). Check COOLIFY_URL (https://, no Cloudflare Access) and the token."; exit 1 ;; esac
+          }
+          call -X PATCH "$api/applications/$COOLIFY_APP_UUID" -H "Content-Type: application/json" \
             -d "{\"docker_registry_image_tag\":\"${GITHUB_SHA}\"}"
-          echo
-          curl -fsS "$api/deploy?uuid=$COOLIFY_APP_UUID" -H "Authorization: Bearer $COOLIFY_TOKEN"
-          echo
+          call "$api/deploy?uuid=$COOLIFY_APP_UUID"
           echo "Deploy of ${GITHUB_SHA} queued in Coolify."
