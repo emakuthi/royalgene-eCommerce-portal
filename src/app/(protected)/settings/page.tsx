@@ -1600,14 +1600,14 @@ export default function PortalSettingsPage() {
         {/* ── ABOUT ──────────────────────────────────────────────── */}
         {activeTab === 'about' && (
           <>
-            <Section title="Royal Gene Portal" description="Management portal for Royal Gene Collection shops.">
+            <Section title="RoyalTrack" description="Stock, sales and shop management for your business.">
               <div className="flex items-center gap-4 p-4 rounded-xl bg-[hsl(var(--primary)/0.06)] border border-[hsl(var(--primary)/0.15)]">
                 <div className="w-14 h-14 rounded-2xl bg-[hsl(var(--primary))] flex items-center justify-center flex-shrink-0 shadow-lg shadow-[hsl(var(--primary)/0.25)]">
                   <Store className="h-7 w-7 text-white" />
                 </div>
                 <div>
-                  <p className="font-bold text-gray-900 dark:text-white text-lg">Royal Gene Portal</p>
-                  <p className="text-xs text-gray-500 dark:text-gray-400">Version 1.0.0 · Production</p>
+                  <p className="font-bold text-gray-900 dark:text-white text-lg">RoyalTrack</p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">By RoyalGene Group</p>
                 </div>
               </div>
             </Section>
@@ -1615,11 +1615,12 @@ export default function PortalSettingsPage() {
             <Section title="System Information">
               <div className="space-y-0">
                 {[
-                  { label: 'Platform', value: 'Next.js 15 · Vercel' },
-                  { label: 'Database', value: 'Supabase PostgreSQL' },
-                  { label: 'Region', value: 'East Africa (Nairobi)' },
-                  { label: 'Portal URL', value: 'portal.royalgenecollection.co.ke' },
-                  { label: 'Store URL', value: 'royalgenecollection.co.ke' },
+                  { label: 'Business', value: serverBranding.companyName },
+                  // The host this workspace is reached on: its subdomain or custom domain.
+                  { label: 'Portal address', value: mounted ? window.location.host : '' },
+                  { label: 'Currency', value: serverBranding.currency || 'KES' },
+                  { label: 'Time zone', value: 'East Africa Time (Nairobi)' },
+                  { label: 'Mobile app', value: 'RoyalTrack on Google Play' },
                 ].map(row => (
                   <div key={row.label} className="flex items-center justify-between py-3 border-b border-[hsl(var(--border))] last:border-0">
                     <span className="text-sm text-gray-500 dark:text-gray-400">{row.label}</span>
