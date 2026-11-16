@@ -1629,11 +1629,13 @@ export default function PortalSettingsPage() {
               </div>
             </Section>
 
-            <Section title="Support &amp; Links">
+            <Section title="Help & support" description="Talk to the RoyalGene team.">
               {[
-                { label: 'Documentation', href: '#', icon: ChevronRight },
-                { label: 'Contact Support', href: 'mailto:support@royalgenecollection.co.ke', icon: Mail },
-                { label: 'WhatsApp Support', href: 'https://wa.me/254726532387', icon: Phone },
+                // The corporate line is for calls only, not WhatsApp.
+                { label: 'Call support', value: '0185 576 712', href: 'tel:+254185576712', icon: Phone },
+                { label: 'Email support', value: 'admin@royalgenegroup.co.ke', href: 'mailto:admin@royalgenegroup.co.ke?subject=RoyalTrack%20help', icon: Mail },
+                { label: 'Terms of Service', value: '', href: 'https://www.royalgenegroup.co.ke/terms', icon: ChevronRight },
+                { label: 'Privacy Policy', value: '', href: 'https://www.royalgenegroup.co.ke/privacy', icon: ChevronRight },
               ].map(link => (
                 <a
                   key={link.label}
@@ -1643,7 +1645,10 @@ export default function PortalSettingsPage() {
                   className="flex items-center justify-between py-3.5 border-b border-[hsl(var(--border))] last:border-0 hover:text-[hsl(var(--primary))] transition-colors group"
                 >
                   <span className="text-sm font-medium text-gray-700 dark:text-gray-300 group-hover:text-[hsl(var(--primary))]">{link.label}</span>
-                  <link.icon className="h-4 w-4 text-gray-400 group-hover:text-[hsl(var(--primary))]" />
+                  <span className="flex items-center gap-2 min-w-0">
+                    {link.value && <span className="text-sm text-gray-500 dark:text-gray-400 truncate">{link.value}</span>}
+                    <link.icon className="h-4 w-4 flex-shrink-0 text-gray-400 group-hover:text-[hsl(var(--primary))]" />
+                  </span>
                 </a>
               ))}
             </Section>
