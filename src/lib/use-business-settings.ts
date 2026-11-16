@@ -22,6 +22,7 @@ export function useBusinessSettings(token: string | null | undefined) {
   const [categories, setCategories] = useState<ProductCategoryOption[]>([]);
   const [units, setUnits] = useState<readonly string[]>(PRODUCT_UNITS);
   const [requireAppLock, setRequireAppLock] = useState(false);
+  const [vatRate, setVatRate] = useState<number | null>(null);
   const [loaded, setLoaded] = useState(false);
 
   const reload = useCallback(async () => {
@@ -33,6 +34,7 @@ export function useBusinessSettings(token: string | null | undefined) {
         setCategories(Array.isArray(json.data.categories) ? json.data.categories : []);
         if (Array.isArray(json.data.units) && json.data.units.length) setUnits(json.data.units);
         setRequireAppLock(json.data.requireAppLock === true);
+        setVatRate(typeof json.data.vatRate === 'number' ? json.data.vatRate : null);
       }
     } catch {
       /* keep what we have */
@@ -59,6 +61,7 @@ export function useBusinessSettings(token: string | null | undefined) {
     activeCategories: categories.filter((c) => c.isActive),
     units,
     requireAppLock,
+    vatRate,
     categoryName,
     loaded,
     reload,

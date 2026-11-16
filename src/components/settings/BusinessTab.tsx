@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
-import { Briefcase, Eye, EyeOff, Loader2, Pencil, Plus, Smartphone, Tags } from 'lucide-react';
+import { Briefcase, Eye, EyeOff, Loader2, Pencil, Plus, Receipt, Smartphone, Tags } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useBranding } from '@/lib/branding-context';
 import { BUSINESS_TYPES, MAX_CATEGORY_NAME_LENGTH, MAX_OPTION_LABEL_LENGTH, getBusinessType } from '@/lib/business-types';
@@ -42,12 +42,34 @@ export default function BusinessTab({ token, canEdit }: { token: string | null |
   const [busyCategory, setBusyCategory] = useState<string | null>(null);
   const [renaming, setRenaming] = useState<{ id: string; name: string } | null>(null);
   const [savingLock, setSavingLock] = useState(false);
+  const [vatOn, setVatOn] = useState(business.vatRate !== null);
+  const [vatDraft, setVatDraft] = useState(business.vatRate !== null ? String(business.vatRate) : '16');
+  const [savingVat, setSavingVat] = useState(false);
 
   useEffect(() => {
     setType(business.businessType);
     setO1(business.option1Label);
     setO2(business.option2Label);
   }, [business.businessType, business.option1Label, business.option2Label]);
+
+  useEffect(() => {
+    setVatOn(business.vatRate !== null);
+    if (business.vatRate !== null) setVatDraft(String(business.vatRate));
+  }, [business.vatRate]);
+
+  const vatChanged = vatOn ? business.vatRate === null || Number(vatDraft) !== business.vatRate : business.vatRate !== null;
+
+  async function saveVat() {
+    setSavingVat(true);
+    const res = await call(token, '/api/portal/business', 'PUT', { vatRate: vatOn ? Number(vatDraft) : null });
+    setSavingVat(false);
+    if (!res.ok) {
+      toast.error(res.error || 'Could not save');
+      return;
+    }
+    toast.success(vatOn ? `Receipts now show VAT at ${Number(vatDraft)}%` : 'VAT removed from receipts');
+    await business.reload();
+  }
 
   const typeChanged = type !== business.businessType;
   const labelsChanged = o1 !== business.option1Label || o2 !== business.option2Label;
@@ -142,6 +164,48 @@ export default function BusinessTab({ token, canEdit }: { token: string | null |
               ${business.requireAppLock ? 'bg-[hsl(var(--primary))]' : 'bg-gray-200 dark:bg-gray-700'}`}
           >
             <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${business.requireAppLock ? 'translate-x-5' : 'translate-x-0'}`} />
+          </button>
+        </div>
+      </div>
+      <div className={card}>
+        <div className="px-6 py-5 flex items-start gap-3">
+          <Receipt className="h-5 w-5 text-[hsl(var(--primary))] mt-0.5 shrink-0" />
+          <div className="flex-1 space-y-3">
+            <div>
+              <h2 className="text-base font-semibold text-gray-900 dark:text-white">VAT on receipts</h2>
+              <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
+                Your prices already include VAT. Receipts show how much of the total is VAT; totals don&apos;t change.
+              </p>
+            </div>
+            {vatOn && (
+              <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+                VAT rate
+                <input
+                  type="number" inputMode="decimal" min={0.01} max={99.99} step={0.01}
+                  value={vatDraft} onChange={(e) => setVatDraft(e.target.value)}
+                  disabled={!canEdit || savingVat}
+                  className={`${field} w-24`} aria-label="VAT rate in percent"
+                />
+                %
+              </label>
+            )}
+            {canEdit && vatChanged && (
+              <Button size="sm" onClick={saveVat} disabled={savingVat}>
+                {savingVat && <Loader2 className="h-4 w-4 animate-spin mr-1" />} Save VAT
+              </Button>
+            )}
+          </div>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={vatOn}
+            aria-label="Show VAT on receipts"
+            disabled={!canEdit || savingVat}
+            onClick={() => setVatOn(!vatOn)}
+            className={`relative w-11 h-6 shrink-0 rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-[hsl(var(--ring))] focus:ring-offset-2 disabled:opacity-50
+              ${vatOn ? 'bg-[hsl(var(--primary))]' : 'bg-gray-200 dark:bg-gray-700'}`}
+          >
+            <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${vatOn ? 'translate-x-5' : 'translate-x-0'}`} />
           </button>
         </div>
       </div>

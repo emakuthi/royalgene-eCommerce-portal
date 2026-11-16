@@ -86,4 +86,24 @@ describe('updateBusinessSettings', () => {
     const { updateBusinessSettings, BusinessSettingsError } = await import('../business-settings.server');
     await expect(updateBusinessSettings(ORG_ID, { requireAppLock: 'yes' })).rejects.toBeInstanceOf(BusinessSettingsError);
   });
+
+  it('sets a VAT rate, rounded to 2 decimals, and reports it back', async () => {
+    const { updateBusinessSettings } = await import('../business-settings.server');
+    const result = await updateBusinessSettings(ORG_ID, { vatRate: '16.004' });
+    expect(mockTables.Organization[0].vatRate).toBe(16);
+    expect(result.vatRate).toBe(16);
+  });
+
+  it('turns VAT off with null', async () => {
+    mockTables.Organization[0].vatRate = 16;
+    const { updateBusinessSettings } = await import('../business-settings.server');
+    const result = await updateBusinessSettings(ORG_ID, { vatRate: null });
+    expect(mockTables.Organization[0].vatRate).toBeNull();
+    expect(result.vatRate).toBeNull();
+  });
+
+  it.each([0, -5, 100, 'abc', true])('rejects VAT rate %s', async (rate) => {
+    const { updateBusinessSettings, BusinessSettingsError } = await import('../business-settings.server');
+    await expect(updateBusinessSettings(ORG_ID, { vatRate: rate })).rejects.toBeInstanceOf(BusinessSettingsError);
+  });
 });

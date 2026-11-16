@@ -36,6 +36,8 @@ export interface BusinessSettings {
   units: readonly string[];
   /** Owner policy: staff must set an app lock (PIN/pattern) on their phone. */
   requireAppLock: boolean;
+  /** VAT rate in percent (e.g. 16), or null when the business doesn't charge VAT. Prices include it. */
+  vatRate: number | null;
 }
 
 export const MIN_BUSINESS_NAME_LENGTH = 2;
@@ -87,7 +89,30 @@ export async function getBusinessSettings(organizationId: string): Promise<Busin
     categories,
     units: PRODUCT_UNITS,
     requireAppLock: await getRequireAppLock(organizationId),
+    vatRate: await getVatRate(organizationId),
   };
+}
+
+// Read on its own like requireAppLock, so settings keep working before migration 20261116_01.
+async function getVatRate(organizationId: string): Promise<number | null> {
+  const { data, error } = await supabaseAdmin
+    .from('Organization')
+    .select('vatRate')
+    .eq('id', organizationId)
+    .maybeSingle();
+  if (error) return null;
+  const rate = Number((data as { vatRate?: unknown } | null)?.vatRate);
+  return Number.isFinite(rate) && rate > 0 ? rate : null;
+}
+
+/** A VAT rate from a client: null or '' turns VAT off; otherwise a percent above 0 and below 100, to 2 decimals. */
+export function cleanVatRate(raw: unknown): number | null {
+  if (raw === null || raw === '') return null;
+  const rate = typeof raw === 'string' ? Number(raw.trim()) : raw;
+  if (typeof rate !== 'number' || !Number.isFinite(rate) || rate <= 0 || rate >= 100) {
+    throw new BusinessSettingsError('VAT rate must be a percentage above 0 and below 100');
+  }
+  return Math.round(rate * 100) / 100;
 }
 
 // Read on its own so the rest of the settings keep working before migration
@@ -129,6 +154,7 @@ export interface BusinessSettingsPatch {
   option1Label?: unknown;
   option2Label?: unknown;
   requireAppLock?: unknown;
+  vatRate?: unknown;
 }
 
 function cleanBusinessName(raw: unknown): string {
@@ -174,7 +200,8 @@ export async function updateBusinessSettings(organizationId: string, patch: Busi
   }
   if (patch.option1Label !== undefined) update.option1Label = cleanOptionLabel(patch.option1Label, 'option1Label');
   if (patch.option2Label !== undefined) update.option2Label = cleanOptionLabel(patch.option2Label, 'option2Label');
-  if (Object.keys(update).length === 0 && requireAppLock === null) throw new BusinessSettingsError('Nothing to update');
+  const vatRate = patch.vatRate !== undefined ? { value: cleanVatRate(patch.vatRate) } : null;
+  if (Object.keys(update).length === 0 && requireAppLock === null && vatRate === null) throw new BusinessSettingsError('Nothing to update');
 
   let oldName: string | null = null;
   if (newName !== null) {
@@ -196,6 +223,16 @@ export async function updateBusinessSettings(organizationId: string, patch: Busi
     if (error) {
       logger.error('[business] requireAppLock update failed (migration 20261023_01 run?)', { organizationId, error: error.message });
       throw new BusinessSettingsError('The app lock setting is not available yet');
+    }
+  }
+  if (vatRate !== null) {
+    const { error } = await supabaseAdmin
+      .from('Organization')
+      .update({ vatRate: vatRate.value, updatedAt: now })
+      .eq('id', organizationId);
+    if (error) {
+      logger.error('[business] vatRate update failed (migration 20261116_01 run?)', { organizationId, error: error.message });
+      throw new BusinessSettingsError('The VAT setting is not available yet');
     }
   }
 

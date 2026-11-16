@@ -39,7 +39,7 @@ export async function businessSettingsGet(organizationId: string) {
   return jsonResponse({ success: true, data: { ...settings, readOnly, trialEndsAt } });
 }
 
-/** Body: { businessName?, businessType?, option1Label?, option2Label?, requireAppLock? } */
+/** Body: { businessName?, businessType?, option1Label?, option2Label?, requireAppLock?, vatRate? } */
 export async function businessSettingsPut(organizationId: string, request: Request) {
   const body = await readJson(request);
   if (!body) return jsonResponse({ success: false, error: 'Invalid JSON body', code: 'VALIDATION_ERROR' }, 400);
@@ -50,6 +50,7 @@ export async function businessSettingsPut(organizationId: string, request: Reque
       option1Label: body.option1Label,
       option2Label: body.option2Label,
       requireAppLock: body.requireAppLock,
+      vatRate: body.vatRate,
     });
     return jsonResponse({ success: true, data });
   } catch (err) {
