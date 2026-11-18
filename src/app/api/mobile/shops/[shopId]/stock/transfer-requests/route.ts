@@ -21,6 +21,7 @@ import { denyWithoutCapability } from '@/lib/permissions.server';
 import { isValidClientId } from '@/lib/sync/syncable-entities';
 import { buildTransferPreview } from '@/lib/product-sku.server';
 import { prepareSend, sendTransfer } from '@/lib/transfer-approval.server';
+import { trackTransferStep } from '@/lib/transfer-activity.server';
 
 export async function POST(
   request: NextRequest,
@@ -65,6 +66,7 @@ export async function POST(
     });
     if (!sent.ok) return jsonResponse({ success: false, error: sent.error, code: sent.code }, sent.status);
     if (!sent.created) return jsonResponse({ success: true, data: sent.transfer, idempotent: true }, 200);
+    void trackTransferStep(request, auth.payload, { step: 'send', transfer: sent.transfer, shopId });
 
     return jsonResponse({
       success: true,

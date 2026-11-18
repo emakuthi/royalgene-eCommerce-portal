@@ -22,7 +22,7 @@ import { denyWithoutCapability } from '@/lib/permissions.server';
 import { supabaseAdmin } from '@/lib/supabase-client';
 import logger from '@/lib/logger';
 import { jsonResponse, optionsResponse } from '@/lib/apiResponse';
-import { trackFromRequest } from '@/lib/activity-tracker';
+import { trackTransferStep } from '@/lib/transfer-activity.server';
 import { prepareSend, sendTransfer } from '@/lib/transfer-approval.server';
 import { portalUserIdFor, canActForShop } from '@/lib/portal-transfer-access.server';
 
@@ -84,17 +84,7 @@ export async function POST(request: NextRequest) {
     if (!sent.ok) return jsonResponse({ success: false, error: sent.error, code: sent.code }, sent.status);
 
     const { data: after } = await supabaseAdmin.from('ShopStock').select('quantity').eq('id', src.id).maybeSingle();
-    void trackFromRequest(request, payload, {
-      action: 'stock.transfer',
-      category: 'stock',
-      resourceType: 'ShopStock',
-      resourceId: fromShopStockId,
-      shopId: src.shopId as string,
-      details: {
-        fromShopId: src.shopId, toShopId, toShopName: prep.toShop.name, productId: src.productId,
-        quantity: sent.transfer.quantity, notes, transferId: sent.transfer.id, status: 'pending',
-      },
-    });
+    void trackTransferStep(request, payload, { step: 'send', transfer: sent.transfer, shopId: src.shopId as string });
 
     return jsonResponse({
       success: true,

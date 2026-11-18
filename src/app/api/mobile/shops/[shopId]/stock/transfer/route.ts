@@ -27,6 +27,7 @@ import { verifyMobileShopAccess } from '@/lib/mobile-shop-auth';
 import { denyWithoutCapability } from '@/lib/permissions.server';
 import { isValidClientId } from '@/lib/sync/syncable-entities';
 import { prepareSend, sendTransfer } from '@/lib/transfer-approval.server';
+import { trackTransferStep } from '@/lib/transfer-activity.server';
 
 export async function POST(
   request: NextRequest,
@@ -72,6 +73,7 @@ export async function POST(
     if (!sent.ok) return jsonResponse({ success: false, error: sent.error, code: sent.code }, sent.status);
 
     const t = sent.transfer;
+    if (sent.created) void trackTransferStep(request, auth.payload, { step: 'send', transfer: t, shopId });
     return jsonResponse({
       success: true,
       message: `${t.quantity} unit(s) sent to ${prep.toShop.name} — they'll be added there once ${prep.toShop.name} approves.`,

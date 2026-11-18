@@ -19,6 +19,7 @@ import {
 } from '@/lib/activity-tracker';
 import { assertFeatureEnabled } from '@/lib/entitlements/enforce.server';
 import { FeatureCode } from '@/lib/entitlements/feature-codes';
+import { activityLookupIds, describeActivity, type ActivityLookups, type ActivityRowLike } from '@/lib/activity-describe';
 
 // ─── POST: Record mobile activity events (single or batch) ─────────────────
 
@@ -158,7 +159,10 @@ export async function GET(request: NextRequest) {
       for (const a of (actors ?? []) as Array<{ id: string; name: string | null }>) nameByUserId.set(a.id, a.name);
     }
 
+    const lookups = await loadActivityLookups(rows as unknown as ActivityRowLike[], payload.organizationId as string | undefined);
+
     const logs = rows.map((row) => {
+      const { summary, fields } = describeActivity(row as unknown as ActivityRowLike, lookups);
       const details = (row.details ?? {}) as Record<string, unknown>;
       const deviceName = typeof details.deviceName === 'string' && details.deviceName.trim() ? details.deviceName : null;
       const platform = typeof details.platform === 'string' ? details.platform : null;
@@ -171,6 +175,7 @@ export async function GET(request: NextRequest) {
         resourceType: row.resource_type,
         resourceId: row.resource_id,
         shopId: row.shop_id,
+        shopName: typeof row.shop_id === 'string' ? lookups.shopNames.get(row.shop_id) ?? null : null,
         userId: row.user_id,
         userName: typeof row.user_id === 'string' ? nameByUserId.get(row.user_id) ?? null : null,
         userEmail: row.user_email,
@@ -180,7 +185,12 @@ export async function GET(request: NextRequest) {
         // and the UI falls back to the generic deviceType icon in that case.
         device: deviceName ? (platform ? `${deviceName} (${platform})` : deviceName) : null,
         status: row.status,
+        errorMessage: row.error_message ?? null,
         details: row.details,
+        // Readable versions of `details`: one line for the list, labelled
+        // fields for the detail view (ids already turned into names).
+        summary,
+        fields,
         createdAt: row.created_at,
       };
     });
@@ -199,6 +209,55 @@ export async function GET(request: NextRequest) {
     logger.error('Mobile activity GET error', { error: error instanceof Error ? error.message : String(error) });
     return jsonResponse({ success: false, error: 'Internal server error', code: 'INTERNAL_ERROR' }, 500);
   }
+}
+
+/**
+ * Shop, product and transfer names for one page of rows, limited to the
+ * caller's business: `details` can come from the app, so an id in it is
+ * never trusted to belong here.
+ */
+async function loadActivityLookups(rows: ActivityRowLike[], organizationId: string | undefined): Promise<ActivityLookups> {
+  const lookups: ActivityLookups = { shopNames: new Map(), productNames: new Map(), transfers: new Map() };
+  if (!organizationId || rows.length === 0) return lookups;
+  const ids = activityLookupIds(rows);
+  const shopIds = new Set(ids.shopIds);
+  const productIds = new Set(ids.productIds);
+  try {
+    if (ids.transferIds.length > 0) {
+      const { data } = await supabaseAdmin
+        .from('StockTransfer')
+        .select('id, productId, quantity, fromShopId, toShopId, notes')
+        .in('id', ids.transferIds)
+        .eq('organizationId', organizationId);
+      for (const t of (data ?? []) as Array<Record<string, unknown>>) {
+        const facts = {
+          productId: (t.productId as string | null) ?? null,
+          quantity: t.quantity == null ? null : Number(t.quantity),
+          fromShopId: (t.fromShopId as string | null) ?? null,
+          toShopId: (t.toShopId as string | null) ?? null,
+          notes: (t.notes as string | null) ?? null,
+        };
+        lookups.transfers.set(t.id as string, facts);
+        if (facts.productId) productIds.add(facts.productId);
+        if (facts.fromShopId) shopIds.add(facts.fromShopId);
+        if (facts.toShopId) shopIds.add(facts.toShopId);
+      }
+    }
+    const [shops, products] = await Promise.all([
+      shopIds.size > 0
+        ? supabaseAdmin.from('Shop').select('id, name').in('id', [...shopIds]).eq('organizationId', organizationId)
+        : Promise.resolve({ data: [] }),
+      productIds.size > 0
+        ? supabaseAdmin.from('Product').select('id, name').in('id', [...productIds]).eq('organizationId', organizationId)
+        : Promise.resolve({ data: [] }),
+    ]);
+    for (const s of (shops.data ?? []) as Array<{ id: string; name: string }>) lookups.shopNames.set(s.id, s.name);
+    for (const p of (products.data ?? []) as Array<{ id: string; name: string }>) lookups.productNames.set(p.id, p.name);
+  } catch (err) {
+    // Names are a nicety — the log still shows without them.
+    logger.warn('Mobile activity GET: name lookup failed', { error: err instanceof Error ? err.message : String(err) });
+  }
+  return lookups;
 }
 
 export async function OPTIONS() {
