@@ -10,7 +10,7 @@ import { denyWithoutCapability } from '@/lib/permissions.server';
 import { supabaseAdmin } from '@/lib/supabase-client';
 import logger from '@/lib/logger';
 import { jsonResponse, optionsResponse } from '@/lib/apiResponse';
-import { trackFromRequest } from '@/lib/activity-tracker';
+import { trackTransferStep } from '@/lib/transfer-activity.server';
 import { approveTransfer, returnTransfer } from '@/lib/transfer-approval.server';
 import { canActForShop, portalUserIdFor } from '@/lib/portal-transfer-access.server';
 
@@ -54,14 +54,7 @@ export async function POST(
     if (!res.ok) return jsonResponse({ success: false, error: res.error, code: res.code }, res.status);
 
     if (!res.idempotent) {
-      void trackFromRequest(request, auth, {
-        action: `stock.transfer.${action}`,
-        category: 'stock',
-        resourceType: 'StockTransfer',
-        resourceId: transferId,
-        shopId,
-        details: { fromShopId: transfer.fromShopId, toShopId: transfer.toShopId, reason: body.reason },
-      });
+      void trackTransferStep(request, auth, { step: action, transfer: res.transfer, shopId, reason: body.reason ?? null });
     }
     return jsonResponse({ success: true, data: res.transfer, message: MESSAGES[action], ...(res.idempotent ? { idempotent: true } : {}) }, 200);
   } catch (error) {

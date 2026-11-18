@@ -11,6 +11,7 @@ import { jsonResponse, optionsResponse } from '@/lib/apiResponse';
 import { verifyMobileShopAccess } from '@/lib/mobile-shop-auth';
 import { denyWithoutCapability } from '@/lib/permissions.server';
 import { approveTransfer } from '@/lib/transfer-approval.server';
+import { trackTransferStep } from '@/lib/transfer-activity.server';
 
 export async function POST(
   request: NextRequest,
@@ -26,6 +27,7 @@ export async function POST(
     const res = await approveTransfer({ transferId, shopId, portalUserId: auth.portalUserId });
     if (!res.ok) return jsonResponse({ success: false, error: res.error, code: res.code }, res.status);
     if (res.idempotent) return jsonResponse({ success: true, data: res.transfer, idempotent: true }, 200);
+    void trackTransferStep(request, auth.payload, { step: 'confirm', transfer: res.transfer, shopId });
     return jsonResponse({ success: true, data: res.transfer, message: 'Transfer approved' }, 200);
   } catch (error) {
     logger.error('Stock transfer confirm error', { error: error instanceof Error ? error.message : String(error) });

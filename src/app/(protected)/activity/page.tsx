@@ -14,6 +14,7 @@ import {
   Monitor, Smartphone, Tablet, Globe, Clock,
   ShieldCheck, ShieldAlert, User as UserIcon,
 } from 'lucide-react';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { FeatureGate } from '@/components/entitlements/FeatureGate';
 import { FeatureCode } from '@/lib/entitlements/feature-codes';
 
@@ -37,7 +38,13 @@ interface ActivityLog {
   /** The actual device (e.g. "Pixel 7 (android)") — only populated for logins so far; null elsewhere. */
   device?: string | null;
   status: string;
+  errorMessage?: string | null;
   details?: Record<string, unknown>;
+  shopName?: string | null;
+  /** One readable line about what happened (server-built from `details`). */
+  summary?: string | null;
+  /** Labelled facts for the detail view, ids already shown as names. */
+  fields?: Array<{ label: string; value: string }>;
   createdAt: string;
 }
 
@@ -104,6 +111,13 @@ function friendlyAction(action: string): string {
     'product.purge':      'Permanently deleted a product',
     'data.export':        'Exported workspace data',
     'sale.record':        'Recorded a sale',
+    'sale.delete':        'Deleted a sale',
+    'sale.bulk_delete':   'Deleted several sales',
+    'sale.restore':       'Restored a sale',
+    'stock.transfer':         'Sent a transfer',
+    'stock.transfer.confirm': 'Approved a transfer',
+    'stock.transfer.reject':  'Rejected a transfer',
+    'stock.transfer.cancel':  'Cancelled a transfer',
     'stock.update':       'Updated stock',
     'order.create':       'Created an order',
     'settings.update':    'Updated settings',
@@ -127,6 +141,16 @@ function relativeTime(iso: string): string {
     return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
   } catch { return iso; }
 }
+
+function longDate(iso: string): string {
+  try {
+    return new Date(iso).toLocaleString('en-US', {
+      weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit',
+    });
+  } catch { return iso; }
+}
+
+const SOURCE_LABELS: Record<string, string> = { mobile: 'App', portal: 'Portal', web: 'Website', system: 'System' };
 
 function fullDate(iso: string): string {
   try {
@@ -153,6 +177,7 @@ function ActivityContent() {
   // Irrelevant for a non-admin (the server always self-scopes them regardless
   // of this value) — only meaningful once `isAdmin` below is true.
   const [scope, setScope] = useState<'self' | 'team'>('team');
+  const [selected, setSelected] = useState<ActivityLog | null>(null);
 
   // Admins/super_admins default to seeing the whole team's activity, not
   // just their own — see GET /api/mobile/activity's own scope doc.
@@ -357,7 +382,7 @@ function ActivityContent() {
               {/* Phones: stacked rows — the table squeezed action names and cut off emails. */}
               <ul className={`sm:hidden divide-y ${theme === 'dark' ? 'divide-gray-800' : 'divide-gray-100'}`}>
                 {logs.map(log => (
-                  <li key={log.id} className="flex items-start gap-2.5 py-3">
+                  <li key={log.id} className="flex items-start gap-2.5 py-3 cursor-pointer" onClick={() => setSelected(log)}>
                     <div className={`mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full ${STATUS_DOT[log.status] || 'bg-gray-400'}`} title={log.status} />
                     <div className="min-w-0 flex-1">
                       <div className="flex items-baseline justify-between gap-2">
@@ -367,6 +392,7 @@ function ActivityContent() {
                       {showWhoColumn && (log.userName || log.userEmail) && (
                         <div className={`text-xs truncate ${textSecondary}`}>{log.userName || log.userEmail}</div>
                       )}
+                      {log.summary && <div className={`text-xs mt-0.5 line-clamp-2 ${textPrimary}`}>{log.summary}</div>}
                       <div className="mt-1 flex flex-wrap items-center gap-1.5">
                         <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-semibold ${CATEGORY_COLORS[log.category] || CATEGORY_COLORS.general}`}>{log.category}</span>
                         {log.source !== 'portal' && (
@@ -396,7 +422,9 @@ function ActivityContent() {
                     {logs.map((log, idx) => (
                       <tr
                         key={log.id}
-                        className={`border-b ${borderColor} hover:bg-opacity-50 ${idx % 2 === 0 ? (theme === 'dark' ? 'bg-gray-900 bg-opacity-30' : 'bg-gray-50 bg-opacity-50') : ''}`}
+                        onClick={() => setSelected(log)}
+                        title="Show details"
+                        className={`border-b ${borderColor} cursor-pointer hover:bg-blue-50 dark:hover:bg-white/5 ${idx % 2 === 0 ? (theme === 'dark' ? 'bg-gray-900 bg-opacity-30' : 'bg-gray-50 bg-opacity-50') : ''}`}
                       >
                         <td className="py-3 px-2">
                           <div className={`h-2.5 w-2.5 rounded-full ${STATUS_DOT[log.status] || 'bg-gray-400'}`} title={log.status} />
@@ -434,10 +462,8 @@ function ActivityContent() {
                             )}
                           </td>
                         )}
-                        <td className={`py-3 px-2 text-xs hidden lg:table-cell ${textSecondary}`}>
-                          {log.resourceType
-                            ? `${log.resourceType}${log.resourceId ? ` · ${log.resourceId.slice(0, 8)}…` : ''}`
-                            : '—'}
+                        <td className={`py-3 px-2 text-xs hidden lg:table-cell max-w-sm ${textSecondary}`}>
+                          <span className="line-clamp-2">{log.summary || log.errorMessage || '—'}</span>
                         </td>
                         <td className={`py-3 px-2 text-xs hidden md:table-cell ${textSecondary}`}>
                           <span className="flex items-center gap-1.5 whitespace-nowrap">
@@ -474,6 +500,36 @@ function ActivityContent() {
         </Card>
       </div>
       </FeatureGate>
+
+      <Dialog open={Boolean(selected)} onOpenChange={(open) => !open && setSelected(null)} fullWidth maxWidth="sm">
+        {selected && (
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle sx={{ px: 0 }}>{friendlyAction(selected.action)}</DialogTitle>
+              {selected.summary && <p className="text-sm text-gray-700">{selected.summary}</p>}
+            </DialogHeader>
+            <dl className="mt-4 grid grid-cols-[minmax(7rem,auto)_1fr] gap-x-4 gap-y-2 text-sm">
+              {[
+                { label: 'When', value: longDate(selected.createdAt) },
+                { label: 'Who', value: [selected.userName, selected.userEmail].filter(Boolean).join(' · ') || '—' },
+                { label: 'Status', value: selected.status.charAt(0).toUpperCase() + selected.status.slice(1) },
+                ...(selected.errorMessage ? [{ label: 'Error', value: selected.errorMessage }] : []),
+                ...(selected.fields ?? []),
+                ...(selected.shopName && !(selected.fields ?? []).some((f) => f.label === 'Shop') ? [{ label: 'Shop', value: selected.shopName }] : []),
+                { label: 'Done from', value: [SOURCE_LABELS[selected.source] ?? selected.source, selected.device].filter(Boolean).join(' · ') },
+              ].map((f, i) => (
+                <div key={`${f.label}-${i}`} className="contents">
+                  <dt className="text-gray-500">{f.label}</dt>
+                  <dd className="text-gray-900 break-words">{f.value}</dd>
+                </div>
+              ))}
+            </dl>
+            <div className="flex justify-end pt-5">
+              <Button variant="outline" size="sm" onClick={() => setSelected(null)}>Close</Button>
+            </div>
+          </DialogContent>
+        )}
+      </Dialog>
     </div>
   );
 }
