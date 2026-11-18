@@ -57,7 +57,7 @@ describe('trackTransferStep', () => {
 
   it('never throws when logging fails', async () => {
     trackFromRequest.mockRejectedValueOnce(new Error('db down'));
-    await expect(trackTransferStep({} as NextRequest, null, {
+    await expect(trackTransferStep({} as NextRequest, {}, {
       step: 'cancel', shopId: 'shop-a', transfer: { id: 't-3' },
     })).resolves.toBeUndefined();
   });
