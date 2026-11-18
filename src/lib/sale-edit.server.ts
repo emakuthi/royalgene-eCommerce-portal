@@ -10,6 +10,7 @@ import logger from './logger';
 import { quantityError } from './business-types';
 import { productUnit } from './business-settings.server';
 import { moveIngredients, productKind } from './recipes.server';
+import { adjustShopStock } from './shop-stock.server';
 
 /**
  * Editing a recorded sale — shared by the portal (PATCH /api/portal/sales/[id])
@@ -204,9 +205,8 @@ async function moveStock(sale: SaleRow, delta: number): Promise<StockMove | null
       await incrementCell(id, sale.organizationId, size, color, -delta);
     }
   } else {
-    const available = Number(shopStock.quantity) || 0;
-    if (delta > available) return { ok: false, error: `Only ${available} more in stock` };
-    await supabaseAdmin.from('ShopStock').update({ quantity: available - delta, updatedAt: new Date().toISOString() }).eq('id', id);
+    const moved = await adjustShopStock(id, -delta, 'refuse');
+    if (!moved.ok) return { ok: false, error: moved.available >= 0 ? `Only ${moved.available} more in stock` : 'Stock changed while saving — try again.' };
   }
   return { ok: true, shopStockId: id, variant, size, color };
 }

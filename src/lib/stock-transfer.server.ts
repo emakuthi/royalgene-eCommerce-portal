@@ -4,6 +4,7 @@ import { supabaseAdmin } from './supabase-client';
 import { syncProductStockFromShopStocks } from './supabase-db';
 import logger from './logger';
 import { decrementCell, incrementCell } from './variant-stock.server';
+import { adjustShopStock } from './shop-stock.server';
 
 /**
  * Shared by reject (destination declines) and cancel (source takes it back
@@ -33,10 +34,7 @@ export async function returnReservedStock(
     return;
   }
 
-  await supabaseAdmin
-    .from('ShopStock')
-    .update({ quantity: (srcStock.quantity as number) + quantity, updatedAt: new Date().toISOString() })
-    .eq('id', srcStock.id);
+  await adjustShopStock(srcStock.id as string, quantity, 'allow');
 
   try {
     await syncProductStockFromShopStocks(productId);

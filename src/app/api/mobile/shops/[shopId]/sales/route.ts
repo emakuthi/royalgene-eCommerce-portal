@@ -24,6 +24,7 @@ import { hasCapability } from '@/lib/permissions.server';
 import { getOrgCurrency } from '@/lib/currency.server';
 import { getRate } from '@/lib/exchange-rates.server';
 import { businessDateKey } from '@/lib/business-time';
+import { adjustShopStock } from '@/lib/shop-stock.server';
 
 /**
  * POST /api/mobile/shops/[shopId]/sales
@@ -418,14 +419,13 @@ export async function POST(
         });
       }
     } else {
-      const { error: updateError } = await supabaseAdmin
-        .from('ShopStock')
-        .update({ quantity: shopStock.quantity - quantity, updatedAt: now })
-        .eq('id', shopStock.id);
-      if (updateError) {
+      // Compare-and-set: a plain `quantity - sold` write here put back any
+      // transfer or other sale that landed since the count was read above.
+      const moved = await adjustShopStock(shopStock.id, -quantity, 'allow');
+      if (!moved.ok) {
         logger.error('Mobile sale stock update failed', {
           userId: auth.payload.userId, shopId, shopStockId: shopStock?.id,
-          error: updateError.message, endpoint: `/api/mobile/shops/${shopId}/sales`,
+          endpoint: `/api/mobile/shops/${shopId}/sales`,
         });
       }
     }

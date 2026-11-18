@@ -115,4 +115,31 @@ describe('pullChanges', () => {
     expect(r.cursor.Product).toBeDefined();
     expect(r.cursor.Shop).toEqual({ updatedAt: '2026-09-10T09:00:01.000Z', id: 's2' });
   });
+
+  it('holds a caught-up cursor back so a row stamped late is still sent', async () => {
+    const now = Date.parse('2026-09-10T10:10:00.000Z');
+    tables.Product = [
+      { id: 'p1', organizationId: 'org-1', updatedAt: '2026-09-10T10:09:00.000Z', version: 1, deletedAt: null, name: 'A' },
+    ];
+    const first = await pullChanges({ organizationId: 'org-1', cursor: {}, entities: ['Product'], now });
+    expect(first.changes.map((c) => c.id)).toEqual(['p1']);
+    expect(first.cursor.Product).toEqual({ updatedAt: '2026-09-10T10:05:00.000Z', id: '0' });
+
+    // A sale's stock write lands now, stamped with the time its request started.
+    tables.Product.push({ id: 'p0', organizationId: 'org-1', updatedAt: '2026-09-10T10:08:00.000Z', version: 2, deletedAt: null, name: 'Late' });
+    const second = await pullChanges({ organizationId: 'org-1', cursor: first.cursor, entities: ['Product'], now: now + 1000 });
+    expect(second.changes.map((c) => c.id)).toEqual(['p0', 'p1']);
+  });
+
+  it('a full page continues exactly where it ended, even for recent rows', async () => {
+    const now = Date.parse('2026-09-10T10:00:30.000Z');
+    const r = await pullChanges({ organizationId: 'org-1', cursor: {}, entities: ['Product'], pageSize: 2, now });
+    expect(r.hasMore).toBe(true);
+    expect(r.cursor.Product).toEqual({ updatedAt: '2026-09-10T10:00:01.000Z', id: 'p2' });
+  });
+
+  it('leaves an older cursor alone', async () => {
+    const r = await pullChanges({ organizationId: 'org-1', cursor: {}, entities: ['Product'] });
+    expect(r.cursor.Product).toEqual({ updatedAt: '2026-09-10T10:00:02.000Z', id: 'p3' });
+  });
 });

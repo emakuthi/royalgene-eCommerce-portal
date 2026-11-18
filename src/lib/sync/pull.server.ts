@@ -7,6 +7,18 @@ import { redactCostFields } from '../cost-visibility.server';
 const DEFAULT_PAGE_SIZE = 200;
 const MAX_PAGE_SIZE = 500;
 
+/**
+ * How far back a caught-up cursor is held. A row's updatedAt is stamped by
+ * the writer (often a `now` taken earlier in the same request), so a row can
+ * become visible with a time older than rows a device has already pulled.
+ * A cursor parked at the newest row would step over it for good — a sale's
+ * stock decrement or a transfer's hold never reaching that phone. Holding
+ * the cursor this far back re-sends the last few minutes of rows each pull
+ * (the device applies them as plain upserts), so a late-landing row is
+ * still picked up.
+ */
+export const SETTLE_LAG_MS = 5 * 60 * 1000;
+
 /** One row's worth of change, in the shape the client applies to Room. */
 export interface SyncChange {
   entity: SyncEntityName;
@@ -63,6 +75,8 @@ export async function pullChanges(opts: {
   includeCostData?: boolean;
   /** Shops whose sales this caller may see; null/undefined = every shop (admin, manager, owner). */
   salesShopIds?: string[] | null;
+  /** For tests. */
+  now?: number;
 }): Promise<{ changes: SyncChange[]; cursor: SyncCursor; hasMore: boolean }> {
   const entities = (opts.entities?.length ? opts.entities : SYNC_ENTITY_NAMES)
     .filter((e): e is SyncEntityName => e in SYNC_ENTITIES);
@@ -121,12 +135,25 @@ export async function pullChanges(opts: {
       });
     }
 
-    if (rows.length > 0) {
-      const last = rows[rows.length - 1];
-      nextCursor[entityName] = { updatedAt: String(last.updatedAt), id: String(last.id) };
+    const reached = rows.length > 0
+      ? { updatedAt: String(rows[rows.length - 1].updatedAt), id: String(rows[rows.length - 1].id) }
+      : position;
+    if (rows.length === pageSize) {
+      // Mid-catch-up: continue exactly where this page ended.
+      hasMore = true;
+      if (reached) nextCursor[entityName] = reached;
+    } else if (reached) {
+      nextCursor[entityName] = settled(reached, (opts.now ?? Date.now()) - SETTLE_LAG_MS);
     }
-    if (rows.length === pageSize) hasMore = true;
   }
 
   return { changes, cursor: nextCursor, hasMore };
+}
+
+/** The cursor, but no later than `settleAt`, so rows stamped in the last few minutes are sent again. */
+function settled(cursor: EntityCursor, settleAt: number): EntityCursor {
+  const at = Date.parse(cursor.updatedAt);
+  if (Number.isNaN(at) || at <= settleAt) return cursor;
+  // '0' sorts before every real id, so rows stamped exactly at settleAt are included.
+  return { updatedAt: new Date(settleAt).toISOString(), id: '0' };
 }
