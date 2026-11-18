@@ -5,6 +5,7 @@ import { incrementCell, decrementCell, hasVariantStock } from './variant-stock.s
 import { moveIngredients, productKind } from './recipes.server';
 import { v4 as uuidv4 } from 'uuid';
 import logger from './logger';
+import { adjustShopStock } from './shop-stock.server';
 
 /** How long a deleted sale stays recoverable before "Empty Trash" is allowed to purge it for good. */
 export const SALE_TRASH_RETENTION_DAYS = 90;
@@ -147,10 +148,7 @@ async function restoreSoldStock(
   if (isVariant) {
     await incrementCell(shopStock.id as string, organizationId, size, color, sale.quantity);
   } else {
-    await supabaseAdmin
-      .from('ShopStock')
-      .update({ quantity: (Number(shopStock.quantity) || 0) + sale.quantity, updatedAt: now })
-      .eq('id', shopStock.id);
+    await adjustShopStock(shopStock.id as string, sale.quantity, 'allow');
   }
 
   try {
@@ -288,13 +286,10 @@ export async function restoreSaleFromTrash(
     const result = await decrementCell(shopStock.id as string, size, color, sale.quantity);
     if (!result.ok) return { ok: false, error: result.error, code: 'INSUFFICIENT_STOCK' };
   } else {
-    if ((Number(shopStock.quantity) || 0) < sale.quantity) {
-      return { ok: false, error: `Only ${shopStock.quantity} in stock now — not enough to restore this ${sale.quantity}-unit sale`, code: 'INSUFFICIENT_STOCK' };
+    const moved = await adjustShopStock(shopStock.id as string, -sale.quantity, 'refuse');
+    if (!moved.ok) {
+      return { ok: false, error: `Only ${moved.available >= 0 ? moved.available : shopStock.quantity} in stock now — not enough to restore this ${sale.quantity}-unit sale`, code: 'INSUFFICIENT_STOCK' };
     }
-    await supabaseAdmin
-      .from('ShopStock')
-      .update({ quantity: (Number(shopStock.quantity) || 0) - sale.quantity, updatedAt: now })
-      .eq('id', shopStock.id);
   }
 
   const { error: undeleteError } = await supabaseAdmin
@@ -305,7 +300,7 @@ export async function restoreSaleFromTrash(
     // Stock was already taken back out — put it back rather than leave the
     // sale stuck deleted with its stock effect double-applied.
     if (isVariant) await incrementCell(shopStock.id as string, organizationId, size, color, sale.quantity);
-    else await supabaseAdmin.from('ShopStock').update({ quantity: shopStock.quantity, updatedAt: now }).eq('id', shopStock.id);
+    else await adjustShopStock(shopStock.id as string, sale.quantity, 'allow');
     return { ok: false, error: undeleteError.message };
   }
 

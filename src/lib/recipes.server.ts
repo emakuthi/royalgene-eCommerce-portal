@@ -5,6 +5,7 @@ import { syncProductStockFromShopStocks } from './supabase-db';
 import { normalizeUnit, quantityError, roundQuantity } from './business-types';
 import logger from './logger';
 import { jsonResponse } from './apiResponse';
+import { adjustShopStock } from './shop-stock.server';
 
 // Restaurant mode (migration 20261014_03): a "menu" product has no stock of
 // its own; selling one uses up its recipe's ingredients at the selling shop.
@@ -148,10 +149,9 @@ export async function moveIngredients(move: IngredientMove): Promise<void> {
         });
         continue;
       }
-      const before = Number(stock.quantity) || 0;
-      const after = Math.max(0, roundQuantity(before - amount));
-      const { error } = await supabaseAdmin.from('ShopStock').update({ quantity: after, updatedAt: now }).eq('id', stock.id);
-      if (error) throw new Error(error.message);
+      const moved = await adjustShopStock(stock.id as string, -amount, 'clamp');
+      if (!moved.ok) throw new Error('stock kept changing');
+      const { before, after } = moved;
       await supabaseAdmin.from('StockTransaction').insert([{
         id: uuidv4(),
         organizationId: move.organizationId,

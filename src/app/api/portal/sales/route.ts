@@ -22,6 +22,7 @@ import { getOrgCurrency } from '@/lib/currency.server';
 import { getRate } from '@/lib/exchange-rates.server';
 import { isValidClientId } from '@/lib/sync/syncable-entities';
 import { resolveSaleCustomer } from '@/lib/customers.server';
+import { adjustShopStock } from '@/lib/shop-stock.server';
 
 export async function POST(request: NextRequest) {
   const startTime = Date.now();
@@ -363,10 +364,9 @@ export async function POST(request: NextRequest) {
         const dec = await decrementCell(shopStock.id, typeof size === 'string' ? size : '', typeof color === 'string' ? color : '', quantity);
         if (!dec.ok) logger.error('Sale variant decrement failed', { shopStockId: shopStock.id, size, color, error: dec.error });
       } else {
-        await supabaseAdmin
-          .from('ShopStock')
-          .update({ quantity: Math.max(0, shopStock.quantity - quantity), updatedAt: now })
-          .eq('id', shopStock.id);
+        const moved = await adjustShopStock(shopStock.id, -quantity, 'clamp');
+        if (!moved.ok) logger.error('Sale stock update failed', { shopStockId: shopStock.id });
+        else shopStock.quantity = moved.before;
       }
       const newQuantity = Math.max(0, shopStock.quantity - quantity);
 

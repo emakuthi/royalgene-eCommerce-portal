@@ -90,6 +90,20 @@ function chainable(table: string) {
   return q;
 }
 
+// The compare-and-set itself is covered in shop-stock.test.ts; here it just moves the fake row.
+function fakeAdjust(row: Record<string, unknown> | null | undefined, delta: number, belowZero: string) {
+  if (!row) return { ok: false, available: 0 };
+  const before = Number(row.quantity) || 0;
+  let after = Math.round((before + delta) * 1000) / 1000;
+  if (after < 0 && belowZero === 'refuse') return { ok: false, available: before };
+  if (after < 0 && belowZero === 'clamp') after = 0;
+  row.quantity = after;
+  return { ok: true, before, after };
+}
+vi.mock('../shop-stock.server', () => ({
+  adjustShopStock: vi.fn(async (id: string, delta: number, belowZero: string) => fakeAdjust(shopStock[id], delta, belowZero)),
+}));
+
 vi.mock('../supabase-client', () => ({
   supabaseAdmin: { from: (table: string) => chainable(table) },
 }));

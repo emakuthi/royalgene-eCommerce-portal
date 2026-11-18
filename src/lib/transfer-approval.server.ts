@@ -10,6 +10,7 @@ import { resolveTransferDestination } from './product-sku.server';
 import { idempotentInsert } from './sync/idempotent-insert.server';
 import { assertFeatureEnabled } from './entitlements/enforce.server';
 import { FeatureCode } from './entitlements/feature-codes';
+import { adjustShopStock } from './shop-stock.server';
 import {
   addVariantCells, normalizeTransferCells, returnReservedStock, returnVariantCells, takeVariantCells, type TransferCell,
 } from './stock-transfer.server';
@@ -45,21 +46,7 @@ async function syncProducts(...productIds: Array<string | null | undefined>) {
 }
 
 /** Compare-and-set on a plain ShopStock count, so a sale landing at the same moment isn't overwritten. */
-async function adjustFlatStock(shopStockId: string, delta: number): Promise<{ ok: true } | { ok: false; available: number }> {
-  for (let attempt = 0; attempt < 3; attempt++) {
-    const { data: row } = await supabaseAdmin.from('ShopStock').select('quantity').eq('id', shopStockId).maybeSingle();
-    const current = Number(row?.quantity) || 0;
-    if (current + delta < 0) return { ok: false, available: current };
-    const { data: updated } = await supabaseAdmin
-      .from('ShopStock')
-      .update({ quantity: current + delta, updatedAt: new Date().toISOString() })
-      .eq('id', shopStockId)
-      .eq('quantity', current)
-      .select('id');
-    if (updated && updated.length > 0) return { ok: true };
-  }
-  return { ok: false, available: -1 };
-}
+const adjustFlatStock = (shopStockId: string, delta: number) => adjustShopStock(shopStockId, delta, 'refuse');
 
 // ── Send ─────────────────────────────────────────────────────────────────────
 

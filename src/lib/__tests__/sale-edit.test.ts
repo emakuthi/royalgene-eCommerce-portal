@@ -46,6 +46,24 @@ function chain(table: string) {
 }
 vi.mock('../supabase-client', () => ({ supabaseAdmin: { from: vi.fn((t: string) => chain(t)) } }));
 
+// The compare-and-set itself is covered in shop-stock.test.ts; here it just moves the fake row.
+function fakeAdjust(row: Record<string, unknown> | null | undefined, delta: number, belowZero: string) {
+  if (!row) return { ok: false, available: 0 };
+  const before = Number(row.quantity) || 0;
+  let after = Math.round((before + delta) * 1000) / 1000;
+  if (after < 0 && belowZero === 'refuse') return { ok: false, available: before };
+  if (after < 0 && belowZero === 'clamp') after = 0;
+  row.quantity = after;
+  return { ok: true, before, after };
+}
+vi.mock('../shop-stock.server', () => ({
+  adjustShopStock: vi.fn(async (_id: string, delta: number, belowZero: string) => {
+    const r = fakeAdjust(db.shopStock, delta, belowZero);
+    if (r.ok) db.stockUpdates.push({ quantity: r.after });
+    return r;
+  }),
+}));
+
 import { applySaleEdit } from '../sale-edit.server';
 
 const sale = () => ({
@@ -103,7 +121,8 @@ describe('applySaleEdit', () => {
     db.saleUpdateFails = true;
     const r = await applySaleEdit(sale(), { quantity: 4 }, 'pu-1');
     expect(r).toMatchObject({ ok: false, status: 500 });
-    expect(db.stockUpdates.map((u) => u.quantity)).toEqual([3, 7]);
+    // 5 → 3 for the edit, then back to 5 (a stale read used to write 5 + 2 = 7).
+    expect(db.stockUpdates.map((u) => u.quantity)).toEqual([3, 5]);
   });
 
   it('validates quantity and price', async () => {
