@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto';
 import { NextRequest, NextResponse } from 'next/server';
 import { requireRole } from '@/lib/authorize';
 import { jsonResponse, optionsResponse } from '@/lib/apiResponse';
@@ -50,13 +51,20 @@ export async function POST(request: NextRequest) {
   const email = typeof auth.email === 'string' ? auth.email : undefined;
   if (!email) return jsonResponse({ success: false, error: 'No email on this account' }, 400);
 
+  // Our own reference, so "Cancel Payment" can bring it back like a finished
+  // checkout does: the portal and the app's checkout screen both close on
+  // ?reference= and verify it (Paystack reports the cancelled one as abandoned).
+  const reference = `rt_${randomUUID().replace(/-/g, '')}`;
+  const callbackUrl = getOrgUrlFor(organization, '/settings?tab=billing');
   const result = await initializeTransaction({
     email,
     amountKobo,
     currency: plan.currency,
     planCode: method === 'card' ? planCode : null,
     channels: method === 'mpesa' ? ['mobile_money'] : undefined,
-    callbackUrl: getOrgUrlFor(organization, '/settings?tab=billing'),
+    callbackUrl,
+    reference,
+    cancelUrl: `${callbackUrl}${callbackUrl.includes('?') ? '&' : '?'}checkout=cancelled&reference=${reference}`,
     metadata: { organizationId: organization.id, planId: plan.id, interval, method },
   });
 

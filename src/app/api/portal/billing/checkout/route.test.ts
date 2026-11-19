@@ -46,6 +46,14 @@ describe('POST /api/portal/billing/checkout', () => {
     }));
   });
 
+  it('gives "Cancel Payment" a way back to Billing, carrying our own reference', async () => {
+    await post({ planId: 'plan-biz', interval: 'monthly' });
+    const input = initializeTransaction.mock.calls[0][0] as { reference: string; cancelUrl: string; callbackUrl: string };
+    expect(input.reference).toMatch(/^rt_[0-9a-f]{32}$/);
+    expect(input.callbackUrl).toBe('https://shop.royaltrack.test/settings?tab=billing');
+    expect(input.cancelUrl).toBe(`https://shop.royaltrack.test/settings?tab=billing&checkout=cancelled&reference=${input.reference}`);
+  });
+
   it('M-Pesa is a one-off payment for one period, M-Pesa only', async () => {
     const res = await post({ planId: 'plan-biz', interval: 'annually', method: 'mpesa' });
     expect(res.status).toBe(200);
