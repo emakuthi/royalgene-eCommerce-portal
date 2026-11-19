@@ -45,6 +45,7 @@ jobs:
             NEXT_PUBLIC_SUPABASE_URL=${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
             NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY=${{ secrets.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY }}
             NEXT_PUBLIC_ROOT_DOMAIN=${{ vars.NEXT_PUBLIC_ROOT_DOMAIN }}
+            NEXT_PUBLIC_FARO_URL=${{ vars.NEXT_PUBLIC_FARO_URL }}
 
       # Point the Coolify app at the image just built and redeploy it, so a merge
       # to main goes live without editing the tag by hand. Skipped (not failed)

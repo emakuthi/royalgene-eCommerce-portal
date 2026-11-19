@@ -3,6 +3,7 @@ import { headers } from 'next/headers';
 import { Geist, Geist_Mono } from 'next/font/google';
 import './globals.css';
 import ClientBody from './ClientBody';
+import FrontendObservability from '@/components/FrontendObservability';
 import { Toaster } from '@/components/ui/sonner';
 import React from 'react';
 import { getTenantBranding } from '@/lib/branding.server';
@@ -60,6 +61,7 @@ export default async function RootLayout({
   return (
     <html lang="en" className={`${geistSans.variable} ${geistMono.variable}`}>
       <body suppressHydrationWarning className="antialiased">
+        <FrontendObservability />
         <ClientBody initialBranding={branding}>
           <Toaster />
           {children}
