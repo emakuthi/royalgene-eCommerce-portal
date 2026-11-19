@@ -250,10 +250,17 @@ export default function PortalSettingsPage() {
     if (params.get('tab') === 'business') setActiveTab('business');
     const reference = params.get('reference');
     if (reference && token) {
+      const cancelled = params.get('checkout') === 'cancelled';
+      // Once handled, drop the reference so a refresh doesn't announce it again.
+      params.delete('reference');
+      params.delete('checkout');
+      window.history.replaceState(null, '', `${window.location.pathname}${params.size ? `?${params}` : ''}`);
       verifyBillingReference(token, reference).then((res) => {
         if (res.success && res.data?.status === 'success') {
           toast.success('Subscription activated!');
           getCurrentOrganization(token).then((r) => { if (r.success && r.data) setOrganization(r.data); });
+        } else if (cancelled) {
+          toast.info('Payment cancelled. You have not been charged.');
         } else if (res.success) {
           toast.info(`Payment status: ${res.data?.status}`);
         }

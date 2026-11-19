@@ -68,6 +68,13 @@ export interface InitializeTransactionInput {
   metadata?: Record<string, unknown>;
   /** Limit the checkout page to these Paystack channels, e.g. ['mobile_money'] for M-Pesa only. */
   channels?: string[];
+  /** Our own transaction reference; Paystack makes one up when omitted. */
+  reference?: string;
+  /**
+   * Where the checkout page's "Cancel Payment" goes. Without it Paystack has
+   * nowhere to send the customer and the button does nothing.
+   */
+  cancelUrl?: string;
 }
 
 export interface InitializeTransactionResult {
@@ -87,7 +94,8 @@ export async function initializeTransaction(
       currency: input.currency || 'KES',
       plan: input.planCode || undefined,
       callback_url: input.callbackUrl,
-      metadata: input.metadata || {},
+      reference: input.reference,
+      metadata: { ...(input.metadata || {}), ...(input.cancelUrl ? { cancel_action: input.cancelUrl } : {}) },
       channels: input.channels,
     }),
   });
