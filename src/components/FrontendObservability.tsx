@@ -13,7 +13,8 @@ import { scrubDeep } from '@/lib/faro-scrub';
 export default function FrontendObservability() {
   useEffect(() => {
     const url = process.env.NEXT_PUBLIC_FARO_URL;
-    if (!url || faro.api) return;
+    // faro.api is a no-op placeholder before init in Faro 2.x; config only exists once initialised.
+    if (!url || faro.config) return;
     try {
       initializeFaro({
         url,
