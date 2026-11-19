@@ -54,6 +54,14 @@ describe('POST /api/portal/billing/checkout', () => {
     expect(input.cancelUrl).toBe(`https://shop.royaltrack.test/settings?tab=billing&checkout=cancelled&reference=${input.reference}`);
   });
 
+  it('notes the card subscription an upgrade replaces, so it can be stopped once paid', async () => {
+    getOrganizationById.mockResolvedValue({ id: 'org-1', slug: 'shop', billingStatus: 'active', paystackPlanCode: 'PLN_basic', paystackSubscriptionCode: 'SUB_old' });
+    await post({ planId: 'plan-biz', interval: 'monthly' });
+    expect(initializeTransaction).toHaveBeenCalledWith(expect.objectContaining({
+      metadata: { organizationId: 'org-1', planId: 'plan-biz', interval: 'monthly', method: 'card', replacesSubscription: 'SUB_old' },
+    }));
+  });
+
   it('M-Pesa is a one-off payment for one period, M-Pesa only', async () => {
     const res = await post({ planId: 'plan-biz', interval: 'annually', method: 'mpesa' });
     expect(res.status).toBe(200);

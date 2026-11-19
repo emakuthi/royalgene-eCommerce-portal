@@ -65,7 +65,11 @@ export async function POST(request: NextRequest) {
     callbackUrl,
     reference,
     cancelUrl: `${callbackUrl}${callbackUrl.includes('?') ? '&' : '?'}checkout=cancelled&reference=${reference}`,
-    metadata: { organizationId: organization.id, planId: plan.id, interval, method },
+    metadata: {
+      organizationId: organization.id, planId: plan.id, interval, method,
+      // A card subscription that still renews is stopped once this one is paid (see stopReplacedSubscription).
+      ...(method === 'card' && organization.paystackSubscriptionCode ? { replacesSubscription: organization.paystackSubscriptionCode } : {}),
+    },
   });
 
   if (!result.ok) return jsonResponse({ success: false, error: result.error }, 502);
