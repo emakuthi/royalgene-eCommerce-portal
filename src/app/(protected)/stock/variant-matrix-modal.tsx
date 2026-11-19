@@ -191,19 +191,19 @@ export default function VariantMatrixModal({
       // be silently dropped here and never reach the server.
       const payloadCells = clear
         ? []
-        : rowAxis.flatMap((s) =>
-            colAxis
-              .map((c) => {
-                const override = cellPrices[cellKey(s, c)];
-                return {
-                  size: s,
-                  color: c,
-                  quantity: qtyAt(s, c),
-                  price: override?.price,
-                  costPrice: override?.costPrice,
-                };
-              })
-              .filter((cell) => cell.quantity > 0 || cell.price !== undefined || cell.costPrice !== undefined),
+        : // Every grid cell is sent, zeros included: the server deletes cells left
+          // out, so dropping sold-out ones made those sizes/colours disappear.
+          rowAxis.flatMap((s) =>
+            colAxis.map((c) => {
+              const override = cellPrices[cellKey(s, c)];
+              return {
+                size: s,
+                color: c,
+                quantity: qtyAt(s, c),
+                price: override?.price,
+                costPrice: override?.costPrice,
+              };
+            }),
           );
 
       const res = await fetch(`/api/portal/stock/${stock.id}/variants`, {
