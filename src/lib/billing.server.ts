@@ -3,6 +3,7 @@ import { supabaseAdmin } from './supabase-client';
 import type { PlatformPlan } from './types';
 import logger from './logger';
 import { upsertTenantSubscription } from './entitlements/tenant-subscription-store.server';
+import { disableSubscription, fetchSubscription } from './paystack.server';
 
 export async function recordBillingEvent(input: {
   eventType: string;
@@ -49,6 +50,12 @@ export interface ApplySuccessfulSubscriptionInput {
   paystackSubscriptionCode?: string | null;
   /** The Paystack plan the charge was made under; null for a one-off M-Pesa payment, which doesn't renew on its own. */
   paystackPlanCode?: string | null;
+  /**
+   * The card subscription this checkout replaces (an upgrade or plan change
+   * while one still renews), noted at checkout. It is stopped once this
+   * payment lands, or the old plan would keep charging the card too.
+   */
+  replacesSubscriptionCode?: string | null;
 }
 
 /**
@@ -105,4 +112,33 @@ export async function applySuccessfulSubscription(input: ApplySuccessfulSubscrip
     organizationId: input.organizationId,
     payload: { planId: input.plan.id, tier: input.plan.tier, interval: input.interval },
   });
+
+  await stopReplacedSubscription(input.organizationId, input.replacesSubscriptionCode ?? null, input.paystackSubscriptionCode ?? null);
+}
+
+/** Paystack statuses under which a subscription will still charge the card. */
+const STILL_CHARGING = new Set(['active', 'attention']);
+
+/**
+ * Stops the card subscription a new checkout replaced. Never throws: the new
+ * plan is already paid for and applied; a failure is logged and recorded so
+ * it can be stopped by hand in the Paystack dashboard.
+ */
+export async function stopReplacedSubscription(organizationId: string, oldCode: string | null, newCode: string | null): Promise<void> {
+  if (!oldCode || oldCode === newCode) return;
+  try {
+    const sub = await fetchSubscription(oldCode);
+    const result = !sub.ok ? sub : STILL_CHARGING.has(sub.data.status) ? await disableSubscription(oldCode, sub.data.email_token) : { ok: true as const };
+    if (result.ok) {
+      await recordBillingEvent({ eventType: 'subscription.replaced', organizationId, payload: { stopped: oldCode, replacedBy: newCode } });
+    } else {
+      logger.error('[billing] could not stop the replaced subscription', { organizationId, subscriptionCode: oldCode, error: result.error });
+      await recordBillingEvent({ eventType: 'subscription.replace_failed', organizationId, payload: { subscriptionCode: oldCode, error: result.error } });
+    }
+    // Forget the old code if it is still the saved one, so Cancel looks up the live subscription instead.
+    await supabaseAdmin.from('Organization').update({ paystackSubscriptionCode: null })
+      .eq('id', organizationId).eq('paystackSubscriptionCode', oldCode);
+  } catch (err) {
+    logger.error('[billing] stopReplacedSubscription failed', { organizationId, subscriptionCode: oldCode, error: err instanceof Error ? err.message : String(err) });
+  }
 }

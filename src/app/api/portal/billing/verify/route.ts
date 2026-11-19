@@ -47,6 +47,7 @@ export async function GET(request: NextRequest) {
     paystackCustomerCode: txn.customer?.customer_code ?? null,
     paystackSubscriptionCode: txn.subscription_code ?? null,
     paystackPlanCode: planCodeOf(txn.plan),
+    replacesSubscriptionCode: typeof metadata.replacesSubscription === 'string' ? metadata.replacesSubscription : null,
   });
 
   const organization = await getOrganizationById(organizationId);

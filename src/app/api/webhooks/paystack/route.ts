@@ -73,6 +73,8 @@ export async function POST(request: NextRequest) {
           paystackCustomerCode: customer?.customer_code ?? null,
           paystackSubscriptionCode: typeof data.subscription_code === 'string' ? data.subscription_code : null,
           paystackPlanCode: planCodeOf(data.plan),
+          // Only a checkout carries this; a renewal charge has no metadata.
+          replacesSubscriptionCode: typeof metadata.replacesSubscription === 'string' ? metadata.replacesSubscription : null,
         });
       } catch (err) {
         logger.error('[paystack webhook] failed to apply subscription', { error: err instanceof Error ? err.message : String(err), reference });
