@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent } from '@/components/ui/card';
@@ -9,8 +9,10 @@ import { useBranding } from '@/lib/branding-context';
 import { formatMoney } from '@/lib/currency';
 import { toast } from 'sonner';
 import PortalHeader from '@/components/portal/PortalHeader';
-import { Trash2, Plus, Download, Play, Repeat } from 'lucide-react';
+import { Trash2, Plus, Download, Play, Repeat, Receipt as ReceiptIcon, Paperclip } from 'lucide-react';
 import { businessDateKey } from '@/lib/business-time';
+import ReceiptViewer from '@/components/receipts/ReceiptViewer';
+import { RECEIPT_ACCEPT, getDriveStatus, listReceipts, uploadReceipt, type DriveStatus, type Receipt } from '@/lib/receipts';
 
 interface Category { id: string; name: string; isActive: boolean }
 interface Shop { id: string; name: string }
@@ -55,6 +57,17 @@ export default function ExpensesPage() {
   const [rSaving, setRSaving] = useState(false);
   const [running, setRunning] = useState(false);
 
+  // Receipts (saved to the owner's Google Drive)
+  const [drive, setDrive] = useState<DriveStatus | null>(null);
+  const [receipts, setReceipts] = useState<Receipt[]>([]);
+  const [receiptFile, setReceiptFile] = useState<File | null>(null);
+  const [viewing, setViewing] = useState<Receipt[] | null>(null);
+  const [attachingTo, setAttachingTo] = useState<Expense | null>(null);
+  const [uploadingFor, setUploadingFor] = useState<string | null>(null);
+  const attachInput = useRef<HTMLInputElement>(null);
+  const formReceiptInput = useRef<HTMLInputElement>(null);
+  const receiptsOn = Boolean(drive?.canManageReceipts && drive.connected);
+
   const authHeaders = useCallback(() => ({ 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }), [token]);
 
   const loadAll = useCallback(async () => {
@@ -80,6 +93,40 @@ export default function ExpensesPage() {
 
   useEffect(() => { void loadAll(); }, [loadAll]);
 
+  const loadReceipts = useCallback(async () => {
+    if (!token) return;
+    const status = await getDriveStatus(token);
+    if (!status.success || !status.data) return;
+    setDrive(status.data);
+    if (status.data.canManageReceipts) {
+      const res = await listReceipts(token);
+      if (res.success) setReceipts(res.data ?? []);
+    }
+  }, [token]);
+
+  useEffect(() => { void loadReceipts(); }, [loadReceipts]);
+
+  const receiptsFor = (expenseId: string) => receipts.filter(r => r.expenseId === expenseId);
+
+  /** Sends one receipt to Drive for this expense; true when it saved. */
+  async function attachReceipt(expense: Pick<Expense, 'id' | 'amount' | 'currency' | 'expenseDate' | 'description' | 'shopId'>, file: File): Promise<boolean> {
+    setUploadingFor(expense.id);
+    const res = await uploadReceipt(token, file, {
+      expenseId: expense.id,
+      amount: expense.amount,
+      currency: expense.currency,
+      receiptDate: expense.expenseDate,
+      notes: expense.description ?? undefined,
+    });
+    setUploadingFor(null);
+    if (res.success && res.data) {
+      setReceipts(prev => [res.data as Receipt, ...prev]);
+      return true;
+    }
+    toast.error(res.error || 'Could not save the receipt to Google Drive');
+    return false;
+  }
+
   async function addExpense() {
     const amt = Number(amount);
     if (!Number.isFinite(amt) || amt <= 0) { toast.error('Enter a valid amount'); return; }
@@ -91,8 +138,11 @@ export default function ExpensesPage() {
       });
       const j = await res.json();
       if (j?.success) {
-        toast.success('Expense recorded');
-        setAmount(''); setDescription('');
+        // The expense is saved either way; a receipt that fails to upload can be attached from the list.
+        const withReceipt = receiptFile && receiptsOn ? await attachReceipt(j.data, receiptFile) : false;
+        toast.success(withReceipt ? 'Expense recorded with its receipt' : 'Expense recorded');
+        setAmount(''); setDescription(''); setReceiptFile(null);
+        if (formReceiptInput.current) formReceiptInput.current.value = '';
         await loadAll();
       } else {
         toast.error(j?.error || 'Failed to record expense');
@@ -178,6 +228,26 @@ export default function ExpensesPage() {
   }
 
   const totalBase = expenses.reduce((s, e) => s + (e.baseAmount || 0), 0);
+
+  // A plain render helper (not a nested component), so rows don't remount on each render.
+  function receiptButton(expense: Expense) {
+    if (!drive?.canManageReceipts) return null;
+    const attached = receiptsFor(expense.id);
+    if (uploadingFor === expense.id) return <span className="text-xs text-gray-500">Saving…</span>;
+    if (attached.length > 0) {
+      return (
+        <button onClick={() => setViewing(attached)} aria-label="View receipt" title="View receipt" className="inline-flex items-center gap-1 text-[hsl(var(--primary))] hover:underline text-xs">
+          <ReceiptIcon className="h-4 w-4" />{attached.length > 1 ? attached.length : ''}
+        </button>
+      );
+    }
+    if (!drive.connected) return null;
+    return (
+      <button onClick={() => { setAttachingTo(expense); attachInput.current?.click(); }} aria-label="Attach receipt" title="Attach receipt" className="text-gray-400 hover:text-[hsl(var(--primary))]">
+        <Paperclip className="h-4 w-4" />
+      </button>
+    );
+  }
   const shopName = (id: string | null) => (id ? shops.find(s => s.id === id)?.name ?? '—' : 'All shops');
   const freqLabel = (r: Recurring) => {
     const unit = { daily: 'day', weekly: 'week', monthly: 'month' }[r.frequency];
@@ -225,7 +295,27 @@ export default function ExpensesPage() {
                 <label className="block text-xs text-gray-500 mb-1">Description</label>
                 <Input value={description} onChange={e => setDescription(e.target.value)} placeholder="e.g. October rent" />
               </div>
+              {receiptsOn && (
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">Receipt (optional)</label>
+                  <input
+                    ref={formReceiptInput}
+                    type="file"
+                    accept={RECEIPT_ACCEPT}
+                    onChange={e => setReceiptFile(e.target.files?.[0] ?? null)}
+                    className="block w-full text-sm text-gray-600 dark:text-gray-300 file:mr-3 file:rounded-md file:border-0 file:bg-gray-100 dark:file:bg-gray-800 file:px-3 file:py-1.5 file:text-sm"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">Photo or PDF, saved to Google Drive.</p>
+                </div>
+              )}
             </div>
+            {drive?.canManageReceipts && !drive.connected && (
+              <p className="text-xs text-gray-500">
+                {drive.canConnect
+                  ? <>To attach receipts, connect Google Drive in <a href="/settings?tab=integrations" className="underline">Settings → Integrations</a>.</>
+                  : 'Receipts can be attached once the owner connects Google Drive.'}
+              </p>
+            )}
             <div className="flex flex-col sm:flex-row sm:items-center gap-3">
               <Button onClick={addExpense} disabled={saving} className="w-full sm:w-auto bg-[hsl(var(--primary))] text-white">{saving ? 'Saving…' : 'Add Expense'}</Button>
               <span className="hidden sm:inline text-gray-300">|</span>
@@ -346,14 +436,17 @@ export default function ExpensesPage() {
                       <div className="text-xs text-gray-500 truncate">{e.expenseDate} · {e.categoryName ?? 'No category'} · {shopName(e.shopId)}</div>
                       {e.description && <div className="text-sm truncate">{e.description}</div>}
                     </div>
-                    <button onClick={() => removeExpense(e.id)} aria-label="Delete expense" className="shrink-0 text-gray-400 hover:text-red-500"><Trash2 className="h-4 w-4" /></button>
+                    <div className="flex items-center gap-3 shrink-0">
+                      {receiptButton(e)}
+                      <button onClick={() => removeExpense(e.id)} aria-label="Delete expense" className="text-gray-400 hover:text-red-500"><Trash2 className="h-4 w-4" /></button>
+                    </div>
                   </li>
                 ))}
               </ul>
               <div className="hidden sm:block overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead className="text-left text-xs text-gray-500">
-                    <tr><th className="py-2">Date</th><th>Category</th><th>Shop</th><th>Amount</th><th>In {base}</th><th>Description</th><th></th></tr>
+                    <tr><th className="py-2">Date</th><th>Category</th><th>Shop</th><th>Amount</th><th>In {base}</th><th>Description</th>{drive?.canManageReceipts && <th>Receipt</th>}<th></th></tr>
                   </thead>
                   <tbody>
                     {expenses.map(e => (
@@ -364,6 +457,7 @@ export default function ExpensesPage() {
                         <td className="whitespace-nowrap">{formatMoney(e.amount, e.currency)}</td>
                         <td className="whitespace-nowrap">{e.currency === base ? '—' : formatMoney(e.baseAmount, base)}</td>
                         <td className="max-w-[16rem] truncate">{e.description ?? ''}</td>
+                        {drive?.canManageReceipts && <td>{receiptButton(e)}</td>}
                         <td><button onClick={() => removeExpense(e.id)} className="text-gray-400 hover:text-red-500"><Trash2 className="h-4 w-4" /></button></td>
                       </tr>
                     ))}
@@ -375,6 +469,34 @@ export default function ExpensesPage() {
           </CardContent>
         </Card>
       </div>
+
+      <input
+        ref={attachInput}
+        type="file"
+        accept={RECEIPT_ACCEPT}
+        className="hidden"
+        onChange={async e => {
+          const file = e.target.files?.[0];
+          e.target.value = '';
+          const expense = attachingTo;
+          setAttachingTo(null);
+          if (file && expense && (await attachReceipt(expense, file))) toast.success('Receipt saved to Google Drive');
+        }}
+      />
+      {viewing && (
+        <ReceiptViewer
+          token={token}
+          receipts={viewing}
+          onClose={() => setViewing(null)}
+          onDeleted={id => {
+            setReceipts(prev => prev.filter(r => r.id !== id));
+            setViewing(prev => {
+              const left = (prev ?? []).filter(r => r.id !== id);
+              return left.length ? left : null;
+            });
+          }}
+        />
+      )}
     </>
   );
 }

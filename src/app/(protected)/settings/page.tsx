@@ -66,6 +66,7 @@ import {
 import PermissionsTab from '@/components/settings/PermissionsTab';
 import BusinessTab from '@/components/settings/BusinessTab';
 import CurrencyRatesPanel from '@/components/settings/CurrencyRatesPanel';
+import GoogleDriveSection from '@/components/settings/GoogleDriveSection';
 
 // ── Tab config ────────────────────────────────────────────────────────────────
 const TABS = [
@@ -1460,6 +1461,8 @@ export default function PortalSettingsPage() {
         {/* ── INTEGRATIONS ───────────────────────────────────────── */}
         {activeTab === 'integrations' && (
           <>
+          <GoogleDriveSection token={token} />
+
           <Section title="M-Pesa" description="Connect your own Safaricom Daraja API credentials so customer payments go straight to your paybill/till">
             {!isBillingAdmin ? (
               <p className="text-sm text-gray-500 dark:text-gray-400">Contact your workspace admin to configure M-Pesa.</p>

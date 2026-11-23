@@ -27,7 +27,8 @@ export type Capability =
   | 'manage_staff'
   | 'transfer_stock'
   | 'approve_transfers'
-  | 'sell_on_credit';
+  | 'sell_on_credit'
+  | 'manage_receipts';
 
 /** The only positions a permission ROW can apply to — admin/shop_owner are always full, see class doc. */
 export const EDITABLE_ROLES = ['shop_manager', 'shopkeeper', 'cashier', 'assistant'] as const;
@@ -43,6 +44,7 @@ export const PERMISSION_CATALOG: { key: Capability; label: string; description: 
   { key: 'transfer_stock', label: 'Transfer stock', description: 'Send stock from their own shop to another shop (and cancel a transfer they sent).' },
   { key: 'approve_transfers', label: 'Approve transfers', description: 'Accept or reject stock sent to their shop.' },
   { key: 'sell_on_credit', label: 'Sell on credit', description: 'Let a customer pay later (deni): put a sale, or part of it, on a customer\'s account.' },
+  { key: 'manage_receipts', label: 'Manage receipts', description: 'Scan and attach purchase receipts (saved to the owner\'s Google Drive) and view them.' },
 ];
 
 const CAPABILITY_KEYS = new Set<string>(PERMISSION_CATALOG.map((p) => p.key));
@@ -60,13 +62,14 @@ export function isCapability(value: unknown): value is Capability {
  * Transfers (added later) default on for everyone, as they were before they
  * had a toggle; an admin can switch them off per role. Selling on credit
  * defaults on too, so it works out of the box; owners who don't extend
- * credit can switch it off per role.
+ * credit can switch it off per role. Receipts (they go to the owner's
+ * Google Drive) are off for every staff role until an admin turns them on.
  */
 export const DEFAULT_PERMISSIONS: Record<EditableRole, Record<Capability, boolean>> = {
-  shop_manager: { view_cost_price: false, add_inventory: true, edit_inventory: true, delete_inventory: false, record_sales: true, manage_staff: false, transfer_stock: true, approve_transfers: true, sell_on_credit: true },
-  shopkeeper: { view_cost_price: false, add_inventory: false, edit_inventory: false, delete_inventory: false, record_sales: true, manage_staff: false, transfer_stock: true, approve_transfers: true, sell_on_credit: true },
-  cashier: { view_cost_price: false, add_inventory: false, edit_inventory: false, delete_inventory: false, record_sales: true, manage_staff: false, transfer_stock: true, approve_transfers: true, sell_on_credit: true },
-  assistant: { view_cost_price: false, add_inventory: false, edit_inventory: false, delete_inventory: false, record_sales: true, manage_staff: false, transfer_stock: true, approve_transfers: true, sell_on_credit: true },
+  shop_manager: { view_cost_price: false, add_inventory: true, edit_inventory: true, delete_inventory: false, record_sales: true, manage_staff: false, transfer_stock: true, approve_transfers: true, sell_on_credit: true, manage_receipts: false },
+  shopkeeper: { view_cost_price: false, add_inventory: false, edit_inventory: false, delete_inventory: false, record_sales: true, manage_staff: false, transfer_stock: true, approve_transfers: true, sell_on_credit: true, manage_receipts: false },
+  cashier: { view_cost_price: false, add_inventory: false, edit_inventory: false, delete_inventory: false, record_sales: true, manage_staff: false, transfer_stock: true, approve_transfers: true, sell_on_credit: true, manage_receipts: false },
+  assistant: { view_cost_price: false, add_inventory: false, edit_inventory: false, delete_inventory: false, record_sales: true, manage_staff: false, transfer_stock: true, approve_transfers: true, sell_on_credit: true, manage_receipts: false },
 };
 
 function normalizeRole(position: unknown): EditableRole | null {
