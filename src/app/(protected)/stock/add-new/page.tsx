@@ -31,6 +31,7 @@ import PortalHeader from '@/components/portal/PortalHeader';
 import { ImageUpload } from '@/components/image-upload';
 import type { Shop } from '@/lib/types';
 import { useBusinessSettings } from '@/lib/use-business-settings';
+import { CategoriesDialog, EditCategoriesButton } from '@/components/settings/CategoryManager';
 import { getBusinessType, optionExample, optionsTitle } from '@/lib/business-types';
 import { useProductSuggestions, ProductSuggestionList, type ProductSuggestion } from '@/components/portal/ProductSuggestions';
 
@@ -86,6 +87,8 @@ export default function AddNewProductPage() {
   const cur = useBranding().branding.currency;
   const business = useBusinessSettings(token);
   const { option1Label, option2Label } = business;
+  const isOwner = authUser?.role === 'admin' || authUser?.role === 'super_admin';
+  const [editingCategories, setEditingCategories] = useState(false);
   const variantsTitle = optionsTitle(option1Label, option2Label);
   const { currentShop, setCurrentShop } = usePortalStore();
   const router = useRouter();
@@ -409,9 +412,12 @@ export default function AddNewProductPage() {
                 {/* Category + Unit + Brand */}
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                   <div className="space-y-1.5">
-                    <Label htmlFor="category">
-                      Category <span className="text-red-500">*</span>
-                    </Label>
+                    <div className="flex items-center justify-between gap-2">
+                      <Label htmlFor="category">
+                        Category <span className="text-red-500">*</span>
+                      </Label>
+                      {isOwner && <EditCategoriesButton onClick={() => setEditingCategories(true)} />}
+                    </div>
                     <select
                       id="category"
                       aria-label="Select category"
@@ -428,6 +434,16 @@ export default function AddNewProductPage() {
                         </option>
                       ))}
                     </select>
+                    <CategoriesDialog
+                      open={editingCategories}
+                      token={token}
+                      business={business}
+                      onClose={() => {
+                        setEditingCategories(false);
+                        // A deleted pick would be re-created on save, so clear it.
+                        if (addForm.category && !business.categories.some(c => c.slug === addForm.category)) handleChange('category', '');
+                      }}
+                    />
                   </div>
                   <div className="space-y-1.5">
                     <Label htmlFor="unit">Sold by</Label>

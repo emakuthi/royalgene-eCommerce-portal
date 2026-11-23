@@ -8,6 +8,8 @@ import { X } from 'lucide-react';
 import ProductHistoryModal from './product-history-modal';
 import { useBranding } from '@/lib/branding-context';
 import { useBusinessSettings } from '@/lib/use-business-settings';
+import { useHydratedAuth } from '@/lib/hooks';
+import { CategoriesDialog, EditCategoriesButton } from '@/components/settings/CategoryManager';
 import RecipeEditor, { type IngredientOption } from '@/components/stock/RecipeEditor';
 import type { Product, ShopStock } from '@/lib/types';
 type ApiShopStock = ShopStock & { Product?: Product; product?: Product; shopName?: string };
@@ -62,6 +64,9 @@ export default ({
   const cur = useBranding().branding.currency;
   const business = useBusinessSettings(open ? token : null);
   const { option1Label, option2Label } = business;
+  const { user } = useHydratedAuth();
+  const isOwner = user?.role === 'admin' || user?.role === 'super_admin';
+  const [editingCategories, setEditingCategories] = React.useState(false);
 
   if (!open) return null;
 
@@ -127,13 +132,26 @@ export default ({
 
               <div className="grid grid-cols-2 gap-3 mt-2">
                 <div>
-                  <label className="block text-sm text-gray-600">Category</label>
+                  <div className="flex items-center justify-between gap-2">
+                    <label className="block text-sm text-gray-600">Category</label>
+                    {isOwner && <EditCategoriesButton onClick={() => setEditingCategories(true)} />}
+                  </div>
                   <select aria-label="Category" className="block w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-950 px-3 py-2 text-sm" value={viewForm.category} onChange={(e) => setViewForm({ ...viewForm, category: e.target.value })}>
                     {viewForm.category && !business.activeCategories.some(c => c.slug === viewForm.category) && (
                       <option value={viewForm.category}>{business.categoryName(viewForm.category)}</option>
                     )}
                     {business.activeCategories.map(c => <option key={c.slug} value={c.slug}>{c.name}</option>)}
                   </select>
+                  <CategoriesDialog
+                    open={editingCategories}
+                    token={token}
+                    business={business}
+                    onClose={() => {
+                      setEditingCategories(false);
+                      // Its category was just deleted: the server moved it to Other, so show (and save) that.
+                      if (viewForm.category && !business.categories.some(c => c.slug === viewForm.category)) setViewForm({ ...viewForm, category: 'other' });
+                    }}
+                  />
                 </div>
                 <div>
                   <label className="block text-sm text-gray-600">Sold by</label>

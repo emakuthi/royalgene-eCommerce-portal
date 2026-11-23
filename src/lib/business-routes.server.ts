@@ -5,6 +5,7 @@ import logger from './logger';
 import {
   BusinessSettingsError,
   createProductCategory,
+  deleteProductCategory,
   getBusinessSettings,
   updateBusinessSettings,
   updateProductCategory,
@@ -78,5 +79,27 @@ export async function productCategoryUpdate(organizationId: string, id: string, 
     return jsonResponse({ success: true, data });
   } catch (err) {
     return failure(err, 'update category');
+  }
+}
+
+/** DELETE ?moveProducts=1 — 409 CATEGORY_IN_USE (with productCount) until the owner agrees to move its products to "Other". */
+export async function productCategoryDelete(organizationId: string, id: string, request: Request) {
+  const moveProducts = new URL(request.url).searchParams.get('moveProducts') === '1';
+  try {
+    const result = await deleteProductCategory(id, organizationId, { moveProducts });
+    if (result.ok) return jsonResponse({ success: true, data: { movedProducts: result.movedProducts } });
+    if (result.reason === 'not_found') return jsonResponse({ success: false, error: 'Category not found', code: 'NOT_FOUND' }, 404);
+    if (result.reason === 'fallback') {
+      return jsonResponse({ success: false, error: '"Other" is where uncategorised products go, so it can\'t be deleted. You can hide it instead.', code: 'VALIDATION_ERROR' }, 400);
+    }
+    const n = result.productCount;
+    return jsonResponse({
+      success: false,
+      error: `${n} product${n === 1 ? ' is' : 's are'} in ${result.name}. Deleting it moves ${n === 1 ? 'it' : 'them'} to Other.`,
+      code: 'CATEGORY_IN_USE',
+      data: { productCount: n },
+    }, 409);
+  } catch (err) {
+    return failure(err, 'delete category');
   }
 }
