@@ -28,6 +28,10 @@ export interface ReceiptDto {
   shopId: string | null;
   expenseId: string | null;
   stockTransactionId: string | null;
+  /** The product a stock purchase was for. */
+  productId: string | null;
+  /** What it's linked to, for lists: the expense's description/category or the product's name. */
+  linkLabel?: string | null;
   fileName: string;
   mimeType: string;
   sizeBytes: number;
@@ -44,6 +48,7 @@ export interface ReceiptInput {
   shopId?: string | null;
   expenseId?: string | null;
   stockTransactionId?: string | null;
+  productId?: string | null;
   supplier?: string | null;
   amount?: number | null;
   currency?: string | null;
@@ -70,6 +75,7 @@ function toDto(row: Record<string, unknown>): ReceiptDto {
     shopId: (row.shopId as string | null) ?? null,
     expenseId: (row.expenseId as string | null) ?? null,
     stockTransactionId: (row.stockTransactionId as string | null) ?? null,
+    productId: (row.productId as string | null) ?? null,
     fileName: String(row.fileName),
     mimeType: String(row.mimeType),
     sizeBytes: Number(row.sizeBytes) || 0,
@@ -101,6 +107,7 @@ export async function cleanReceiptInput(organizationId: string, raw: Record<stri
     shopId: clean(raw.shopId, 64),
     expenseId: clean(raw.expenseId, 64),
     stockTransactionId: clean(raw.stockTransactionId, 64),
+    productId: clean(raw.productId, 64),
     supplier: clean(raw.supplier, 200),
     amount: amount === null ? null : Math.round(amount * 100) / 100,
     currency: clean(raw.currency, 8)?.toUpperCase() ?? null,
@@ -116,6 +123,10 @@ export async function cleanReceiptInput(organizationId: string, raw: Record<stri
   if (value.stockTransactionId) {
     const { data } = await supabaseAdmin.from('StockTransaction').select('id').eq('id', value.stockTransactionId).eq('organizationId', organizationId).maybeSingle();
     if (!data) return { ok: false, status: 404, error: 'Stock entry not found' };
+  }
+  if (value.productId) {
+    const { data } = await supabaseAdmin.from('Product').select('id').eq('id', value.productId).eq('organizationId', organizationId).maybeSingle();
+    if (!data) return { ok: false, status: 404, error: 'Product not found' };
   }
   if (value.shopId) {
     const { data } = await supabaseAdmin.from('Shop').select('id').eq('id', value.shopId).eq('organizationId', organizationId).maybeSingle();
@@ -185,6 +196,8 @@ export async function createReceipt(
       shopId: input.shopId ?? null,
       expenseId: input.expenseId ?? null,
       stockTransactionId: input.stockTransactionId ?? null,
+      // Only when set, so uploads keep working on a database that hasn't had 20261124_01 yet.
+      ...(input.productId ? { productId: input.productId } : {}),
       driveFileId,
       fileName,
       mimeType: file.mimeType,
@@ -213,6 +226,7 @@ export interface ReceiptFilters {
   shopId?: string;
   expenseId?: string;
   stockTransactionId?: string;
+  productId?: string;
   search?: string;
 }
 
@@ -234,6 +248,7 @@ export async function listReceipts(payload: VerifiedPayload, filters: ReceiptFil
   if (filters.shopId) query = query.eq('shopId', filters.shopId);
   if (filters.expenseId) query = query.eq('expenseId', filters.expenseId);
   if (filters.stockTransactionId) query = query.eq('stockTransactionId', filters.stockTransactionId);
+  if (filters.productId) query = query.eq('productId', filters.productId);
   const search = filters.search?.replace(/[%,()]/g, ' ').trim();
   if (search) query = query.or(`supplier.ilike.%${search}%,notes.ilike.%${search}%,fileName.ilike.%${search}%`);
 
@@ -250,7 +265,33 @@ export async function listReceipts(payload: VerifiedPayload, filters: ReceiptFil
     logger.error('[receipts] list failed', { error: error.message });
     return [];
   }
-  return (data ?? []).map((r) => toDto(r as Record<string, unknown>));
+  return withLinkLabels(payload.organizationId as string, (data ?? []).map((r) => toDto(r as Record<string, unknown>)));
+}
+
+/** Names what each receipt backs ("Rent", "Sugar 2kg") with one lookup per kind. */
+async function withLinkLabels(organizationId: string, receipts: ReceiptDto[]): Promise<ReceiptDto[]> {
+  const expenseIds = [...new Set(receipts.map((r) => r.expenseId).filter((v): v is string => !!v))];
+  const productIds = [...new Set(receipts.map((r) => r.productId).filter((v): v is string => !!v))];
+  const [expenses, products] = await Promise.all([
+    expenseIds.length
+      ? supabaseAdmin.from('Expense').select('id, description, categoryId').eq('organizationId', organizationId).in('id', expenseIds)
+      : Promise.resolve({ data: [] as unknown[] }),
+    productIds.length
+      ? supabaseAdmin.from('Product').select('id, name').eq('organizationId', organizationId).in('id', productIds)
+      : Promise.resolve({ data: [] as unknown[] }),
+  ]);
+  const expenseRows = (expenses.data ?? []) as { id: string; description?: string | null; categoryId?: string | null }[];
+  const categoryIds = [...new Set(expenseRows.map((e) => e.categoryId).filter((v): v is string => !!v))];
+  const { data: categories } = categoryIds.length
+    ? await supabaseAdmin.from('ExpenseCategory').select('id, name').in('id', categoryIds)
+    : { data: [] as unknown[] };
+  const categoryName = new Map(((categories ?? []) as { id: string; name: string }[]).map((c) => [c.id, c.name]));
+  const expenseLabel = new Map(expenseRows.map((e) => [e.id, e.description?.trim() || (e.categoryId && categoryName.get(e.categoryId)) || 'Expense']));
+  const productName = new Map(((products.data ?? []) as { id: string; name: string }[]).map((p) => [p.id, p.name]));
+  return receipts.map((r) => ({
+    ...r,
+    linkLabel: r.expenseId ? expenseLabel.get(r.expenseId) ?? 'Expense' : r.productId ? productName.get(r.productId) ?? 'Product' : null,
+  }));
 }
 
 /** One receipt the caller may see (same rule as [listReceipts]), with its Drive file id. */
@@ -272,7 +313,7 @@ export async function findReceipt(payload: VerifiedPayload, id: string): Promise
 
 export async function updateReceipt(organizationId: string, id: string, input: ReceiptInput): Promise<ReceiptDto | null> {
   const patch: Record<string, unknown> = { updatedAt: new Date().toISOString() };
-  for (const key of ['shopId', 'expenseId', 'stockTransactionId', 'supplier', 'amount', 'currency', 'receiptDate', 'notes'] as const) {
+  for (const key of ['shopId', 'expenseId', 'stockTransactionId', 'productId', 'supplier', 'amount', 'currency', 'receiptDate', 'notes'] as const) {
     if (input[key] !== undefined) patch[key] = input[key];
   }
   const { data } = await supabaseAdmin.from('PurchaseReceipt').update(patch).eq('id', id).eq('organizationId', organizationId).is('deletedAt', null).select('*').maybeSingle();

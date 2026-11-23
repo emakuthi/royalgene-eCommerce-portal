@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input';
 import { ImageUpload } from '@/components/image-upload';
 import { X } from 'lucide-react';
 import ProductHistoryModal from './product-history-modal';
+import ProductReceipts from '@/components/receipts/ProductReceipts';
 import { useBranding } from '@/lib/branding-context';
 import { useBusinessSettings } from '@/lib/use-business-settings';
 import { useHydratedAuth } from '@/lib/hooks';
@@ -243,6 +244,16 @@ export default ({
                 <label className="block text-sm text-gray-600">Low Stock Threshold</label>
                 <Input type="number" value={viewForm.lowStockThreshold} onChange={(e) => setViewForm({ ...viewForm, lowStockThreshold: Number(e.target.value) })} />
               </div>
+
+              {prod?.id && (
+                <ProductReceipts
+                  token={token ?? null}
+                  productId={prod.id}
+                  productName={viewForm.name || prod.name}
+                  shopId={stock.shopId}
+                  currency={cur}
+                />
+              )}
             </div>
           </div>
         </div>

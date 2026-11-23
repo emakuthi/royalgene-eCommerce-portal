@@ -43,6 +43,9 @@ export interface Receipt {
   shopId: string | null;
   expenseId: string | null;
   stockTransactionId: string | null;
+  productId: string | null;
+  /** The expense's description/category or the product's name. */
+  linkLabel?: string | null;
   fileName: string;
   mimeType: string;
   sizeBytes: number;
@@ -64,6 +67,7 @@ export interface ReceiptFields {
   shopId?: string;
   expenseId?: string;
   stockTransactionId?: string;
+  productId?: string;
 }
 
 export const RECEIPT_ACCEPT = 'image/jpeg,image/png,image/webp,application/pdf';
@@ -80,7 +84,10 @@ export function disconnectDrive(token?: string | null) {
   return request<void>('/api/portal/integrations/google-drive/disconnect', token, { method: 'POST' });
 }
 
-export function listReceipts(token: string | null | undefined, filters: { expenseId?: string; from?: string; to?: string; q?: string } = {}) {
+export function listReceipts(
+  token: string | null | undefined,
+  filters: { expenseId?: string; productId?: string; shopId?: string; from?: string; to?: string; q?: string } = {},
+) {
   const qs = new URLSearchParams(Object.entries(filters).filter(([, v]) => v) as [string, string][]).toString();
   return request<Receipt[]>(`/api/portal/receipts${qs ? `?${qs}` : ''}`, token);
 }
@@ -90,6 +97,10 @@ export function uploadReceipt(token: string | null | undefined, file: File, fiel
   form.append('file', file);
   for (const [k, v] of Object.entries(fields)) if (v !== undefined && v !== '') form.append(k, String(v));
   return request<Receipt>('/api/portal/receipts', token, { method: 'POST', body: form });
+}
+
+export function updateReceipt(token: string | null | undefined, id: string, fields: Partial<Record<'supplier' | 'amount' | 'currency' | 'receiptDate' | 'notes' | 'shopId', string | number | null>>) {
+  return request<Receipt>(`/api/portal/receipts/${id}`, token, { method: 'PATCH', body: JSON.stringify(fields) });
 }
 
 export function deleteReceipt(token: string | null | undefined, id: string) {
