@@ -183,6 +183,10 @@ export default function PortalSettingsPage() {
 
   const [mounted, setMounted] = useState(false);
   const [activeTab, setActiveTab] = useState<TabId>('profile');
+  // On phones the tab row scrolls sideways: keep the open tab (e.g. one opened by a ?tab= link) in view.
+  useEffect(() => {
+    document.querySelector(`[data-tab="${activeTab}"]`)?.scrollIntoView({ block: 'nearest', inline: 'center' });
+  }, [activeTab]);
   const [loading, setLoading] = useState(false);
   const [saved, setSaved] = useState(false);
   const [themeMode, setThemeMode] = useState<'light' | 'dark' | 'system'>('dark');
@@ -773,13 +777,14 @@ export default function PortalSettingsPage() {
         <div className="relative max-w-5xl mx-auto px-4 sm:px-6">
           {/* Right-edge fade: the scrollbar is hidden, so on phones this is the only hint that more tabs (Billing, Permissions…) exist. */}
           <div aria-hidden className="pointer-events-none absolute right-0 top-0 bottom-0 w-10 bg-gradient-to-l from-white dark:from-gray-900 sm:hidden" />
-          <div className="flex gap-1 overflow-x-auto scrollbar-none -mb-px pr-8 sm:pr-0">
+          <div className="flex gap-1 overflow-x-auto scrollbar-none -mb-px pr-8 sm:pr-0 sm:flex-wrap sm:overflow-visible">
             {TABS.filter(tab => tab.id !== 'permissions' || isBillingAdmin).map(tab => {
               const Icon = tab.icon;
               const active = activeTab === tab.id;
               return (
                 <button
                   key={tab.id}
+                  data-tab={tab.id}
                   type="button"
                   onClick={(e) => { setActiveTab(tab.id); e.currentTarget.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' }); }}
                   className={`flex items-center gap-2 px-4 py-3 text-sm font-medium whitespace-nowrap border-b-2 transition-colors
