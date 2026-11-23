@@ -298,6 +298,54 @@ export async function updateProductCategory(
   return data ? mapCategory(data) : null;
 }
 
+/** The fallback every product without a category sits in; it can't be deleted. */
+export const FALLBACK_CATEGORY_SLUG = 'other';
+
+export type DeleteCategoryResult =
+  | { ok: true; movedProducts: number }
+  | { ok: false; reason: 'not_found' }
+  | { ok: false; reason: 'fallback' }
+  | { ok: false; reason: 'in_use'; productCount: number; name: string };
+
+/**
+ * Removes a category for good. Products still in it move to "Other" — but
+ * only once the caller says so (`moveProducts`), so the owner first sees how
+ * many products that touches. Moving bumps each product's version/updatedAt
+ * (touch trigger), so phones pick the new category up on their next sync.
+ */
+export async function deleteProductCategory(
+  id: string,
+  organizationId: string,
+  opts: { moveProducts?: boolean } = {},
+): Promise<DeleteCategoryResult> {
+  const { data: row } = await supabaseAdmin
+    .from('ProductCategory').select('*').eq('id', id).eq('organizationId', organizationId).maybeSingle();
+  if (!row) return { ok: false, reason: 'not_found' };
+  const category = mapCategory(row as Record<string, unknown>);
+  if (category.slug === FALLBACK_CATEGORY_SLUG) return { ok: false, reason: 'fallback' };
+
+  const { count, error: countError } = await supabaseAdmin
+    .from('Product').select('id', { count: 'exact', head: true })
+    .eq('organizationId', organizationId).eq('category', category.slug);
+  if (countError) throw new Error(countError.message);
+  const productCount = count ?? 0;
+  if (productCount > 0 && !opts.moveProducts) return { ok: false, reason: 'in_use', productCount, name: category.name };
+
+  if (productCount > 0) {
+    await resolveCategorySlug(organizationId, FALLBACK_CATEGORY_SLUG); // make sure "Other" exists to land in
+    const { error } = await supabaseAdmin
+      .from('Product')
+      .update({ category: FALLBACK_CATEGORY_SLUG, updatedAt: new Date().toISOString() })
+      .eq('organizationId', organizationId)
+      .eq('category', category.slug);
+    if (error) throw new Error(error.message);
+  }
+
+  const { error } = await supabaseAdmin.from('ProductCategory').delete().eq('id', id).eq('organizationId', organizationId);
+  if (error) throw new Error(error.message);
+  return { ok: true, movedProducts: productCount };
+}
+
 /**
  * The slug to store on Product.category for whatever a client sent — a slug
  * ("over-the-counter") or a display name ("Over the counter"). An unknown

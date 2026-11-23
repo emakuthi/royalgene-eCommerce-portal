@@ -2,12 +2,13 @@
 
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
-import { Briefcase, Eye, EyeOff, Loader2, Pencil, Plus, Smartphone, Tags } from 'lucide-react';
+import { Briefcase, Loader2, Smartphone, Tags } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useBranding } from '@/lib/branding-context';
-import { BUSINESS_TYPES, MAX_CATEGORY_NAME_LENGTH, MAX_OPTION_LABEL_LENGTH, getBusinessType } from '@/lib/business-types';
-import { useBusinessSettings, type ProductCategoryOption } from '@/lib/use-business-settings';
+import { BUSINESS_TYPES, MAX_OPTION_LABEL_LENGTH, getBusinessType } from '@/lib/business-types';
+import { useBusinessSettings } from '@/lib/use-business-settings';
 import DailyReportCard from './DailyReportCard';
+import CategoryManager from './CategoryManager';
 
 const card = 'bg-white dark:bg-gray-900 rounded-2xl border border-[hsl(var(--border))] overflow-hidden';
 const field = 'w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 py-2 text-sm';
@@ -38,9 +39,6 @@ export default function BusinessTab({ token, canEdit }: { token: string | null |
   const [o1, setO1] = useState(business.option1Label);
   const [o2, setO2] = useState(business.option2Label);
   const [saving, setSaving] = useState(false);
-  const [newCategory, setNewCategory] = useState('');
-  const [busyCategory, setBusyCategory] = useState<string | null>(null);
-  const [renaming, setRenaming] = useState<{ id: string; name: string } | null>(null);
   const [savingLock, setSavingLock] = useState(false);
 
   useEffect(() => {
@@ -83,32 +81,6 @@ export default function BusinessTab({ token, canEdit }: { token: string | null |
     }
     toast.success(on ? 'Staff must now set an app lock' : 'App lock is now optional');
     await business.reload();
-  }
-
-  async function addCategory() {
-    const name = newCategory.trim();
-    if (!name) return;
-    setBusyCategory('new');
-    const res = await call(token, '/api/portal/product-categories', 'POST', { name });
-    setBusyCategory(null);
-    if (!res.ok) {
-      toast.error(res.error || 'Could not add category');
-      return;
-    }
-    setNewCategory('');
-    await business.reload();
-  }
-
-  async function patchCategory(c: ProductCategoryOption, patch: Record<string, unknown>) {
-    setBusyCategory(c.id);
-    const res = await call(token, `/api/portal/product-categories/${c.id}`, 'PATCH', patch);
-    setBusyCategory(null);
-    if (!res.ok) {
-      toast.error(res.error || 'Could not update category');
-      return false;
-    }
-    await business.reload();
-    return true;
   }
 
   if (!business.loaded) {
@@ -211,70 +183,12 @@ export default function BusinessTab({ token, canEdit }: { token: string | null |
           <div>
             <h2 className="text-base font-semibold text-gray-900 dark:text-white">Product categories</h2>
             <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
-              Hidden categories disappear from the pickers but products already in them keep it.
+              Hidden categories disappear from the pickers but products already in them keep it. Deleting one moves its products to Other.
             </p>
           </div>
         </div>
-        <div className="p-6 space-y-4">
-          {canEdit && (
-            <div className="flex gap-2">
-              <input
-                className={field}
-                value={newCategory}
-                maxLength={MAX_CATEGORY_NAME_LENGTH}
-                placeholder="New category"
-                onChange={(e) => setNewCategory(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); void addCategory(); } }}
-              />
-              <Button type="button" variant="outline" onClick={addCategory} disabled={busyCategory === 'new' || !newCategory.trim()} className="gap-1.5 shrink-0">
-                <Plus className="h-4 w-4" />Add
-              </Button>
-            </div>
-          )}
-          {business.categories.length === 0 ? (
-            <p className="text-sm text-gray-500">No categories yet.</p>
-          ) : (
-            <ul className="divide-y divide-[hsl(var(--border))]">
-              {business.categories.map((c) => (
-                <li key={c.id} className="flex items-center gap-3 py-2.5">
-                  {renaming?.id === c.id ? (
-                    <input
-                      autoFocus
-                      className={field}
-                      value={renaming.name}
-                      maxLength={MAX_CATEGORY_NAME_LENGTH}
-                      onChange={(e) => setRenaming({ id: c.id, name: e.target.value })}
-                      onKeyDown={async (e) => {
-                        if (e.key === 'Escape') setRenaming(null);
-                        if (e.key === 'Enter') {
-                          e.preventDefault();
-                          if (await patchCategory(c, { name: renaming.name })) setRenaming(null);
-                        }
-                      }}
-                      onBlur={async () => {
-                        if (renaming.name.trim() && renaming.name.trim() !== c.name) await patchCategory(c, { name: renaming.name });
-                        setRenaming(null);
-                      }}
-                    />
-                  ) : (
-                    <span className={`flex-1 text-sm ${c.isActive ? 'text-gray-900 dark:text-white' : 'text-gray-400 line-through'}`}>{c.name}</span>
-                  )}
-                  {canEdit && renaming?.id !== c.id && (
-                    <div className="flex gap-1 shrink-0">
-                      <Button type="button" variant="ghost" size="sm" aria-label={`Rename ${c.name}`} disabled={busyCategory === c.id}
-                        onClick={() => setRenaming({ id: c.id, name: c.name })}>
-                        <Pencil className="h-4 w-4" />
-                      </Button>
-                      <Button type="button" variant="ghost" size="sm" aria-label={c.isActive ? `Hide ${c.name}` : `Show ${c.name}`} disabled={busyCategory === c.id}
-                        onClick={() => patchCategory(c, { isActive: !c.isActive })}>
-                        {c.isActive ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                      </Button>
-                    </div>
-                  )}
-                </li>
-              ))}
-            </ul>
-          )}
+        <div className="p-6">
+          <CategoryManager token={token} canEdit={canEdit} business={business} />
         </div>
       </div>
     </div>
