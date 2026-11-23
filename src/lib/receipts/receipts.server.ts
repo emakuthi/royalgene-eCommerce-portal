@@ -179,7 +179,7 @@ export async function createReceipt(
 
   const now = new Date().toISOString();
   const { data, error } = await supabaseAdmin
-    .from('Receipt')
+    .from('PurchaseReceipt')
     .insert([{
       organizationId,
       shopId: input.shopId ?? null,
@@ -222,7 +222,7 @@ export interface ReceiptFilters {
  */
 export async function listReceipts(payload: VerifiedPayload, filters: ReceiptFilters, limit = 200): Promise<ReceiptDto[]> {
   let query = supabaseAdmin
-    .from('Receipt')
+    .from('PurchaseReceipt')
     .select('*')
     .eq('organizationId', payload.organizationId as string)
     .is('deletedAt', null)
@@ -257,7 +257,7 @@ export async function listReceipts(payload: VerifiedPayload, filters: ReceiptFil
 export async function findReceipt(payload: VerifiedPayload, id: string): Promise<(ReceiptDto & { driveFileId: string }) | null> {
   if (!/^[0-9a-f-]{36}$/i.test(id)) return null;
   const { data } = await supabaseAdmin
-    .from('Receipt')
+    .from('PurchaseReceipt')
     .select('*')
     .eq('id', id)
     .eq('organizationId', payload.organizationId as string)
@@ -275,13 +275,13 @@ export async function updateReceipt(organizationId: string, id: string, input: R
   for (const key of ['shopId', 'expenseId', 'stockTransactionId', 'supplier', 'amount', 'currency', 'receiptDate', 'notes'] as const) {
     if (input[key] !== undefined) patch[key] = input[key];
   }
-  const { data } = await supabaseAdmin.from('Receipt').update(patch).eq('id', id).eq('organizationId', organizationId).is('deletedAt', null).select('*').maybeSingle();
+  const { data } = await supabaseAdmin.from('PurchaseReceipt').update(patch).eq('id', id).eq('organizationId', organizationId).is('deletedAt', null).select('*').maybeSingle();
   return data ? toDto(data as Record<string, unknown>) : null;
 }
 
 /** Hides the receipt here and moves its file to the Drive bin (the owner can still restore it there). */
 export async function deleteReceipt(organizationId: string, receipt: { id: string; driveFileId: string }): Promise<void> {
-  await supabaseAdmin.from('Receipt').update({ deletedAt: new Date().toISOString() }).eq('id', receipt.id).eq('organizationId', organizationId);
+  await supabaseAdmin.from('PurchaseReceipt').update({ deletedAt: new Date().toISOString() }).eq('id', receipt.id).eq('organizationId', organizationId);
   const access = await getDriveAccess(organizationId);
   if (!access.ok) return;
   try {
