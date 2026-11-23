@@ -28,7 +28,7 @@ const FORBIDDEN = () => jsonResponse(
 const NOT_FOUND = () => jsonResponse({ success: false, error: 'Receipt not found', code: 'NOT_FOUND' }, 404);
 const fail = (r: { status: number; error: string; code?: string }) => jsonResponse({ success: false, error: r.error, code: r.code }, r.status);
 
-/** GET ?from=&to=&shopId=&expenseId=&stockTransactionId=&q= */
+/** GET ?from=&to=&shopId=&expenseId=&stockTransactionId=&productId=&q= */
 export async function handleListReceipts(request: NextRequest, p: VerifiedPayload): Promise<Response> {
   if (!(await canManageReceipts(p))) return FORBIDDEN();
   const q = request.nextUrl.searchParams;
@@ -38,12 +38,13 @@ export async function handleListReceipts(request: NextRequest, p: VerifiedPayloa
     shopId: q.get('shopId') || undefined,
     expenseId: q.get('expenseId') || undefined,
     stockTransactionId: q.get('stockTransactionId') || undefined,
+    productId: q.get('productId') || undefined,
     search: q.get('q') || undefined,
   });
   return jsonResponse({ success: true, data });
 }
 
-/** POST multipart/form-data: `file` plus optional supplier, amount, currency, receiptDate, notes, shopId, expenseId, stockTransactionId. */
+/** POST multipart/form-data: `file` plus optional supplier, amount, currency, receiptDate, notes, shopId, expenseId, stockTransactionId, productId. */
 export async function handleCreateReceipt(request: NextRequest, p: VerifiedPayload): Promise<Response> {
   if (!(await canManageReceipts(p))) return FORBIDDEN();
   const declared = Number(request.headers.get('content-length') ?? 0);

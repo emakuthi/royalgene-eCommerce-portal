@@ -72,6 +72,12 @@ describe('cleanReceiptInput', () => {
     expect(await cleanReceiptInput('org-1', { expenseId: 'e-1', amount: '1250.456', currency: 'kes', supplier: '  Duka  ' }))
       .toEqual({ ok: true, value: expect.objectContaining({ expenseId: 'e-1', shopId: 'shop-a', amount: 1250.46, currency: 'KES', supplier: 'Duka' }) });
   });
+
+  it('links a stock purchase only to a product in this workspace', async () => {
+    expect(await cleanReceiptInput('org-1', { productId: 'p-1' })).toMatchObject({ ok: false, status: 404, error: 'Product not found' });
+    found.Product = { id: 'p-1' };
+    expect(await cleanReceiptInput('org-1', { productId: 'p-1' })).toEqual({ ok: true, value: expect.objectContaining({ productId: 'p-1' }) });
+  });
 });
 
 describe('createReceipt', () => {
@@ -96,6 +102,8 @@ describe('createReceipt', () => {
     expect(ensureFolder).toHaveBeenCalledWith('tok', '2026-10', 'root');
     expect(uploadFile).toHaveBeenCalledWith('tok', expect.objectContaining({ parentId: 'month-folder', name: '2026-10-31 Duka 900.jpg' }));
     expect(inserted[0]).toMatchObject({ driveFileId: 'drive-file-1', organizationId: 'org-1', uploadedBy: 'u-1', sizeBytes: 3 });
+    // No product link → the column isn't written (works before migration 20261124_01).
+    expect(inserted[0]).not.toHaveProperty('productId');
     expect(result).toMatchObject({ ok: true, receipt: { supplier: 'Duka', amount: 900, receiptDate: '2026-10-31' } });
   });
 

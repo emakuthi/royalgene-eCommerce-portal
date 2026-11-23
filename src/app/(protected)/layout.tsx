@@ -37,7 +37,9 @@ import {
   ChevronsUpDown,
   ShieldCheck,
   BookUser,
+  ScanLine,
 } from 'lucide-react';
+import { getDriveStatus } from '@/lib/receipts';
 import { usePortalStore } from '@/lib/store';
 import type { Shop } from '@/lib/types';
 import { useBranding } from '@/lib/branding-context';
@@ -488,6 +490,12 @@ export default function ProtectedLayout({ children }: { children: React.ReactNod
   const drawerRef = useRef<HTMLDivElement | null>(null);
   const [alertsCount, setAlertsCount] = useState<number>(0);
   const [transfersCount, setTransfersCount] = useState<number>(0);
+  // Receipts shows for owners/admins and roles with "Manage receipts".
+  const [canManageReceipts, setCanManageReceipts] = useState(false);
+  useEffect(() => {
+    if (!token || user?.role === 'super_admin') return;
+    getDriveStatus(token).then((r) => setCanManageReceipts(Boolean(r.success && r.data?.canManageReceipts)));
+  }, [token, user?.role]);
 
   // Transfers waiting for this user's shop (every shop, for admins) to
   // approve. Re-read on each page change, and when the Transfers page says
@@ -565,6 +573,7 @@ export default function ProtectedLayout({ children }: { children: React.ReactNod
         { label: 'Sales',           href: '/sales',       icon: <ShoppingCart className="h-5 w-5" /> },
         { label: 'Customers',       href: '/customers',   icon: <BookUser className="h-5 w-5" /> },
         { label: 'Expenses',        href: '/expenses',    icon: <Receipt className="h-5 w-5" /> },
+        ...(canManageReceipts ? [{ label: 'Receipts', href: '/receipts', icon: <ScanLine className="h-5 w-5" /> }] : []),
         { label: 'Analytics',       href: '/analytics',   icon: <BarChart3 className="h-5 w-5" /> },
         { label: 'Shops',           href: '/shops',       icon: <MapPin className="h-5 w-5" /> },
         { label: 'User Management', href: '/users',       icon: <Users className="h-5 w-5" /> },
