@@ -55,4 +55,16 @@ describe('GET google-drive/callback', () => {
     const res = await call('error=access_denied&state=s');
     expect(res.headers.get('location')).toContain('drive=cancelled');
   });
+
+  it('ends a connection started in the app on a page that leads back to the app', async () => {
+    verifyOAuthState.mockReturnValue({ organizationId: 'org-1', userId: 'u-1', app: true });
+    exchangeDriveCode.mockResolvedValue(tokens(['openid', 'email', 'https://www.googleapis.com/auth/drive.file']));
+    ensureFolder.mockResolvedValue('folder-1');
+    const res = await call('code=c&state=s');
+    expect(saveDriveConnection).toHaveBeenCalled();
+    expect(res.headers.get('location')).toBeNull();
+    const html = await res.text();
+    expect(html).toContain('Google Drive connected');
+    expect(html).toContain('package=com.royalgenegroup.royaltrack');
+  });
 });
