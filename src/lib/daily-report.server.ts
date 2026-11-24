@@ -20,9 +20,11 @@ export async function buildDailyReportParams(organizationId: string, now = new D
     supabaseAdmin.from('Shop').select('id, name').eq('organizationId', organizationId),
     supabaseAdmin
       .from('ShopStock')
-      .select('quantity, lowStockThreshold')
+      // Archived products are off the shelf on purpose, so they're not "out of stock".
+      .select('quantity, lowStockThreshold, Product!ShopStock_productId_fkey!inner(archivedAt)')
       .eq('organizationId', organizationId)
-      .is('deletedAt', null),
+      .is('deletedAt', null)
+      .is('Product.archivedAt', null),
   ]);
   for (const r of [org, sales, shops, stock]) if (r.error) throw new Error(r.error.message);
 

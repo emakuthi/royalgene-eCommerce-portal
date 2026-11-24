@@ -138,8 +138,10 @@ export async function GET(request: NextRequest) {
     // Get low stock items
     const { data: allStockItems } = await supabaseAdmin
       .from('ShopStock')
-      .select('*')
-      .eq('shopId', shopId);
+      // Archived products are off the shelf on purpose, so they don't count as low stock.
+      .select('*, Product!ShopStock_productId_fkey!inner(archivedAt)')
+      .eq('shopId', shopId)
+      .is('Product.archivedAt', null);
 
     const stockItems: StockItem[] = Array.isArray(allStockItems) ? (allStockItems as unknown as StockItem[]) : [];
     const lowStockItems = stockItems.filter((item: StockItem) => (item.quantity || 0) <= (item.lowStockThreshold || 0));
