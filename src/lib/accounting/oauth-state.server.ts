@@ -17,20 +17,22 @@ interface OAuthStatePayload {
   organizationId: string;
   userId: string;
   exp: number;
+  /** Started from the mobile app: the callback ends on a "go back to the app" page, not the portal. */
+  app?: boolean;
 }
 
 function getSecret(): string {
   return jwtSecret();
 }
 
-export function signOAuthState(organizationId: string, userId: string): string {
-  const payload: OAuthStatePayload = { organizationId, userId, exp: Date.now() + STATE_TTL_MS };
+export function signOAuthState(organizationId: string, userId: string, opts: { app?: boolean } = {}): string {
+  const payload: OAuthStatePayload = { organizationId, userId, exp: Date.now() + STATE_TTL_MS, ...(opts.app ? { app: true } : {}) };
   const encoded = Buffer.from(JSON.stringify(payload)).toString('base64url');
   const signature = createHmac('sha256', getSecret()).update(encoded).digest('base64url');
   return `${encoded}.${signature}`;
 }
 
-export function verifyOAuthState(state: string): { organizationId: string; userId: string } | null {
+export function verifyOAuthState(state: string): { organizationId: string; userId: string; app: boolean } | null {
   const [encoded, signature] = state.split('.');
   if (!encoded || !signature) return null;
 
@@ -42,7 +44,7 @@ export function verifyOAuthState(state: string): { organizationId: string; userI
   try {
     const payload = JSON.parse(Buffer.from(encoded, 'base64url').toString('utf8')) as OAuthStatePayload;
     if (payload.exp < Date.now()) return null;
-    return { organizationId: payload.organizationId, userId: payload.userId };
+    return { organizationId: payload.organizationId, userId: payload.userId, app: payload.app === true };
   } catch {
     return null;
   }

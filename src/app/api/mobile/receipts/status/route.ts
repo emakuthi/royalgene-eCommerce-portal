@@ -6,7 +6,7 @@ import { canManageReceipts } from '@/lib/receipts/receipts.server';
 import { mobileReceiptsAuth } from '@/lib/receipts/mobile-auth.server';
 
 // GET /api/mobile/receipts/status — may this user use receipts, and is the owner's Google Drive connected.
-// Connecting happens in the portal (Settings → Integrations), so the app only reads this.
+// The owner connects from the app (/api/mobile/receipts/connect) or the portal (Settings → Integrations).
 export async function GET(request: NextRequest) {
   const auth = await mobileReceiptsAuth(request);
   if (auth instanceof Response) return auth;
