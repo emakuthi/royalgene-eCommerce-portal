@@ -197,6 +197,8 @@ export interface Product {
   trending: boolean;
   /** KRA VAT classification: A=exempt, B=16% standard (default), C=zero-rated, D=non-VAT. */
   taxType?: 'A' | 'B' | 'C' | 'D';
+  /** Set while the product is archived (not available to restock); cleared by Unarchive or by adding stock. */
+  archivedAt?: string | null;
   createdAt: string;
   updatedAt: string;
 }

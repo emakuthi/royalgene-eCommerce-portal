@@ -9,7 +9,7 @@ import { Input } from '@/components/ui/input';
 import { useHydratedAuth } from '@/lib/hooks';
 import { usePortalStore } from '@/lib/store';
 import { toast } from 'sonner';
-import { ArchiveRestore, Search, Eye, ArrowRightLeft, MoreHorizontal, RefreshCw, Grid3x3, Trash2, X } from 'lucide-react';
+import { Archive, ArchiveRestore, Search, Eye, ArrowRightLeft, MoreHorizontal, RefreshCw, Grid3x3, Trash2, X } from 'lucide-react';
 import { Checkbox } from '@/components/ui/checkbox';
 import {
   DropdownMenu,
@@ -45,8 +45,14 @@ const getProductFromRow = (row: ApiShopStock): Product | undefined => {
   return (row.product ?? row.Product) as Product | undefined;
 };
 
+/** An archived product (not available to restock) is kept out of the normal lists until it's brought back. */
+const isArchivedRow = (row: ApiShopStock): boolean => Boolean(getProductFromRow(row)?.archivedAt);
+
 /** Status badge for one stock row — 0 always reads as "out of stock", even if lowStockThreshold is also 0. */
-function stockStatusBadge(quantity: number, lowStockThreshold: number, isDark: boolean, madeToOrder = false): { label: string; className: string } {
+function stockStatusBadge(quantity: number, lowStockThreshold: number, isDark: boolean, madeToOrder = false, archived = false): { label: string; className: string } {
+  if (archived) {
+    return { label: 'archived', className: isDark ? 'bg-gray-700 text-gray-300' : 'bg-gray-200 text-gray-700' };
+  }
   // A restaurant menu item has no stock of its own — its ingredients do.
   if (madeToOrder) {
     return { label: 'made to order', className: isDark ? 'bg-sky-900 text-sky-300' : 'bg-sky-100 text-sky-800' };
@@ -120,6 +126,9 @@ function StockManagementContent() {
   // Tab state: 'current' = current shop only, 'all' = all shops
   const [activeTab, setActiveTab] = useState<'current' | 'all'>('current');
   const [allStocks, setAllStocks] = useState<ApiShopStock[]>([]);
+  // Archived products live in their own view so they stop showing as "out of stock" for months.
+  const [showArchived, setShowArchived] = useState(false);
+  const [archivingId, setArchivingId] = useState<string | null>(null);
   const [loadingAll, setLoadingAll] = useState(false);
   // Bulk selection/delete (admins only — see isAdmin below). Keyed by Product.id,
   // not ShopStock.id: a bulk delete removes the PRODUCT from every shop (same
@@ -319,7 +328,7 @@ function StockManagementContent() {
   // the org-wide data whenever the GLOBAL shop selector is "All Shops"
   // (currentShop === null), even while sitting on the "Current Stock" tab.
   const metrics = useMemo(() => {
-    const rows = showsEveryShop ? allStocks : stocks;
+    const rows = (showsEveryShop ? allStocks : stocks).filter(s => !isArchivedRow(s));
     // Total UNITS in stock (not distinct products) — matches the Android
     // Analytics screen's own Inventory card ("Total items"). quantity is
     // already the correctly rolled-up total for a variant product (kept in
@@ -349,7 +358,9 @@ function StockManagementContent() {
     return { totalItems, stockValue, lowStock, outOfStock };
   }, [stocks, allStocks, showsEveryShop, inventoryValue, currentShop]);
 
-  const visibleStocks = showsEveryShop ? allStocks : stocks;
+  const shownRows = showsEveryShop ? allStocks : stocks;
+  const archivedCount = new Set(shownRows.filter(isArchivedRow).map(s => getProductFromRow(s)?.id)).size;
+  const visibleStocks = shownRows.filter(s => isArchivedRow(s) === showArchived);
   const filteredStocks = visibleStocks.filter(stock =>
     (stock.product?.name || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
     (stock.product?.sku || '').toLowerCase().includes(searchQuery.toLowerCase())
@@ -608,6 +619,51 @@ function StockManagementContent() {
     URL.revokeObjectURL(url);
   };
 
+  // Archive / unarchive a product everywhere it's stocked; the server refuses while any shop still holds stock.
+  const setArchived = async (row: ApiShopStock, archived: boolean) => {
+    const product = getProductFromRow(row);
+    if (!product?.id || !token) return;
+    setArchivingId(product.id);
+    try {
+      const res = await fetch(`/api/portal/products/${product.id}/archive`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ archived }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || !json.success) {
+        toast.error(json.error || 'Could not update the product');
+        return;
+      }
+      const archivedAt: string | null = json.data?.archivedAt ?? null;
+      const patch = (rows: ApiShopStock[]) => rows.map(r => {
+        const p = getProductFromRow(r);
+        if (p?.id !== product.id) return r;
+        const next = { ...p, archivedAt };
+        return { ...r, ...(r.product ? { product: next } : {}), ...(r.Product ? { Product: next } : {}) };
+      });
+      setStocks(patch);
+      setAllStocks(patch);
+      toast.success(json.message || (archived ? 'Product archived' : 'Product unarchived'));
+    } catch {
+      toast.error('Could not update the product');
+    } finally {
+      setArchivingId(null);
+    }
+  };
+
+  const archiveMenuItem = (row: ApiShopStock) => {
+    if (!isAdmin) return null;
+    const archived = isArchivedRow(row);
+    const busy = archivingId === getProductFromRow(row)?.id;
+    return (
+      <DropdownMenuItem disabled={busy} onClick={() => setArchived(row, !archived)} className="cursor-pointer gap-2">
+        {archived ? <ArchiveRestore className="h-4 w-4 text-gray-500" /> : <Archive className="h-4 w-4 text-gray-500" />}
+        {archived ? 'Unarchive' : 'Archive'}
+      </DropdownMenuItem>
+    );
+  };
+
   return (
     <div className="w-full bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800">
       <PortalHeader
@@ -686,6 +742,17 @@ function StockManagementContent() {
               >
                 All Products
               </Button>
+              {(archivedCount > 0 || showArchived) && (
+                <Button
+                  variant={showArchived ? 'default' : 'ghost'}
+                  onClick={() => { setShowArchived(v => !v); setSelectedProductIds(new Set()); }}
+                  className="gap-1.5 transition-colors"
+                  title="Products that aren't available to restock for now"
+                >
+                  <Archive className="h-4 w-4" />
+                  Archived ({archivedCount})
+                </Button>
+              )}
             </div>
 
             <div className="flex flex-wrap items-end gap-3">
@@ -754,10 +821,10 @@ function StockManagementContent() {
               </div>
             )}
             {filteredStocks.length === 0 && (
-              <div className={`text-center py-8 ${muted}`}>{visibleStocks.length === 0 ? 'No stock items found' : 'No matching items'}</div>
+              <div className={`text-center py-8 ${muted}`}>{visibleStocks.length === 0 ? (showArchived ? 'No archived products' : 'No stock items found') : 'No matching items'}</div>
             )}
             {filteredStocks.map((stock) => {
-              const status = stockStatusBadge(stock.quantity, stock.lowStockThreshold, theme === 'dark', getProductFromRow(stock)?.kind === 'menu');
+              const status = stockStatusBadge(stock.quantity, stock.lowStockThreshold, theme === 'dark', getProductFromRow(stock)?.kind === 'menu', isArchivedRow(stock));
               const productWithCost = stock.product as (Product & { costPrice?: number }) | undefined;
               const sellPrice = Number(productWithCost?.price ?? 0);
               // null = hidden for this role (server nulls it). Was `?? sellPrice`, which showed
@@ -821,6 +888,7 @@ function StockManagementContent() {
                           >
                             <RefreshCw className="h-4 w-4 text-gray-500" />Restock
                           </DropdownMenuItem>
+                          {archiveMenuItem(stock)}
                         </DropdownMenuContent>
                       </DropdownMenu>
                     </div>
@@ -875,7 +943,7 @@ function StockManagementContent() {
               </thead>
               <tbody>
                 {filteredStocks.map(stock => {
-                  const status = stockStatusBadge(stock.quantity, stock.lowStockThreshold, theme === 'dark', getProductFromRow(stock)?.kind === 'menu');
+                  const status = stockStatusBadge(stock.quantity, stock.lowStockThreshold, theme === 'dark', getProductFromRow(stock)?.kind === 'menu', isArchivedRow(stock));
                   // price values are stored in major units (KES), no conversion needed
                   const productWithCost = stock.product as (Product & { costPrice?: number }) | undefined;
                   const sellPrice = Number(productWithCost?.price ?? 0);
@@ -946,6 +1014,7 @@ function StockManagementContent() {
                                 <RefreshCw className="h-4 w-4 text-gray-500" />
                                 Restock
                               </DropdownMenuItem>
+                              {archiveMenuItem(stock)}
                             </DropdownMenuContent>
                           </DropdownMenu>
                         </td>
@@ -956,7 +1025,7 @@ function StockManagementContent() {
             </table>
 
             {filteredStocks.length === 0 && (
-              <div className={`text-center py-8 ${muted}`}>{visibleStocks.length === 0 ? 'No stock items found' : 'No matching items'}</div>
+              <div className={`text-center py-8 ${muted}`}>{visibleStocks.length === 0 ? (showArchived ? 'No archived products' : 'No stock items found') : 'No matching items'}</div>
             )}
           </div>{/* end desktop table wrapper */}
           </>
