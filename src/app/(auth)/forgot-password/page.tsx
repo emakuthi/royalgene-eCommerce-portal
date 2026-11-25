@@ -75,7 +75,7 @@ function ForgotPasswordInner() {
           <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
             {step === 'email'
               ? `We'll email a 6-digit code to reset your ${branding.companyName} password.`
-              : `Enter the code sent to ${email} and choose a new password.`}
+              : `If ${email} has an account, we've emailed it a 6-digit code (check spam too). No email after a minute? Use the exact email you sign in with.`}
           </p>
         </div>
 

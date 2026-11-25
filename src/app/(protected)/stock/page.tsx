@@ -636,9 +636,11 @@ function StockManagementContent() {
         return;
       }
       const archivedAt: string | null = json.data?.archivedAt ?? null;
+      // Every shop's copy of the item (same SKU) changes together.
+      const changed = new Set<string>(json.data?.productIds ?? [product.id]);
       const patch = (rows: ApiShopStock[]) => rows.map(r => {
         const p = getProductFromRow(r);
-        if (p?.id !== product.id) return r;
+        if (!p?.id || !changed.has(p.id)) return r;
         const next = { ...p, archivedAt };
         return { ...r, ...(r.product ? { product: next } : {}), ...(r.Product ? { Product: next } : {}) };
       });
@@ -742,17 +744,15 @@ function StockManagementContent() {
               >
                 All Products
               </Button>
-              {(archivedCount > 0 || showArchived) && (
-                <Button
-                  variant={showArchived ? 'default' : 'ghost'}
-                  onClick={() => { setShowArchived(v => !v); setSelectedProductIds(new Set()); }}
-                  className="gap-1.5 transition-colors"
-                  title="Products that aren't available to restock for now"
-                >
-                  <Archive className="h-4 w-4" />
-                  Archived ({archivedCount})
-                </Button>
-              )}
+              <Button
+                variant={showArchived ? 'default' : 'ghost'}
+                onClick={() => { setShowArchived(v => !v); setSelectedProductIds(new Set()); }}
+                className="gap-1.5 transition-colors"
+                title="Products that aren't available to restock for now"
+              >
+                <Archive className="h-4 w-4" />
+                Archived ({archivedCount})
+              </Button>
             </div>
 
             <div className="flex flex-wrap items-end gap-3">
@@ -821,7 +821,7 @@ function StockManagementContent() {
               </div>
             )}
             {filteredStocks.length === 0 && (
-              <div className={`text-center py-8 ${muted}`}>{visibleStocks.length === 0 ? (showArchived ? 'No archived products' : 'No stock items found') : 'No matching items'}</div>
+              <div className={`text-center py-8 ${muted}`}>{visibleStocks.length === 0 ? (showArchived ? 'No archived products. Archive an out-of-stock product from its row menu (⋯).' : 'No stock items found') : 'No matching items'}</div>
             )}
             {filteredStocks.map((stock) => {
               const status = stockStatusBadge(stock.quantity, stock.lowStockThreshold, theme === 'dark', getProductFromRow(stock)?.kind === 'menu', isArchivedRow(stock));
@@ -1025,7 +1025,7 @@ function StockManagementContent() {
             </table>
 
             {filteredStocks.length === 0 && (
-              <div className={`text-center py-8 ${muted}`}>{visibleStocks.length === 0 ? (showArchived ? 'No archived products' : 'No stock items found') : 'No matching items'}</div>
+              <div className={`text-center py-8 ${muted}`}>{visibleStocks.length === 0 ? (showArchived ? 'No archived products. Archive an out-of-stock product from its row menu (⋯).' : 'No stock items found') : 'No matching items'}</div>
             )}
           </div>{/* end desktop table wrapper */}
           </>
@@ -1134,8 +1134,8 @@ function StockManagementContent() {
           )}
           <DialogContentText>
             This removes {selectedProductIds.size === 1 ? 'it' : 'them'} from every shop, along with the stock counts.
-            A product that already has sales will be archived instead, so your sales history stays intact.
-            This can’t be undone.
+            A workspace admin can bring {selectedProductIds.size === 1 ? 'it' : 'them'} back with stock and history from Deleted Products.
+            To hide a product you can’t restock for now, archive it instead.
           </DialogContentText>
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 2, gap: 1 }}>

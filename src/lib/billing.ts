@@ -50,6 +50,10 @@ export interface SubscriptionSnapshot {
   plan: PlatformPlan | null;
   isLegacyUnlimited: boolean;
   isRestricted: boolean;
+  /** True while a card subscription renews it automatically; otherwise the current plan can be paid again. */
+  autoRenews?: boolean;
+  /** Paid up to this date (ISO), if a payment has been made. */
+  paidThrough?: string | null;
 }
 
 export function getBillingSubscription(token?: string | null) {

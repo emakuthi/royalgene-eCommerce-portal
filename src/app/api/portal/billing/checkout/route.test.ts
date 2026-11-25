@@ -62,6 +62,21 @@ describe('POST /api/portal/billing/checkout', () => {
     }));
   });
 
+  it('refuses a second card subscription for the plan a card already renews', async () => {
+    getPlanById.mockResolvedValue({ ...PLAN, tier: 'business' });
+    getOrganizationById.mockResolvedValue({ id: 'org-1', slug: 'shop', planTier: 'business', billingStatus: 'active', paystackPlanCode: 'PLN_m' });
+    const res = await post({ planId: 'plan-biz', interval: 'monthly' });
+    expect(res.status).toBe(409);
+    expect(initializeTransaction).not.toHaveBeenCalled();
+  });
+
+  it('lets the current plan be paid again by M-Pesa (renewal)', async () => {
+    getPlanById.mockResolvedValue({ ...PLAN, tier: 'business' });
+    getOrganizationById.mockResolvedValue({ id: 'org-1', slug: 'shop', planTier: 'business', billingStatus: 'active', paystackPlanCode: null });
+    const res = await post({ planId: 'plan-biz', interval: 'monthly', method: 'mpesa' });
+    expect(res.status).toBe(200);
+  });
+
   it('M-Pesa is a one-off payment for one period, M-Pesa only', async () => {
     const res = await post({ planId: 'plan-biz', interval: 'annually', method: 'mpesa' });
     expect(res.status).toBe(200);

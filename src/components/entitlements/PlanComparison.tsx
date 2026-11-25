@@ -15,6 +15,8 @@ export interface PlanComparisonProps {
   onSelect?: (plan: PublicPlan) => void;
   selectLabel?: (plan: PublicPlan, isCurrent: boolean) => string;
   mostPopularTier?: string;
+  /** The current plan can be paid for again (it doesn't renew by card on its own). */
+  canRenewCurrent?: boolean;
 }
 
 function formatPrice(plan: PublicPlan, currency: 'KES' | 'USD', interval: 'monthly' | 'annually'): string {
@@ -36,6 +38,7 @@ export function PlanComparison({
   onSelect,
   selectLabel,
   mostPopularTier = 'pro',
+  canRenewCurrent = false,
 }: PlanComparisonProps) {
   return (
     <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -79,8 +82,17 @@ export function PlanComparison({
               ))}
             </ul>
             {onSelect && (
-              <Button className="mt-auto" disabled={isCurrent || busyPlanId === plan.id} onClick={() => onSelect(plan)}>
-                {selectLabel ? selectLabel(plan, isCurrent) : isCurrent ? 'Current Plan' : busyPlanId === plan.id ? 'Redirecting…' : 'Choose Plan'}
+              <Button
+                className="mt-auto"
+                variant={isCurrent && canRenewCurrent ? 'outline' : 'default'}
+                disabled={(isCurrent && !canRenewCurrent) || busyPlanId === plan.id}
+                onClick={() => onSelect(plan)}
+              >
+                {selectLabel
+                  ? selectLabel(plan, isCurrent)
+                  : busyPlanId === plan.id ? 'Redirecting…'
+                  : isCurrent ? (canRenewCurrent ? 'Renew plan' : 'Current Plan')
+                  : 'Choose Plan'}
               </Button>
             )}
           </div>
