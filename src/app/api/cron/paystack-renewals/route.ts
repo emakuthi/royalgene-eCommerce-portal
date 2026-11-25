@@ -7,7 +7,7 @@ import { sendTrialReminders } from '@/lib/billing/trial-reminders.server';
 import logger from '@/lib/logger';
 
 /**
- * GET /api/cron/paystack-renewals — invoked by Vercel Cron (see vercel.json)
+ * GET /api/cron/paystack-renewals — invoked by a Coolify scheduled task (scripts/run-cron.mjs)
  * once a day. Records any Paystack renewal charge the webhook missed, so a
  * paid workspace never turns read-only by mistake, then emails workspaces
  * paying by M-Pesa whose plan runs out soon, and admins whose free trial is
