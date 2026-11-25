@@ -1,5 +1,5 @@
 // Runs one of the daily jobs under /api/cron from inside the portal container.
-// On the VPS these are Coolify scheduled tasks (vercel.json's crons only ran on
+// On the VPS these are Coolify scheduled tasks (the old vercel.json crons, now removed, ran on
 // Vercel), e.g. `node run-cron.mjs sync-exchange-rates`. Reads CRON_SECRET from
 // the container's own environment, so the task command holds no secret, and
 // exits non-zero on failure (an HTTP error or success:false) so Coolify shows

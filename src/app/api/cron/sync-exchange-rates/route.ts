@@ -4,7 +4,7 @@ import { syncExchangeRates } from '@/lib/exchange-rates.server';
 import logger from '@/lib/logger';
 
 /**
- * GET /api/cron/sync-exchange-rates — invoked by Vercel Cron (see vercel.json)
+ * GET /api/cron/sync-exchange-rates — invoked by a Coolify scheduled task (scripts/run-cron.mjs)
  * once a day. Guarded by CRON_SECRET: Vercel sends `Authorization: Bearer
  * $CRON_SECRET`. If CRON_SECRET isn't configured the endpoint refuses to run
  * (so it can't be triggered anonymously).

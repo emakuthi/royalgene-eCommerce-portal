@@ -4,7 +4,7 @@ import { generateDue } from '@/lib/recurring-expenses.server';
 import logger from '@/lib/logger';
 
 /**
- * GET /api/cron/generate-recurring-expenses — Vercel Cron (see vercel.json),
+ * GET /api/cron/generate-recurring-expenses — a Coolify scheduled task (scripts/run-cron.mjs),
  * daily. Materialises every due recurring-expense template across all tenants.
  * Guarded by CRON_SECRET (Authorization: Bearer $CRON_SECRET); refuses to run
  * if the secret isn't configured, so it can't be triggered anonymously.
