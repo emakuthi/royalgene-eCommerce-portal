@@ -25,6 +25,7 @@ import {
   LogOut,
   Mail,
   Phone,
+  MessageCircle,
   MapPin,
   ChevronRight,
   Camera,
@@ -1349,6 +1350,16 @@ export default function PortalSettingsPage() {
                         </p>
                       );
                     })()}
+                    {subscriptionSnapshot?.paidThrough && (() => {
+                      const until = new Date(subscriptionSnapshot.paidThrough);
+                      const lapsed = until.getTime() < Date.now();
+                      return (
+                        <p className={`text-xs mt-2 font-medium ${lapsed ? 'text-red-600' : 'text-gray-500 dark:text-gray-400'}`}>
+                          {lapsed ? 'Expired' : subscriptionSnapshot.autoRenews ? 'Renews' : 'Paid until'} {until.toLocaleDateString('en-KE', { day: 'numeric', month: 'short', year: 'numeric' })}
+                          {!subscriptionSnapshot.autoRenews && ' — use Renew plan below to pay for another period.'}
+                        </p>
+                      );
+                    })()}
                   </div>
                   {isBillingAdmin && subscriptionSnapshot?.subscription?.status === 'active' && (
                     <Button variant="outline" size="sm" disabled={cancelBusy} onClick={handleCancelSubscription} className="text-red-600 hover:text-red-700">
@@ -1395,6 +1406,7 @@ export default function PortalSettingsPage() {
                   currentPlanTier={organization?.planTier}
                   busyPlanId={checkoutBusyId}
                   onSelect={isBillingAdmin ? handleUpgrade : undefined}
+                  canRenewCurrent={!subscriptionSnapshot?.autoRenews}
                 />
               ) : (
                 <p className="text-sm text-gray-500 dark:text-gray-400">{billingLoading ? 'Loading…' : 'No plans are available yet.'}</p>
@@ -1647,7 +1659,7 @@ export default function PortalSettingsPage() {
 
             <Section title="Help & support" description="Talk to the RoyalGene team.">
               {[
-                // The corporate line is for calls only, not WhatsApp.
+                { label: 'WhatsApp support', value: '0185 576 712', href: `https://wa.me/254185576712?text=${encodeURIComponent(`RoyalTrack help (${organization?.name ?? 'my business'}): `)}`, icon: MessageCircle },
                 { label: 'Call support', value: '0185 576 712', href: 'tel:+254185576712', icon: Phone },
                 { label: 'Email support', value: 'admin@royalgenegroup.co.ke', href: 'mailto:admin@royalgenegroup.co.ke?subject=RoyalTrack%20help', icon: Mail },
                 { label: 'Terms of Service', value: '', href: 'https://www.royalgenegroup.co.ke/terms', icon: ChevronRight },

@@ -41,6 +41,10 @@ export async function POST(request: NextRequest) {
     // Paying by M-Pesa as well would charge twice for the same period.
     return jsonResponse({ success: false, error: 'Your card already renews this plan automatically. Cancel the card subscription first to pay by M-Pesa instead.' }, 409);
   }
+  if (method === 'card' && organization.paystackPlanCode && organization.billingStatus === 'active' && plan.tier && organization.planTier === plan.tier) {
+    // A second card subscription for the same plan would charge twice each period.
+    return jsonResponse({ success: false, error: `Your card already renews ${plan.name} automatically.`, code: 'ALREADY_RENEWS' }, 409);
+  }
 
   const planCode = interval === 'annually' ? plan.paystackAnnualPlanCode : plan.paystackMonthlyPlanCode;
   if (!planCode) {
