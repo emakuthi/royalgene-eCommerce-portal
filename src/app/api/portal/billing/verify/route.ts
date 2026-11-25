@@ -21,7 +21,8 @@ export async function GET(request: NextRequest) {
 
   const { data: txn } = result;
   if (txn.status !== 'success') {
-    return jsonResponse({ success: true, data: { status: txn.status } });
+    // The bank's reason, so the app can say why a card was refused rather than just "not completed".
+    return jsonResponse({ success: true, data: { status: txn.status, gatewayResponse: txn.gateway_response ?? null } });
   }
 
   const metadata = txn.metadata || {};

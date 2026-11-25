@@ -112,6 +112,8 @@ export async function initializeTransaction(
 
 export interface PaystackTransactionData {
   status: string; // 'success' | 'failed' | 'abandoned' | ...
+  /** The bank's or Paystack's reason, e.g. "The card holder was not authorised…". */
+  gateway_response?: string | null;
   reference: string;
   amount: number;
   currency: string;
