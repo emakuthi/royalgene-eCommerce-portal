@@ -1430,7 +1430,7 @@ export default function PortalSettingsPage() {
                     <p className={`text-xs mt-0.5 ${
                       domainState.status === 'verified' ? 'text-emerald-600' : domainState.status === 'misconfigured' ? 'text-amber-600' : 'text-gray-500 dark:text-gray-400'
                     }`}>
-                      {domainState.status === 'verified' ? 'Verified — this domain is live' : domainState.status === 'misconfigured' ? 'DNS not pointed correctly yet' : 'Pending DNS setup'}
+                      {domainState.status === 'verified' ? 'Verified — this domain is live' : domainState.reachable ? 'DNS is set up — turning on HTTPS, usually within 5 minutes' : domainState.status === 'misconfigured' ? 'DNS not pointed correctly yet' : 'Pending DNS setup'}
                     </p>
                   </div>
                   <div className="flex gap-2">
@@ -1439,7 +1439,7 @@ export default function PortalSettingsPage() {
                   </div>
                 </div>
 
-                {domainState.status !== 'verified' && domainState.instructions && (
+                {domainState.status !== 'verified' && !domainState.reachable && domainState.instructions && (
                   <div className="rounded-lg border border-[hsl(var(--border))] p-4 space-y-3 text-sm">
                     <p className="font-medium text-gray-900 dark:text-white">DNS setup</p>
                     <p className="text-gray-500 dark:text-gray-400">

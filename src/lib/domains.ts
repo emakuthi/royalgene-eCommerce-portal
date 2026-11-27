@@ -17,6 +17,8 @@ export interface DomainInstructions {
 export interface DomainState {
   domain: string | null;
   status: 'pending' | 'verified' | 'misconfigured' | null;
+  /** The domain reaches the server; while still pending, its certificate is being issued. */
+  reachable?: boolean;
   instructions: DomainInstructions | null;
   error?: string;
 }

@@ -22,6 +22,7 @@ const STATUS_COPY: Record<NonNullable<DomainState['status']>, { text: string; cl
   misconfigured: { text: 'DNS not pointed correctly yet', cls: 'text-amber-600' },
   pending: { text: 'Pending DNS setup', cls: 'text-gray-500 dark:text-gray-400' },
 };
+const ISSUING_COPY = { text: 'DNS is set up — turning on HTTPS, usually within 5 minutes', cls: 'text-gray-500 dark:text-gray-400' };
 
 /**
  * Presentational custom-domain manager. State + persistence live in the caller
@@ -45,7 +46,7 @@ export function DomainManager({
   }
 
   if (state?.domain) {
-    const status = state.status ? STATUS_COPY[state.status] : STATUS_COPY.pending;
+    const status = state.status !== 'verified' && state.reachable ? ISSUING_COPY : state.status ? STATUS_COPY[state.status] : STATUS_COPY.pending;
     return (
       <div className="space-y-5">
         <div className="flex items-center justify-between gap-3">
@@ -67,7 +68,7 @@ export function DomainManager({
           </div>
         </div>
 
-        {state.status !== 'verified' && state.instructions && (
+        {state.status !== 'verified' && !state.reachable && state.instructions && (
           <div className="rounded-lg border border-[hsl(var(--border))] p-4 space-y-3 text-sm">
             <p className="font-medium text-gray-900 dark:text-white">DNS setup</p>
             <p className="text-gray-500 dark:text-gray-400">
