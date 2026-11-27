@@ -3,7 +3,7 @@ import logger from '../logger';
 
 /**
  * Plain-fetch QuickBooks Online API wrapper — no SDK, matching how
- * paystack.server.ts/vercel.server.ts are built. Requires a platform-level
+ * paystack.server.ts is built. Requires a platform-level
  * Intuit Developer app (QUICKBOOKS_CLIENT_ID/QUICKBOOKS_CLIENT_SECRET) that
  * only the account owner can register — this fails soft ("not configured")
  * without it, same as every other integration in this app.

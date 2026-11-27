@@ -1,6 +1,23 @@
 import 'server-only';
+import { promises as dns } from 'node:dns';
 import { supabaseAdmin } from './supabase-client';
-import { addDomainToProject, getDomainConfig, removeDomainFromProject } from './vercel.server';
+import { ROOT_DOMAIN } from './tenant';
+import type { DomainInstructions, DomainState } from './domains';
+
+export type { DomainInstructions, DomainState } from './domains';
+
+// Custom domains are served by the VPS's own nginx. The portal only records a
+// workspace's domain and checks that it reaches the server. The VPS runs
+// scripts/vps/custom-domains.sh every few minutes: once the domain reaches the
+// server it issues the certificate, adds the nginx site and marks the domain
+// 'verified', which is when the middleware starts routing it to the workspace.
+// The script also removes the site of a domain no workspace uses any more.
+
+/** The VPS's public address, for customers' A records. */
+const SERVER_IP = process.env.CUSTOM_DOMAIN_SERVER_IP || '195.110.58.34';
+/** The VPS nginx answers this on port 80 for any host (see the script). */
+const CHECK_PATH = '/.well-known/acme-challenge/royaltrack-domain-check';
+const CHECK_BODY = 'royaltrack-ok';
 
 /** Domain labels: lowercase, dot-separated, standard hostname characters. Allows apex or subdomain. */
 const DOMAIN_PATTERN = /^(?!-)[a-z0-9-]{1,63}(?<!-)(\.(?!-)[a-z0-9-]{1,63}(?<!-))+$/;
@@ -9,29 +26,51 @@ export function isValidDomain(domain: string): boolean {
   return DOMAIN_PATTERN.test(domain.toLowerCase());
 }
 
-export interface DomainInstructions {
-  cnameTarget: string;
-  aRecordTarget: string;
-  verification: { type: string; domain: string; value: string }[];
+const rootHost = (): string => ROOT_DOMAIN.split(':')[0];
+
+function instructions(): DomainInstructions {
+  return { cnameTarget: rootHost(), aRecordTarget: SERVER_IP, verification: [] };
 }
 
-export interface DomainState {
-  domain: string | null;
-  status: 'pending' | 'verified' | 'misconfigured' | null;
-  instructions: DomainInstructions | null;
-  error?: string;
+/**
+ * Whether the domain reaches this server: nginx's check file answers over
+ * plain HTTP (this also works behind a Cloudflare proxy), or its DNS points
+ * straight at the VPS (in case the server can't reach its own public address).
+ */
+export async function domainReachesServer(domain: string): Promise<boolean> {
+  try {
+    const res = await fetch(`http://${domain}${CHECK_PATH}`, { redirect: 'manual', cache: 'no-store', signal: AbortSignal.timeout(8000) });
+    if (res.ok && (await res.text()).trim() === CHECK_BODY) return true;
+  } catch {
+    // fall through to the DNS check
+  }
+  try {
+    return (await dns.resolve4(domain)).includes(SERVER_IP);
+  } catch {
+    return false;
+  }
 }
 
 /** Attaches a new custom domain to an organization. Always starts 'pending' — see resolveOrganizationByCustomDomainEdge for why. */
 export async function setCustomDomain(organizationId: string, domain: string): Promise<DomainState> {
-  const normalized = domain.trim().toLowerCase();
+  const normalized = domain.trim().toLowerCase().replace(/\.$/, '');
   if (!isValidDomain(normalized)) {
     return { domain: null, status: null, instructions: null, error: 'That doesn\'t look like a valid domain' };
   }
+  const root = rootHost();
+  if (normalized === root || normalized.endsWith(`.${root}`)) {
+    return { domain: null, status: null, instructions: null, error: 'That is already a RoyalTrack address. Enter a domain you own.' };
+  }
 
-  const addResult = await addDomainToProject(normalized);
-  if (!addResult.ok) {
-    return { domain: null, status: null, instructions: null, error: addResult.error };
+  const { data: taken } = await supabaseAdmin
+    .from('Organization')
+    .select('id')
+    .eq('customDomain', normalized)
+    .neq('id', organizationId)
+    .limit(1)
+    .maybeSingle();
+  if (taken) {
+    return { domain: null, status: null, instructions: null, error: 'That domain is already used by another workspace.' };
   }
 
   const { error } = await supabaseAdmin
@@ -42,18 +81,15 @@ export async function setCustomDomain(organizationId: string, domain: string): P
     return { domain: null, status: null, instructions: null, error: error.message };
   }
 
-  const state = await refreshCustomDomainStatus(organizationId);
-  // Vercel's ownership-proof TXT challenge (only returned when the domain
-  // needs it, e.g. it's already attached elsewhere) is only available right
-  // after adding — surface it now; subsequent "Check status" refreshes only
-  // report the CNAME/A DNS-pointing check.
-  if (state.instructions && addResult.data.verification.length > 0) {
-    state.instructions.verification = addResult.data.verification.map((v) => ({ type: v.type, domain: v.domain, value: v.value }));
-  }
-  return state;
+  return refreshCustomDomainStatus(organizationId);
 }
 
-/** Re-checks the domain's DNS state with Vercel and updates the stored status accordingly. */
+/**
+ * Re-checks whether the domain reaches the server. Only the VPS script marks a
+ * domain 'verified' (its certificate and site are live by then), and a
+ * verified domain is never downgraded here: a failed check from inside the
+ * server is weaker evidence than the live site.
+ */
 export async function refreshCustomDomainStatus(organizationId: string): Promise<DomainState> {
   const { data: org } = await supabaseAdmin
     .from('Organization')
@@ -65,42 +101,20 @@ export async function refreshCustomDomainStatus(organizationId: string): Promise
     return { domain: null, status: null, instructions: null };
   }
 
-  const configResult = await getDomainConfig(org.customDomain);
-  if (!configResult.ok) {
-    return { domain: org.customDomain, status: org.customDomainStatus, instructions: null, error: configResult.error };
-  }
-
-  const nextStatus = configResult.data.misconfigured ? 'misconfigured' : 'verified';
-  if (nextStatus !== org.customDomainStatus) {
+  const reachable = await domainReachesServer(org.customDomain);
+  const status: DomainState['status'] = org.customDomainStatus === 'verified' ? 'verified' : reachable ? 'pending' : 'misconfigured';
+  if (status !== org.customDomainStatus) {
     await supabaseAdmin
       .from('Organization')
-      .update({ customDomainStatus: nextStatus, updatedAt: new Date().toISOString() })
+      .update({ customDomainStatus: status, updatedAt: new Date().toISOString() })
       .eq('id', organizationId);
   }
 
-  return {
-    domain: org.customDomain,
-    status: nextStatus,
-    instructions: {
-      cnameTarget: configResult.data.cnameTarget,
-      aRecordTarget: configResult.data.aRecordTarget,
-      verification: [],
-    },
-  };
+  return { domain: org.customDomain, status, reachable, instructions: instructions() };
 }
 
+/** Frees the domain; the VPS script removes its site and certificate on its next run. */
 export async function removeCustomDomain(organizationId: string): Promise<{ ok: boolean; error?: string }> {
-  const { data: org } = await supabaseAdmin
-    .from('Organization')
-    .select('customDomain')
-    .eq('id', organizationId)
-    .maybeSingle();
-
-  if (org?.customDomain) {
-    const result = await removeDomainFromProject(org.customDomain);
-    if (!result.ok) return { ok: false, error: result.error };
-  }
-
   const { error } = await supabaseAdmin
     .from('Organization')
     .update({ customDomain: null, customDomainStatus: null, updatedAt: new Date().toISOString() })

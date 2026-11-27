@@ -1,0 +1,7 @@
+[Unit]
+Description=Issue certificates and nginx sites for RoyalTrack custom domains
+After=docker.service nginx.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/royaltrack-custom-domains
